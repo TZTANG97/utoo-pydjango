@@ -1,13 +1,27 @@
+﻿# Python
 .venv/
 __pycache__/
 *.py[cod]
-.env
-.env.local
-*.log
+*.egg-info/
+.pytest_cache/
 .coverage
 htmlcov/
-.pytest_cache/
+.mypy_cache/
+
+# Env / secrets
+.env
+.env.local
+*.pem
+!**/certs/README.txt
+config/shared-database.env
+
+# IDE / OS
+.idea/
+.vscode/
+*.log
+.DS_Store
+Thumbs.db
+
+# Django
 staticfiles/
 media/
-*.pem
-!certs/README.txt

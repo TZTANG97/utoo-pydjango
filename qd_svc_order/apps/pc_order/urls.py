@@ -1,0 +1,42 @@
+from django.urls import path
+
+from apps.pc_order import (
+    views_address,
+    views_catalog,
+    views_company,
+    views_consult,
+    views_district,
+    views_evaluate,
+    views_order,
+)
+
+urlpatterns = [
+    path("indexClassList.ajax", views_catalog.index_class_list),
+    path("bannerList.ajax", views_catalog.banner_list),
+    path("selThirdClassList.ajax", views_catalog.sel_third_class_list),
+    path("selFirAndSecClassList.ajax", views_catalog.sel_fir_and_sec_class_list),
+    path("selThirdClassByKeyWordList.ajax", views_catalog.sel_third_class_by_keyword_list),
+    path("indexExpList.ajax", views_catalog.index_exp_list),
+    path("selExpList.ajax", views_catalog.sel_exp_list),
+    path("testClassDetail.ajax", views_catalog.test_class_detail),
+    path("useraddress.ajax", views_address.user_address),
+    path("getdeliveryaddress.ajax", views_address.get_delivery_address),
+    path("insertdeliveryaddress.ajax", views_address.insert_delivery_address),
+    path("updatedeliveryaddress.ajax", views_address.update_delivery_address),
+    path("deldeliveryaddress.ajax", views_address.del_delivery_address),
+    path("selCompanyName.ajax", views_company.sel_company_name),
+    path("center/getOrderData.ajax", views_order.center_get_order_data),
+    path("myExperimentOrderList.ajax", views_order.my_experiment_order_list),
+    path("experimentOrderList.ajax", views_order.experiment_order_list),
+    path("selTestOrSure.ajax", views_order.sel_test_or_sure),
+    path("queryProCityCo.ajax", views_district.query_pro_city_co),
+    path("queryProCityCo1.ajax", views_district.query_pro_city_co1),
+    path("writeevaluate.ajax", views_evaluate.write_evaluate),
+    path("serviceConsultAdd.ajax", views_consult.service_consult_add),
+    path("expMakeList.ajax", views_consult.exp_make_list),
+    path("myExpMakeList.ajax", views_consult.my_exp_make_list),
+    path("myExpMakeStatusList.ajax", views_consult.my_exp_make_status_list),
+    path("saveServiceConsult.ajax", views_consult.save_service_consult),
+    path("cancelConsult.ajax", views_consult.cancel_consult),
+    path("printYyd.ajax", views_consult.print_yyd),
+]
