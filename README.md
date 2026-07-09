@@ -52,11 +52,11 @@ git checkout dev
 
 ```mermaid
 graph LR
-  Browser[Browser :9530] --> Vite[Vue3 Vite]
-  Vite -->|/api proxy| GW[Django Gateway :18083]
+  Browser[Browser 9530] --> Vite[Vue3 Vite]
+  Vite --> GW[Django Gateway 18083]
   GW --> Apps[apps domain logic]
-  Apps --> MySQL[(MySQL qd_pt_new)]
-  Apps --> Redis[(Redis optional)]
+  Apps --> MySQL[MySQL qd_pt_new]
+  Apps --> Redis[Redis optional]
 ```
 
 ### 2.2 微服务模式（配置 `SVC_*_URL` 后）
@@ -65,22 +65,22 @@ graph LR
 
 ```mermaid
 graph TB
-  Browser[Browser :9530] --> Vite[Vue3]
-  Vite -->|/api| GW[Gateway :18083]
-  GW -->|SVC_AUTH_URL| Auth[qd_svc_auth :18081]
-  GW -->|SVC_ORDER_URL| Order[qd_svc_order :18082]
-  GW -->|SVC_PAYMENT_URL| Pay[qd_svc_payment :18084]
-  GW -->|SVC_INVOICE_URL| Inv[qd_svc_invoice :18085]
-  GW -->|SVC_ENTRY_URL| Entry[qd_svc_entry :18086]
-  GW -->|SVC_WX_URL| Wx[qd_svc_wx :18087]
-  Auth --> DB[(MySQL qd_pt_new)]
+  Browser[Browser 9530] --> Vite[Vue3]
+  Vite --> GW[Gateway 18083]
+  GW --> Auth[qd_svc_auth 18081]
+  GW --> Order[qd_svc_order 18082]
+  GW --> Pay[qd_svc_payment 18084]
+  GW --> Inv[qd_svc_invoice 18085]
+  GW --> Entry[qd_svc_entry 18086]
+  GW --> Wx[qd_svc_wx 18087]
+  Auth --> DB[MySQL qd_pt_new]
   Order --> DB
   Pay --> DB
   Inv --> DB
   Entry --> DB
   Wx --> DB
-  Pay -.->|queue| Worker[qd_worker Celery]
-  Worker --> Redis[(Redis)]
+  Pay --> Worker[qd_worker Celery]
+  Worker --> Redis[Redis]
   Worker --> DB
 ```
 
@@ -89,10 +89,10 @@ graph TB
 ```mermaid
 graph TB
   Shared[shared-database.env] --> GW[Gateway]
-  Shared --> Svc[qd_svc_*]
-  EnvGw[gateway .env] --> GW
-  EnvSvc[service .env] --> Svc
-  Local[.env.local override] --> GW
+  Shared --> Svc[qd_svc services]
+  EnvGw[gateway env] --> GW
+  EnvSvc[service env] --> Svc
+  Local[env.local override] --> GW
   Local --> Svc
   Libs[qd_libs_common] --> GW
   Libs --> Svc
@@ -252,16 +252,12 @@ VITE_API_TARGET=http://127.0.0.1:18083
 由 `CORS_HTTPS` + `/api` 拼接：
 
 ```mermaid
-sequenceDiagram
-  participant U as User
-  participant GW as Gateway
-  participant WX as WeChatPay
-  U->>GW: prepay Native
-  GW->>WX: create order + notify_url
-  WX-->>U: scan QR pay
-  WX->>GW: POST /api/pc/*.ajax
-  GW->>GW: verify and settle
-  GW-->>WX: success
+graph LR
+  User[User] --> GW[Gateway]
+  GW --> WX[WeChatPay]
+  WX --> User
+  WX --> Notify[Gateway notify]
+  Notify --> WX
 ```
 
 | 场景 | 回调路径 |
@@ -280,8 +276,8 @@ sequenceDiagram
 
 ```mermaid
 graph LR
-  UA[user_account.amount] --> Amount[amount / accountBalance]
-  Orders[orders + qd_bill] --> Arrear[arrearAmount]
+  UA[user_account.amount] --> Amount[amount accountBalance]
+  Orders[orders and qd_bill] --> Arrear[arrearAmount]
   Orders --> Invoice[invoicingAmount]
   Amount --> Net[netBalance]
   Arrear --> Net
