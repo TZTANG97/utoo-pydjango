@@ -1,14 +1,14 @@
 # utoo-pydjango
 
-青岛检测平台 **Python / Django** 后端 monorepo（网关 + 微服务 + 公共库 + Worker）。
+青岛检测平台 **全栈 monorepo**：Vue3 前端 + Django 网关 + 微服务 + 公共库 + Worker。
 
 | 项 | 值 |
 |----|-----|
 | GitLab | http://gitlab.wisecom-tech.com/TZJ/utoo-pydjango.git |
 | 开发分支 | **`dev`**（日常推送） |
 | 生产分支 | **`prod`** |
-| 网关默认端口 | **18083** |
-| 前端 | `qd_test_front_v3` → http://127.0.0.1:9530（`/api` 代理到网关） |
+| 前端 | `qd_test_front_v3` → http://127.0.0.1:**9530** |
+| 网关 | `qd_test_server_django` → http://127.0.0.1:**18083** |
 
 ```powershell
 git clone http://gitlab.wisecom-tech.com/TZJ/utoo-pydjango.git
@@ -22,6 +22,7 @@ git checkout dev
 
 | 目录 | 端口 | 说明 |
 |------|------|------|
+| **`qd_test_front_v3`** | **9530** | Vue3 C 端前端（Vite，`/api` 代理到网关） |
 | `qd_test_server_django` | **18083** | API **网关 / BFF**（日常开发主入口） |
 | `qd_svc_auth` | 18081 | 认证微服务 |
 | `qd_svc_order` | 18082 | 订单微服务 |
@@ -39,7 +40,7 @@ git checkout dev
 |------|------|
 | `qd_test_server` | Java 旧服务（只读对照） |
 | `qd_test_server_py` | FastAPI 参考实现（**冻结**） |
-| `qd_test_front_v3` | Vue3 主前端 |
+| `qd_test_front` | 旧 Vue2 前端（可选对照） |
 
 ---
 
@@ -132,30 +133,37 @@ gitGraph
 
 ## 4. 快速启动
 
-### 4.1 推荐：单体网关 + 前端
+### 4.1 推荐：前端 + 单体网关
 
-日常联调 **不必** 启动全部微服务。
+日常联调 **不必** 启动全部微服务。浏览器只访问前端 **9530**。
 
 ```powershell
-# 1) 共用数据库
+# 0) 共用数据库
 copy config\shared-database.env.example config\shared-database.env
 # 编辑 DB_HOST / DB_USER / DB_PASSWORD / DB_NAME / JWT_SECRET_KEY
 # MySQL 5.6 请设 DB_LEGACY_MYSQL=true
 
-# 2) 网关
+# 1) 网关（终端 A）
 cd qd_test_server_django
 python -m venv .venv
 .\.venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env
 python run.py
+
+# 2) 前端（终端 B）
+cd qd_test_front_v3
+npm install
+# 可选：copy .env.development.local.example .env.development.local
+# 默认 VITE_API_TARGET=http://127.0.0.1:18083
+npm run dev
 ```
 
 | 地址 | 说明 |
 |------|------|
-| http://127.0.0.1:18083 | 网关 |
-| `GET /health` | 健康检查 |
-| `GET /api/health/` | 统一响应体健康检查 |
+| http://127.0.0.1:**9530** | 前端（用户入口） |
+| http://127.0.0.1:**18083** | 网关 API |
+| `GET /health` | 网关健康检查 |
 
 若完整工作区在 `E:\utoo`：
 
@@ -216,10 +224,22 @@ SVC_WX_URL=http://127.0.0.1:18087
 
 ### 5.3 勿提交
 
-- `.env` / `.env.local`
-- `config/shared-database.env`
-- `.venv/`、`*.pem`、证书私钥
+- 后端：`.env` / `.env.local`、`config/shared-database.env`、`.venv/`、`*.pem`
+- 前端：`.env.development.local`、`node_modules/`、`dist/`
 - `__pycache__`、`.pytest_cache`
+
+### 5.4 前端环境
+
+| 文件 | 说明 |
+|------|------|
+| `.env.development` | 默认开发配置（可提交） |
+| `.env.development.local` | 本机覆盖（**不提交**），如 `VITE_API_TARGET` |
+| `.env.development.local.example` | 本地覆盖模板 |
+
+```env
+# qd_test_front_v3/.env.development.local
+VITE_API_TARGET=http://127.0.0.1:18083
+```
 
 ---
 
@@ -323,14 +343,34 @@ qd_test_server_django/
 
 ---
 
-## 11. 相关文档
+## 11. 前端目录速览
 
-若与完整工作区一并检出，另见：
+```
+qd_test_front_v3/
+  src/
+    api/           # 接口封装
+    views/         # 页面（订单、资产、发票等）
+    components/    # 公共组件
+    router/        # 路由
+    store/         # Vuex / Pinia
+  vite.config.ts   # 开发代理 /api → 网关
+  package.json
+```
+
+```powershell
+cd qd_test_front_v3
+npm run dev      # http://127.0.0.1:9530
+npm run build    # 产出 dist/
+```
+
+---
+
+## 12. 相关文档
 
 | 文档 | 说明 |
 |------|------|
-| `docs/开发启动.md` | 一键启动、环境 |
-| `docs/进度总览.md` | 迁移进度 |
+| `qd_test_front_v3/README.md` | 前端细节 |
+| `qd_test_server_django/README.md` | 网关细节 |
+| 工作区 `docs/开发启动.md` | 一键启动（若与 `E:\utoo` 一并检出） |
 | `docs/API对照表.md` | C 端接口对照 |
 | `docs/微服务拆分与仓库约定.md` | MS-0~MS-4 约定 |
-| `qd_test_server_django/README.md` | 网关细节 |
