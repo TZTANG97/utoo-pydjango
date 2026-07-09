@@ -51,12 +51,12 @@ git checkout dev
 不配置 `SVC_*_URL` 时，浏览器只打前端，业务全部在网关进程内处理。
 
 ```mermaid
-flowchart LR
-  Browser["浏览器<br/>:9530"] --> Vite["Vue3 Vite<br/>qd_test_front_v3"]
-  Vite -->|"/api 代理"| GW["Django 网关<br/>qd_test_server_django<br/>:18083"]
-  GW --> Apps["apps.* 域逻辑<br/>auth / order / payment / …"]
-  Apps --> MySQL[("MySQL<br/>qd_pt_new")]
-  Apps --> Redis[("Redis<br/>可选")]
+graph LR
+  Browser[Browser :9530] --> Vite[Vue3 Vite]
+  Vite -->|/api proxy| GW[Django Gateway :18083]
+  GW --> Apps[apps domain logic]
+  Apps --> MySQL[(MySQL qd_pt_new)]
+  Apps --> Redis[(Redis optional)]
 ```
 
 ### 2.2 微服务模式（配置 `SVC_*_URL` 后）
@@ -64,40 +64,37 @@ flowchart LR
 网关只做鉴权兼容路由与 HTTP 转发，域逻辑下沉到各 `qd_svc_*`。
 
 ```mermaid
-flowchart TB
-  Browser["浏览器 :9530"] --> Vite["Vue3"]
-  Vite -->|"/api"| GW["网关 :18083"]
-
-  GW -->|SVC_AUTH_URL| Auth["qd_svc_auth<br/>:18081"]
-  GW -->|SVC_ORDER_URL| Order["qd_svc_order<br/>:18082"]
-  GW -->|SVC_PAYMENT_URL| Pay["qd_svc_payment<br/>:18084"]
-  GW -->|SVC_INVOICE_URL| Inv["qd_svc_invoice<br/>:18085"]
-  GW -->|SVC_ENTRY_URL| Entry["qd_svc_entry<br/>:18086"]
-  GW -->|SVC_WX_URL| Wx["qd_svc_wx<br/>:18087"]
-
-  Auth --> DB[("共用 MySQL qd_pt_new")]
+graph TB
+  Browser[Browser :9530] --> Vite[Vue3]
+  Vite -->|/api| GW[Gateway :18083]
+  GW -->|SVC_AUTH_URL| Auth[qd_svc_auth :18081]
+  GW -->|SVC_ORDER_URL| Order[qd_svc_order :18082]
+  GW -->|SVC_PAYMENT_URL| Pay[qd_svc_payment :18084]
+  GW -->|SVC_INVOICE_URL| Inv[qd_svc_invoice :18085]
+  GW -->|SVC_ENTRY_URL| Entry[qd_svc_entry :18086]
+  GW -->|SVC_WX_URL| Wx[qd_svc_wx :18087]
+  Auth --> DB[(MySQL qd_pt_new)]
   Order --> DB
   Pay --> DB
   Inv --> DB
   Entry --> DB
   Wx --> DB
-
-  Pay -.->|队列可选| Worker["qd_worker<br/>Celery"]
-  Worker --> Redis[("Redis")]
+  Pay -.->|queue| Worker[qd_worker Celery]
+  Worker --> Redis[(Redis)]
   Worker --> DB
 ```
 
 ### 2.3 配置与依赖关系
 
 ```mermaid
-flowchart TB
-  Shared["config/shared-database.env<br/>DB_* + JWT_SECRET_KEY"] --> GW["网关"]
-  Shared --> Svc["各 qd_svc_*"]
-  EnvGw["qd_test_server_django/.env<br/>端口 / Redis / 微信"] --> GW
-  EnvSvc["各服务 .env<br/>SERVER_PORT_HTTP 等"] --> Svc
-  Local[".env.local 可选覆盖"] --> GW
+graph TB
+  Shared[shared-database.env] --> GW[Gateway]
+  Shared --> Svc[qd_svc_*]
+  EnvGw[gateway .env] --> GW
+  EnvSvc[service .env] --> Svc
+  Local[.env.local override] --> GW
   Local --> Svc
-  Libs["qd_libs_common<br/>qd_common.*"] --> GW
+  Libs[qd_libs_common] --> GW
   Libs --> Svc
 ```
 
@@ -118,15 +115,9 @@ flowchart TB
 | `main` | 与完整代码对齐时可同步 |
 
 ```mermaid
-gitGraph
-  commit id: "init monorepo"
-  branch dev
-  checkout dev
-  commit id: "日常开发"
-  checkout main
-  branch prod
-  checkout prod
-  commit id: "发布打点"
+graph LR
+  main[main] --> dev[dev daily]
+  main --> prod[prod release]
 ```
 
 ---
@@ -262,15 +253,15 @@ VITE_API_TARGET=http://127.0.0.1:18083
 
 ```mermaid
 sequenceDiagram
-  participant U as 用户/前端
-  participant GW as 网关 :18083
-  participant WX as 微信支付
-  U->>GW: 预下单（Native）
-  GW->>WX: 创建订单 + notify_url
-  WX-->>U: 扫码支付
-  WX->>GW: POST 回调 /api/pc/*.ajax
-  GW->>GW: 验签 / 入账 / 写账单
-  GW-->>WX: 成功应答
+  participant U as User
+  participant GW as Gateway
+  participant WX as WeChatPay
+  U->>GW: prepay Native
+  GW->>WX: create order + notify_url
+  WX-->>U: scan QR pay
+  WX->>GW: POST /api/pc/*.ajax
+  GW->>GW: verify and settle
+  GW-->>WX: success
 ```
 
 | 场景 | 回调路径 |
@@ -288,11 +279,11 @@ sequenceDiagram
 「我的资产」接口：`GET /api/pc/center/getAccount.ajax`
 
 ```mermaid
-flowchart LR
-  UA["user_account.amount<br/>充值余额"] --> Amount["amount / accountBalance<br/>可余额支付的钱"]
-  Orders["订单 + qd_bill 汇总"] --> Arrear["arrearAmount<br/>待支付金额"]
-  Orders --> Invoice["invoicingAmount<br/>可开票金额"]
-  Amount --> Net["netBalance<br/>余额 − 待支付（参考）"]
+graph LR
+  UA[user_account.amount] --> Amount[amount / accountBalance]
+  Orders[orders + qd_bill] --> Arrear[arrearAmount]
+  Orders --> Invoice[invoicingAmount]
+  Amount --> Net[netBalance]
   Arrear --> Net
 ```
 
