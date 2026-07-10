@@ -4,14 +4,14 @@
 
 | 项 | 值 |
 |----|-----|
-| GitLab | http://gitlab.wisecom-tech.com/TZJ/utoo-pydjango.git |
+| GitLab | http://gitlab.wisecom-tech.com/web/utoo-pydjango.git |
 | 开发分支 | **`dev`**（日常推送） |
 | 生产分支 | **`prod`** |
 | 前端 | `qd_test_front_v3` → http://127.0.0.1:**9530** |
 | 网关 | `qd_test_server_django` → http://127.0.0.1:**18083** |
 
 ```powershell
-git clone http://gitlab.wisecom-tech.com/TZJ/utoo-pydjango.git
+git clone http://gitlab.wisecom-tech.com/web/utoo-pydjango.git
 cd utoo-pydjango
 git checkout dev
 ```
