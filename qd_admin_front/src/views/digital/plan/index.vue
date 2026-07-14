@@ -1,0 +1,320 @@
+<template>
+  <admin-page-card :title="pageTitle">
+    <el-form :inline="true" class="filter-form" @submit.prevent>
+      <el-form-item label="部门">
+        <el-tree-select
+          v-model="filters.deptId"
+          :data="deptTree"
+          clearable
+          filterable
+          check-strictly
+          default-expand-all
+          :render-after-expand="false"
+          placeholder="全部"
+          style="width: 260px"
+          :props="deptTreeProps"
+        />
+      </el-form-item>
+      <el-form-item label="账号">
+        <el-input v-model="filters.userName" clearable />
+      </el-form-item>
+      <el-form-item label="姓名">
+        <el-input v-model="filters.trueName" clearable />
+      </el-form-item>
+      <el-form-item>
+        <el-button type="primary" @click="handleSearch">查询</el-button>
+      </el-form-item>
+    </el-form>
+
+    <el-table v-loading="loading" :data="rows" border stripe>
+      <el-table-column prop="trueName" label="姓名" width="120" />
+      <el-table-column prop="deptName" label="部门" min-width="140" />
+      <el-table-column prop="userName" label="账号" min-width="120" />
+      <el-table-column prop="utooType" label="用户类型" width="120" />
+      <el-table-column label="操作" width="180" fixed="right">
+        <template #default="{ row }">
+          <el-button link type="primary" @click="openSet(row)">设定</el-button>
+          <el-button link type="primary" @click="openShow(row)">查看</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+
+    <div class="pager">
+      <el-pagination
+        v-model:current-page="pagination.page"
+        v-model:page-size="pagination.pageSize"
+        layout="total, prev, pager, next"
+        :total="total"
+        @current-change="reload()"
+      />
+    </div>
+
+    <el-dialog v-model="setVisible" title="设定产出目标" width="420px">
+      <el-form label-width="90px">
+        <el-form-item :label="mode === 'test' ? '年份' : '月份'">
+          <el-date-picker
+            v-if="mode === 'test'"
+            v-model="setForm.period"
+            type="year"
+            value-format="YYYY"
+            style="width: 100%"
+            @change="loadExistingTarget"
+          />
+          <el-date-picker
+            v-else
+            v-model="setForm.period"
+            type="month"
+            value-format="YYYY-MM"
+            style="width: 100%"
+            @change="loadExistingTarget"
+          />
+        </el-form-item>
+        <el-form-item label="目标金额">
+          <el-input-number v-model="setForm.amount" :min="0" :precision="2" style="width: 100%" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="setVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="showVisible" title="历年/历月目标" width="560px">
+      <div class="show-user">{{ showUserName }}</div>
+      <el-table :data="showRows" border>
+        <el-table-column v-if="mode === 'test'" prop="year" label="年份" />
+        <el-table-column v-else prop="month" label="月份" />
+        <el-table-column prop="amount" label="目标金额" />
+      </el-table>
+    </el-dialog>
+  </admin-page-card>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import AdminPageCard from '@/components/AdminPageCard.vue'
+import {
+  fetchDigitalDepts,
+  fetchSalePlanUsers,
+  fetchTestPlanUsers,
+  getSaleTarget,
+  getTestTarget,
+  saveSaleTarget,
+  saveTestTarget,
+  showSaleTargets,
+  showTestTargets,
+} from '@/api/digital'
+import { fetchDeptTree } from '@/api/system'
+import { useDataTable } from '@/composables/useDataTable'
+import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
+
+const route = useRoute()
+const mode = computed(() => (String(route.meta.planMode || 'test') === 'sale' ? 'sale' : 'test'))
+const pageTitle = computed(() =>
+  mode.value === 'sale' ? '销售人员产出计划设定' : '实验室人员产出计划设定'
+)
+
+const filters = reactive({ deptId: '', userName: '', trueName: '' })
+const deptTree = ref<Record<string, unknown>[]>([])
+const deptTreeProps = {
+  label: 'deptName',
+  value: 'id',
+  children: 'children',
+}
+const loader = (params: Record<string, unknown>) =>
+  mode.value === 'sale'
+    ? fetchSalePlanUsers({ ...params, ...filters })
+    : fetchTestPlanUsers({ ...params, ...filters })
+const { loading, rows, total, pagination, load } = useDataTable(loader)
+
+type DeptNode = {
+  id: string
+  deptName: string
+  superId: string
+  children?: DeptNode[]
+}
+
+function pruneDeptTree(nodes: DeptNode[]): DeptNode[] {
+  return nodes.map((node) => {
+    const children = node.children?.length ? pruneDeptTree(node.children) : undefined
+    return { ...node, children }
+  })
+}
+
+function normalizeDeptTree(nodes: Record<string, unknown>[]): DeptNode[] {
+  return pruneDeptTree(
+    nodes.map((node) => {
+      const children = Array.isArray(node.children)
+        ? normalizeDeptTree(node.children as Record<string, unknown>[])
+        : undefined
+      return {
+        id: String(node.id ?? ''),
+        deptName: String(node.deptName || ''),
+        superId: String(node.superId ?? '0'),
+        children,
+      }
+    })
+  )
+}
+
+function buildDeptTreeFromFlat(list: Record<string, unknown>[]): DeptNode[] {
+  const nodes: DeptNode[] = list.map((item) => ({
+    id: String(item.id ?? ''),
+    deptName: String(item.deptName || ''),
+    superId: String(item.superId ?? item.super_id ?? '0'),
+    children: [],
+  }))
+  const map = new Map(nodes.map((n) => [n.id, n]))
+  const roots: DeptNode[] = []
+  for (const node of nodes) {
+    if (!node.id) continue
+    const parent = map.get(node.superId)
+    if (parent && parent.id !== node.id) {
+      parent.children = parent.children || []
+      parent.children.push(node)
+    } else {
+      roots.push(node)
+    }
+  }
+  return pruneDeptTree(roots)
+}
+
+const setVisible = ref(false)
+const saving = ref(false)
+const setForm = reactive({
+  id: '' as string | number | '',
+  userId: '',
+  period: '',
+  amount: 0,
+})
+
+const showVisible = ref(false)
+const showUserName = ref('')
+const showRows = ref<Record<string, unknown>[]>([])
+
+function reload() {
+  return load()
+}
+
+function handleSearch() {
+  pagination.page = 1
+  return reload()
+}
+
+async function loadDepts() {
+  // 优先用数字化接口扁平部门组装树（与资产服务同链路，避免 sys 服务未启动时无数据）
+  const flatRes = await fetchDigitalDepts()
+  if (isAjaxOk(flatRes) && Array.isArray(flatRes.obj) && flatRes.obj.length) {
+    deptTree.value = buildDeptTreeFromFlat(flatRes.obj as Record<string, unknown>[])
+    return
+  }
+  const tree = await fetchDeptTree()
+  deptTree.value = normalizeDeptTree(tree as Record<string, unknown>[])
+}
+
+async function openSet(row: Record<string, unknown>) {
+  setForm.id = ''
+  setForm.userId = String(row.id)
+  setForm.period =
+    mode.value === 'sale'
+      ? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+      : String(new Date().getFullYear())
+  setForm.amount = 0
+  setVisible.value = true
+  await loadExistingTarget()
+}
+
+async function loadExistingTarget() {
+  if (!setForm.userId || !setForm.period) return
+  const res =
+    mode.value === 'sale'
+      ? await getSaleTarget({ sale_user_id: setForm.userId, month: setForm.period })
+      : await getTestTarget({ test_user_id: setForm.userId, year: setForm.period })
+  if (isAjaxOk(res) && res.obj && typeof res.obj === 'object') {
+    const obj = res.obj as Record<string, unknown>
+    setForm.id = (obj.id as string | number) || ''
+    setForm.amount = Number(obj.amount || 0)
+  } else {
+    setForm.id = ''
+    setForm.amount = 0
+  }
+}
+
+async function handleSave() {
+  if (!setForm.period) {
+    ElMessage.warning(mode.value === 'sale' ? '请选择月份' : '请选择年份')
+    return
+  }
+  saving.value = true
+  try {
+    const res =
+      mode.value === 'sale'
+        ? await saveSaleTarget({
+            id: setForm.id || undefined,
+            sale_user_id: setForm.userId,
+            month: setForm.period,
+            amount: setForm.amount,
+          })
+        : await saveTestTarget({
+            id: setForm.id || undefined,
+            test_user_id: setForm.userId,
+            year: setForm.period,
+            amount: setForm.amount,
+          })
+    if (isAjaxOk(res)) {
+      ElMessage.success('保存成功')
+      setVisible.value = false
+      return
+    }
+    ElMessage.error(ajaxErrorMessage(res, '保存失败'))
+  } finally {
+    saving.value = false
+  }
+}
+
+async function openShow(row: Record<string, unknown>) {
+  const res =
+    mode.value === 'sale' ? await showSaleTargets(String(row.id)) : await showTestTargets(String(row.id))
+  if (!isAjaxOk(res) || !res.obj) {
+    ElMessage.error(ajaxErrorMessage(res, '加载失败'))
+    return
+  }
+  const obj = res.obj as Record<string, unknown>
+  showUserName.value = String(obj.trueName || obj.userName || '')
+  showRows.value = Array.isArray(obj.list) ? (obj.list as Record<string, unknown>[]) : []
+  showVisible.value = true
+}
+
+watch(mode, async () => {
+  filters.deptId = ''
+  filters.userName = ''
+  filters.trueName = ''
+  pagination.page = 1
+  if (!deptTree.value.length) {
+    await loadDepts()
+  }
+  reload()
+})
+
+onMounted(async () => {
+  await loadDepts()
+  await reload()
+})
+</script>
+
+<style scoped lang="scss">
+.filter-form {
+  margin-bottom: 12px;
+}
+.pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+.show-user {
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+</style>

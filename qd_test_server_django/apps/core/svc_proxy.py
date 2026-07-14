@@ -172,3 +172,37 @@ def forward_wx(request: Request, path: str) -> Response:
         path=path,
         service_name="微信服务",
     )
+
+
+def svc_admin_asset_url() -> str:
+    return (getattr(settings, "SVC_ADMIN_ASSET_URL", "") or "").strip().rstrip("/")
+
+
+def svc_admin_asset_enabled() -> bool:
+    return bool(svc_admin_asset_url())
+
+
+def forward_admin_asset(request: Request, path: str) -> Response:
+    return forward_request(
+        request,
+        base_url=svc_admin_asset_url(),
+        path=path,
+        service_name="后台Asset服务",
+    )
+
+
+def svc_admin_platform_url() -> str:
+    return (getattr(settings, "SVC_ADMIN_PLATFORM_URL", "") or "").strip().rstrip("/")
+
+
+def svc_admin_platform_enabled() -> bool:
+    return bool(svc_admin_platform_url())
+
+
+def forward_admin_platform(request: Request, path: str) -> Response:
+    return forward_request(
+        request,
+        base_url=svc_admin_platform_url(),
+        path=path,
+        service_name="后台Platform服务",
+    )

@@ -116,10 +116,15 @@ python run.py
 # SVC_AUTH_URL=http://127.0.0.1:18081
 # SVC_ORDER_URL=http://127.0.0.1:18082
 # SVC_PAYMENT_URL=http://127.0.0.1:18084
-# SVC_INVOICE_URL=http://127.0.0.1:18085
-# SVC_ENTRY_URL=http://127.0.0.1:18086
+# SVC_ADMIN_ASSET_URL=http://127.0.0.1:18090
+# SVC_ADMIN_PLATFORM_URL=http://127.0.0.1:18091
+# 入驻/发票并入 platform 后，兼容旧变量同指 18091
+# SVC_INVOICE_URL=http://127.0.0.1:18091
+# SVC_ENTRY_URL=http://127.0.0.1:18091
 # SVC_WX_URL=http://127.0.0.1:18087
 ```
+
+后台拆分（方案 A）：`qd_svc_admin_asset`（数字化/库存/资金）、`qd_svc_order`（实验管理+C 端订单）、`qd_svc_admin_platform`（会员/运营/系统/服务/设置 + 入驻/发票）。`admin_auth` 登录/菜单仍留在本网关。`qd_svc_entry` / `qd_svc_invoice` 已废弃，勿单独启动。
 
 ### 勿提交
 

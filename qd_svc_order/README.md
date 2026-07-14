@@ -30,4 +30,9 @@ SVC_ORDER_URL=http://127.0.0.1:18082
 
 网关将把 `/api/experimentOrder/*`、`/api/experimentChildOrder/*` 及订单相关 `/api/pc/*` 透明转发到本服务。积分/资产/认证仍留在网关或其它微服务。
 
-共享响应库：`../qd_libs_common`（`qd_common.responses`）。约定见 `E:\utoo\docs\微服务拆分与仓库约定.md`。
+## 后台实验管理
+
+本服务同时承载 C 端订单域与后台「实验管理」脚手架（`/api/adminExperiment/*`）。
+业务菜单接口按 Java 对照逐步迁入 `apps/admin_experiment`。
+
+网关配置 `SVC_ORDER_URL` 后，`adminExperiment` 路径同样转发到本服务。

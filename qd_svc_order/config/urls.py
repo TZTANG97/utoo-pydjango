@@ -13,4 +13,5 @@ urlpatterns = [
     path("api/sampleAttributeManage/", include("apps.orders.sample_attr_urls")),
     path("api/retestapplication/", include("apps.orders.retest_urls")),
     path("api/pc/", include("apps.pc_order.urls")),
+    path("api/", include("apps.admin_experiment.urls")),
 ]

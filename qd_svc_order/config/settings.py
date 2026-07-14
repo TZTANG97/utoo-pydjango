@@ -20,7 +20,7 @@ if _shared_db.is_file():
     environ.Env.read_env(_shared_db)
 _local = BASE_DIR / ".env.local"
 if _local.is_file():
-    environ.Env.read_env(_local)
+    environ.Env.read_env(_local, overwrite=True)
 
 APP_ENV = env("APP_ENV")
 DEBUG = APP_ENV == "development"
@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     "apps.orders",
     "apps.payments",
     "apps.pc_order",
+    "apps.admin_experiment",
 ]
 
 MIDDLEWARE = [

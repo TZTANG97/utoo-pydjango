@@ -24,7 +24,7 @@ if _shared_db.is_file():
 # 本地覆盖（不提交 git）：解决 UAT 账号无库权限、本机库名不同等
 _local_env = BASE_DIR / ".env.local"
 if _local_env.is_file():
-    environ.Env.read_env(_local_env)
+    environ.Env.read_env(_local_env, overwrite=True)
 
 APP_ENV = env("APP_ENV")
 DEBUG = APP_ENV == "development"
@@ -50,6 +50,17 @@ INSTALLED_APPS = [
     "apps.invoices",
     "apps.entry",
     "apps.wx",
+    "apps.admin_core",
+    "apps.admin_auth",
+    "apps.admin_settings",
+    "apps.admin_system",
+    "apps.admin_service",
+    "apps.admin_ops",
+    "apps.admin_digital",
+    "apps.admin_inventory",
+    "apps.admin_experiment",
+    "apps.admin_fund",
+    "apps.admin_member",
 ]
 
 MIDDLEWARE = [
@@ -221,3 +232,5 @@ SVC_PAYMENT_URL = env("SVC_PAYMENT_URL", default="")
 SVC_INVOICE_URL = env("SVC_INVOICE_URL", default="")
 SVC_ENTRY_URL = env("SVC_ENTRY_URL", default="")
 SVC_WX_URL = env("SVC_WX_URL", default="")
+SVC_ADMIN_ASSET_URL = env("SVC_ADMIN_ASSET_URL", default="")
+SVC_ADMIN_PLATFORM_URL = env("SVC_ADMIN_PLATFORM_URL", default="")

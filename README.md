@@ -23,16 +23,20 @@ git checkout dev
 | 目录 | 端口 | 说明 |
 |------|------|------|
 | **`qd_test_front_v3`** | **9530** | Vue3 C 端前端（Vite，`/api` 代理到网关） |
-| `qd_test_server_django` | **18083** | API **网关 / BFF**（日常开发主入口） |
+| **`qd_admin_front`** | — | Vue3 管理后台（代理到网关） |
+| `qd_test_server_django` | **18083** | API **网关 / BFF**（日常开发主入口；含 `admin_auth`） |
 | `qd_svc_auth` | 18081 | 认证微服务 |
-| `qd_svc_order` | 18082 | 订单微服务 |
-| `qd_svc_payment` | 18084 | 支付 / 资产微服务 |
-| `qd_svc_invoice` | 18085 | 发票微服务 |
-| `qd_svc_entry` | 18086 | 入驻微服务 |
+| `qd_svc_order` | 18082 | 订单 + 后台实验管理 |
+| `qd_svc_payment` | 18084 | 支付 / 资产微服务（C 端） |
+| `qd_svc_admin_asset` | **18090** | 后台：数字化 / 库存 / 资金 |
+| `qd_svc_admin_platform` | **18091** | 后台：会员/运营/系统/服务/设置 + C 端入驻/发票 |
 | `qd_svc_wx` | 18087 | 微信微服务 |
+| `qd_svc_invoice` | ~~18085~~ | **已废弃** → 并入 `qd_svc_admin_platform` |
+| `qd_svc_entry` | ~~18086~~ | **已废弃** → 并入 `qd_svc_admin_platform` |
 | `qd_libs_common` | — | 公共包 `qd_common`（响应体、序列化等） |
 | `qd_worker` | — | Celery Worker（异步任务） |
 | `config/` | — | 共用数据库模板 `shared-database.env.example` |
+| `scripts/` | — | `start-admin-asset.ps1` / `start-admin-platform.ps1` / `start-order.ps1` |
 
 对照仓库（不在本 monorepo 内）：
 
@@ -66,23 +70,26 @@ graph LR
 ```mermaid
 graph TB
   Browser[Browser 9530] --> Vite[Vue3]
+  AdminFE[qd_admin_front] --> GW
   Vite --> GW[Gateway 18083]
   GW --> Auth[qd_svc_auth 18081]
   GW --> Order[qd_svc_order 18082]
   GW --> Pay[qd_svc_payment 18084]
-  GW --> Inv[qd_svc_invoice 18085]
-  GW --> Entry[qd_svc_entry 18086]
+  GW --> Asset[qd_svc_admin_asset 18090]
+  GW --> Platform[qd_svc_admin_platform 18091]
   GW --> Wx[qd_svc_wx 18087]
   Auth --> DB[MySQL qd_pt_new]
   Order --> DB
   Pay --> DB
-  Inv --> DB
-  Entry --> DB
+  Asset --> DB
+  Platform --> DB
   Wx --> DB
   Pay --> Worker[qd_worker Celery]
   Worker --> Redis[Redis]
   Worker --> DB
 ```
+
+入驻/发票：`SVC_ENTRY_URL` / `SVC_INVOICE_URL` 请指向 **18091**（与 `SVC_ADMIN_PLATFORM_URL` 相同）。勿再启动已废弃的 `qd_svc_entry` / `qd_svc_invoice`。
 
 ### 2.3 配置与依赖关系
 
@@ -167,7 +174,7 @@ E:\utoo\scripts\start-front-v3.ps1    # 仅前端
 ### 4.2 启动单个微服务
 
 ```powershell
-cd qd_svc_auth   # 或 order / payment / invoice / entry / wx
+cd qd_svc_auth   # 或 order / payment / wx / admin_asset / admin_platform
 python -m venv .venv
 .\.venv\Scripts\activate
 pip install -r requirements.txt
@@ -175,6 +182,16 @@ copy .env.example .env
 # 确保仓库根目录已有 config/shared-database.env
 python run.py
 ```
+
+或使用仓库根脚本：
+
+```powershell
+.\scripts\start-order.ps1
+.\scripts\start-admin-asset.ps1
+.\scripts\start-admin-platform.ps1
+```
+
+> `qd_svc_entry` / `qd_svc_invoice` 已废弃，请改启 `qd_svc_admin_platform`。
 
 ### 4.3 开启微服务转发
 
@@ -184,8 +201,10 @@ python run.py
 SVC_AUTH_URL=http://127.0.0.1:18081
 SVC_ORDER_URL=http://127.0.0.1:18082
 SVC_PAYMENT_URL=http://127.0.0.1:18084
-SVC_INVOICE_URL=http://127.0.0.1:18085
-SVC_ENTRY_URL=http://127.0.0.1:18086
+SVC_ADMIN_ASSET_URL=http://127.0.0.1:18090
+SVC_ADMIN_PLATFORM_URL=http://127.0.0.1:18091
+SVC_INVOICE_URL=http://127.0.0.1:18091
+SVC_ENTRY_URL=http://127.0.0.1:18091
 SVC_WX_URL=http://127.0.0.1:18087
 ```
 
