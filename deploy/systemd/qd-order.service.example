@@ -1,0 +1,26 @@
+# sudo cp qd-order.service.example /etc/systemd/system/qd-order.service
+# sudo systemctl daemon-reload && sudo systemctl enable --now qd-order
+
+[Unit]
+Description=Utoo Order Microservice
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/utoo/qd_svc_order
+Environment=DJANGO_SETTINGS_MODULE=config.settings
+ExecStart=/opt/utoo/qd_svc_order/.venv/bin/gunicorn \
+  config.wsgi:application \
+  --bind 127.0.0.1:18082 \
+  --workers 2 \
+  --timeout 120 \
+  --access-logfile - \
+  --error-logfile -
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

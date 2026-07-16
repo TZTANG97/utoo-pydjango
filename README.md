@@ -390,6 +390,7 @@ npm run build    # 产出 dist/
 |------|------|
 | `qd_test_front_v3/README.md` | 前端细节 |
 | `qd_test_server_django/README.md` | 网关细节 |
+| **`deploy/README.md`** | **GitLab CI/CD 发版（6 微服务 + 网关 + 前端，systemd）** |
 | 工作区 `docs/开发启动.md` | 一键启动（若与 `E:\utoo` 一并检出） |
 | `docs/API对照表.md` | C 端接口对照 |
 | `docs/微服务拆分与仓库约定.md` | MS-0~MS-4 约定 |

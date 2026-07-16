@@ -1,0 +1,26 @@
+# sudo cp qd-payment.service.example /etc/systemd/system/qd-payment.service
+# sudo systemctl daemon-reload && sudo systemctl enable --now qd-payment
+
+[Unit]
+Description=Utoo Payment Microservice
+After=network.target redis.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/utoo/qd_svc_payment
+Environment=DJANGO_SETTINGS_MODULE=config.settings
+ExecStart=/opt/utoo/qd_svc_payment/.venv/bin/gunicorn \
+  config.wsgi:application \
+  --bind 127.0.0.1:18084 \
+  --workers 2 \
+  --timeout 120 \
+  --access-logfile - \
+  --error-logfile -
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

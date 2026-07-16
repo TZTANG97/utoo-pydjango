@@ -1,0 +1,108 @@
+# .gitlab-ci.yml — utoo 微服务发版（手动发布，systemd 裸进程）
+# 对齐 factoryproductsystem2：Windows Shell Runner + SSH；不做蓝绿。
+# 一次 deploy：6 上游 + 网关 + 双前端（与本地 SVC_* / start-ms-dev 一致）。
+# Runner tag：与工厂 EMKU 共用 Windows Runner（emku-windows）。
+stages:
+  - build
+  - deploy
+
+variables:
+  GIT_STRATEGY: fetch
+  GIT_CLEAN_FLAGS: "-ffd"
+  UTOO_REMOTE_ROOT: "/opt/utoo"
+  UTOO_STATIC_C: "/var/www/utoo-c"
+  UTOO_STATIC_ADMIN: "/var/www/utoo-admin"
+  # 部署单元（脚本内写死同序；此处仅作文档提示）
+  UTOO_DEPLOY_UNITS: "qd-auth,qd-order,qd-payment,qd-wx,qd-admin-asset,qd-admin-platform,qd-gateway"
+
+# 勿在 GitLab Variables 配置多行 SSH_KNOWN_HOSTS（Windows PowerShell executor 易 ParserError）。
+# 脚本在 known_hosts 为空时会自动 ssh-keyscan。
+.windows_ci_clear_ssh_known_hosts:
+  variables:
+    SSH_KNOWN_HOSTS: ""
+    SSH_KNOWN_HOSTS_DEV: ""
+    SSH_KNOWN_HOSTS_PROD: ""
+
+push_record:
+  stage: build
+  only:
+    - dev
+    - prod
+  except:
+    - merge_requests
+  script:
+    - 'echo "push record only - $CI_COMMIT_SHORT_SHA by $GITLAB_USER_LOGIN"'
+
+build_frontend_dev:
+  extends: .windows_ci_clear_ssh_known_hosts
+  stage: build
+  tags:
+    - emku-windows
+  only:
+    - dev
+  except:
+    - merge_requests
+  when: manual
+  allow_failure: false
+  script:
+    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-build-frontend.ps1"
+  artifacts:
+    paths:
+      - qd_test_front_v3/dist/
+      - qd_admin_front/dist/
+    expire_in: 1 hour
+
+build_frontend_prod:
+  extends: .windows_ci_clear_ssh_known_hosts
+  stage: build
+  tags:
+    - emku-windows
+  only:
+    - prod
+  except:
+    - merge_requests
+  when: manual
+  allow_failure: false
+  script:
+    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-build-frontend.ps1"
+  artifacts:
+    paths:
+      - qd_test_front_v3/dist/
+      - qd_admin_front/dist/
+    expire_in: 1 hour
+
+deploy_dev:
+  extends: .windows_ci_clear_ssh_known_hosts
+  stage: deploy
+  tags:
+    - emku-windows
+  only:
+    - dev
+  except:
+    - merge_requests
+  variables:
+    UTOO_DEPLOY_TARGET: dev
+  dependencies:
+    - build_frontend_dev
+  when: manual
+  allow_failure: false
+  script:
+    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
+
+deploy_prod:
+  extends: .windows_ci_clear_ssh_known_hosts
+  stage: deploy
+  tags:
+    - emku-windows
+  only:
+    - prod
+  except:
+    - merge_requests
+  variables:
+    UTOO_DEPLOY_TARGET: prod
+  dependencies:
+    - build_frontend_prod
+  when: manual
+  allow_failure: false
+  script:
+    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
