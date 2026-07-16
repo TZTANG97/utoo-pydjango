@@ -22,14 +22,27 @@ def list_staff_users(
     dept_id: str = "",
     user_name: str = "",
     true_name: str = "",
+    user_sex: str | int | None = None,
     utoo_types: list[str] | None = None,
+    require_pt_type_staff: bool = False,
+    include_helpers: bool = False,
     page: int,
     page_size: int,
 ) -> tuple[list[dict[str, Any]], int]:
+    """员工列表。
+
+    实验室产出计划（对齐 Java getuserinfoMapSTP）：
+    - user_status=1 且 pt_type like '%2%'
+    - 管理员不过滤 utoo_type（utoo_types=None）
+    - 含协助者 / 间接协助者 / 注册时间 / 性别
+    """
     where = "WHERE u.user_status = 1"
     params: dict[str, Any] = {}
+    if require_pt_type_staff:
+        where += " AND u.pt_type LIKE %(pt_type)s"
+        params["pt_type"] = "%2%"
     if dept_id and dept_id not in ("0", ""):
-        # 选中上级部门时，包含其下级各部门人员（对齐 Java 部门树筛选语义）
+        # Java STP 为精确 dept_id；树选中上级时仍包含下级（便于现网树筛选）
         dept_ids = child_dept_ids(str(dept_id))
         if len(dept_ids) == 1:
             where += " AND u.dept_id = %(dept_id)s"
@@ -47,6 +60,9 @@ def list_staff_users(
     if true_name:
         where += " AND u.true_name LIKE %(true_name)s"
         params["true_name"] = f"%{true_name}%"
+    if user_sex not in (None, ""):
+        where += " AND u.user_sex = %(user_sex)s"
+        params["user_sex"] = int(user_sex)
     if utoo_types:
         placeholders = []
         for i, t in enumerate(utoo_types):
@@ -56,20 +72,54 @@ def list_staff_users(
         where += f" AND u.utoo_type IN ({', '.join(placeholders)})"
     total = int(scalar(f"SELECT COUNT(*) FROM sy_users u {where}", params) or 0)
     clause, page_params = page_clause(page, page_size)
+    helper_join = ""
+    helper_cols = ""
+    if include_helpers:
+        helper_join = """
+        LEFT JOIN sy_users u1 ON u1.id = u.helper_id
+        LEFT JOIN sy_users u2 ON u2.id = u1.helper_id
+        """
+        helper_cols = """,
+            u1.true_name AS helperName,
+            u2.true_name AS firstHelperName
+        """
+    order_by = (
+        "ORDER BY u.register_time DESC, u.true_name ASC"
+        if include_helpers
+        else "ORDER BY u.true_name ASC, u.user_name ASC"
+    )
     rows = fetch_all(
         f"""
         SELECT
             u.id, u.user_name AS userName, u.true_name AS trueName,
             u.user_status AS userStatus, u.dept_id AS deptId, u.utoo_type AS utooType,
+            u.user_sex AS userSex, u.register_time AS registerTime,
             d.dept_name AS deptName
+            {helper_cols}
         FROM sy_users u
         LEFT JOIN sy_dept d ON d.id = u.dept_id
+        {helper_join}
         {where}
-        ORDER BY u.true_name ASC, u.user_name ASC
+        {order_by}
         {clause}
         """,
         {**params, **page_params},
     )
+    for row in rows:
+        sex = row.get("userSex")
+        if sex in (1, "1"):
+            row["userSexLabel"] = "男"
+        elif sex in (0, "0"):
+            row["userSexLabel"] = "女"
+        else:
+            row["userSexLabel"] = ""
+        status = row.get("userStatus")
+        row["userStatusLabel"] = "正常" if status in (1, "1") else "禁用"
+        rt = row.get("registerTime")
+        if rt is not None and hasattr(rt, "strftime"):
+            row["registerTime"] = rt.strftime("%Y-%m-%d %H:%M:%S")
+        elif rt is not None:
+            row["registerTime"] = str(rt)
     return rows, total
 
 

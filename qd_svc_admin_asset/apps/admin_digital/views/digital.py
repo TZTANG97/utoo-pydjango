@@ -45,11 +45,19 @@ def test_user_list(request: Request, user=None):
     del user
     data = merge_payload(request)
     draw, page, page_size = parse_datatable_params(request)
+    # 对齐 Java StatisticTestuserPerformanceController#queryUsers + getuserinfoMapSTP：
+    # 管理员 utoo_types 为空（不过滤类型）；pt_type like '%2%'；含协助者字段
+    sex_raw = data.get("userSex")
+    if sex_raw in (None, ""):
+        sex_raw = data.get("user_sex")
     rows, total = user_repo.list_staff_users(
         dept_id=str(data.get("deptId") or data.get("dept_id") or ""),
         user_name=(data.get("userName") or data.get("user_name") or "").strip(),
         true_name=(data.get("trueName") or data.get("true_name") or "").strip(),
-        utoo_types=TEST_TYPES,
+        user_sex=sex_raw,
+        utoo_types=None,
+        require_pt_type_staff=True,
+        include_helpers=True,
         page=page,
         page_size=page_size,
     )

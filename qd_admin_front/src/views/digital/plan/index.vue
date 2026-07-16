@@ -21,17 +21,33 @@
       <el-form-item label="姓名">
         <el-input v-model="filters.trueName" clearable />
       </el-form-item>
+      <el-form-item v-if="mode === 'test'" label="性别">
+        <el-select v-model="filters.userSex" clearable placeholder="全部" style="width: 100px">
+          <el-option label="全部" value="" />
+          <el-option label="男" value="1" />
+          <el-option label="女" value="0" />
+        </el-select>
+      </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="handleSearch">查询</el-button>
+        <el-button @click="handleClear">清空</el-button>
       </el-form-item>
     </el-form>
 
     <el-table v-loading="loading" :data="rows" border stripe>
-      <el-table-column prop="trueName" label="姓名" width="120" />
-      <el-table-column prop="deptName" label="部门" min-width="140" />
-      <el-table-column prop="userName" label="账号" min-width="120" />
-      <el-table-column prop="utooType" label="用户类型" width="120" />
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column type="index" label="#" width="55" />
+      <el-table-column prop="trueName" label="姓名" width="120" show-overflow-tooltip />
+      <el-table-column prop="deptName" label="部门" min-width="160" show-overflow-tooltip />
+      <el-table-column prop="userName" label="账号" min-width="120" show-overflow-tooltip />
+      <el-table-column prop="utooType" label="用户类型" width="120" show-overflow-tooltip />
+      <template v-if="mode === 'test'">
+        <el-table-column prop="userSexLabel" label="性别" width="70" align="center" />
+        <el-table-column prop="userStatusLabel" label="状态" width="70" align="center" />
+        <el-table-column prop="helperName" label="协助者" width="100" show-overflow-tooltip />
+        <el-table-column prop="firstHelperName" label="间接协助者" width="110" show-overflow-tooltip />
+        <el-table-column prop="registerTime" label="注册时间" width="170" />
+      </template>
+      <el-table-column label="操作" width="140" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openSet(row)">设定</el-button>
           <el-button link type="primary" @click="openShow(row)">查看</el-button>
@@ -43,9 +59,11 @@
       <el-pagination
         v-model:current-page="pagination.page"
         v-model:page-size="pagination.pageSize"
-        layout="total, prev, pager, next"
+        :page-sizes="[10, 20, 50]"
+        layout="total, sizes, prev, pager, next"
         :total="total"
         @current-change="reload()"
+        @size-change="handlePageSizeChange"
       />
     </div>
 
@@ -116,18 +134,27 @@ const pageTitle = computed(() =>
   mode.value === 'sale' ? '销售人员产出计划设定' : '实验室人员产出计划设定'
 )
 
-const filters = reactive({ deptId: '', userName: '', trueName: '' })
+const filters = reactive({ deptId: '', userName: '', trueName: '', userSex: '' as string })
 const deptTree = ref<Record<string, unknown>[]>([])
 const deptTreeProps = {
   label: 'deptName',
   value: 'id',
   children: 'children',
 }
-const loader = (params: Record<string, unknown>) =>
-  mode.value === 'sale'
-    ? fetchSalePlanUsers({ ...params, ...filters })
-    : fetchTestPlanUsers({ ...params, ...filters })
+const loader = (params: Record<string, unknown>) => {
+  const q: Record<string, unknown> = {
+    ...params,
+    deptId: filters.deptId,
+    userName: filters.userName,
+    trueName: filters.trueName,
+  }
+  if (mode.value === 'test' && filters.userSex !== '') {
+    q.userSex = filters.userSex
+  }
+  return mode.value === 'sale' ? fetchSalePlanUsers(q) : fetchTestPlanUsers(q)
+}
 const { loading, rows, total, pagination, load } = useDataTable(loader)
+pagination.pageSize = 20
 
 type DeptNode = {
   id: string
@@ -199,6 +226,20 @@ function reload() {
 }
 
 function handleSearch() {
+  pagination.page = 1
+  return reload()
+}
+
+function handleClear() {
+  filters.deptId = ''
+  filters.userName = ''
+  filters.trueName = ''
+  filters.userSex = ''
+  pagination.page = 1
+  return reload()
+}
+
+function handlePageSizeChange() {
   pagination.page = 1
   return reload()
 }
@@ -291,7 +332,9 @@ watch(mode, async () => {
   filters.deptId = ''
   filters.userName = ''
   filters.trueName = ''
+  filters.userSex = ''
   pagination.page = 1
+  pagination.pageSize = mode.value === 'test' ? 20 : 10
   if (!deptTree.value.length) {
     await loadDepts()
   }

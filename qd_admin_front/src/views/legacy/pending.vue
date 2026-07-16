@@ -5,8 +5,8 @@
     </template>
     <el-result icon="info" title="功能迁移中">
       <template #sub-title>
-        <p>该菜单来自 Java 后台，Vue 页面尚未完成迁移。</p>
-        <p v-if="legacyUrl" class="legacy-url">原 Java 路径：{{ legacyUrl }}</p>
+        <p>该功能页面正在建设中，请稍后再试。</p>
+        <p v-if="legacyUrl" class="legacy-url">关联路径：{{ legacyUrl }}</p>
       </template>
       <template #extra>
         <el-button type="primary" @click="$router.replace('/dashboard')">返回欢迎页</el-button>

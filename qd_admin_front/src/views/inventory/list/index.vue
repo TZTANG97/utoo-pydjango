@@ -37,6 +37,7 @@
           <el-option v-for="name in leaseOptions" :key="name" :label="name" :value="name" />
         </el-select>
       </el-form-item>
+      <!-- 状态分类筛选暂不开放
       <el-form-item label="状态分类">
         <el-select v-model="filters.type" clearable placeholder="全部" style="width: 130px">
           <el-option value="1" label="在库相关" />
@@ -44,6 +45,7 @@
           <el-option value="3" label="在途" />
         </el-select>
       </el-form-item>
+      -->
       <el-form-item>
         <el-button type="primary" @click="reload">查询</el-button>
         <el-button @click="resetFilters">清空筛选</el-button>
@@ -54,17 +56,14 @@
       <div class="summary">UT实验租用总数量：{{ inventoryNum }}</div>
       <div class="actions">
         <el-button @click="clearSelection">清空勾选</el-button>
-        <el-button type="primary" :disabled="!selectedChildren.length" @click="editSelected">
-          编辑
-        </el-button>
-        <el-button type="success" :disabled="!selectedChildren.length" @click="showQr">
-          生成二维码
-        </el-button>
+        <el-button type="primary" @click="editSelected">编辑</el-button>
+        <el-button type="success" @click="showQr">生成二维码</el-button>
         <el-button type="warning" @click="exportExcel">导出EXCEL</el-button>
       </div>
     </div>
 
     <el-table
+      ref="parentTableRef"
       v-loading="loading"
       :data="rows"
       border
@@ -76,11 +75,13 @@
       <el-table-column type="expand" width="46">
         <template #default="{ row }">
           <el-table
+            :ref="(el) => setChildTableRef(String(row.rowKey), el)"
             v-loading="!!childLoading[row.rowKey]"
             :data="childRows[row.rowKey] || []"
             size="small"
             border
             class="child-table"
+            row-key="id"
             @selection-change="(sel) => onChildSelect(row.rowKey, sel)"
           >
             <el-table-column type="selection" width="42" />
@@ -170,12 +171,15 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="qrVisible" title="生成二维码内容" width="520px">
-      <p class="qr-tip">内容格式与 Java 一致：厂家;型号;序列号（可用本机扫码工具或打印模块生成二维码）</p>
+    <el-dialog v-model="qrVisible" title="生成二维码" width="560px" @opened="renderQrCodes">
+      <p class="qr-tip">内容格式：厂家;型号;序列号</p>
       <div v-if="qrItems.length" class="qr-list">
         <div v-for="(item, idx) in qrItems" :key="idx" class="qr-item">
-          <div class="qr-text">{{ item }}</div>
-          <el-button size="small" @click="copyText(item)">复制</el-button>
+          <canvas :ref="(el) => setQrCanvasRef(idx, el)" class="qr-canvas" />
+          <div class="qr-meta">
+            <div class="qr-text">{{ item }}</div>
+            <el-button size="small" @click="copyText(item)">复制</el-button>
+          </div>
         </div>
       </div>
       <el-empty v-else description="请先勾选明细行" />
@@ -184,8 +188,9 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { nextTick, onMounted, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox, type TableInstance } from 'element-plus'
+import QRCode from 'qrcode'
 import AdminPageCard from '@/components/AdminPageCard.vue'
 import {
   fetchInventoryChildren,
@@ -202,7 +207,6 @@ const filters = reactive({
   serialNumber: '',
   expmanageLineId: '',
   privateLeaseType: '',
-  type: '',
 })
 
 const inventoryNum = ref(0)
@@ -213,6 +217,11 @@ const childRows = reactive<Record<string, Record<string, unknown>[]>>({})
 const childLoading = reactive<Record<string, boolean>>({})
 const childSelection = reactive<Record<string, Record<string, unknown>[]>>({})
 const selectedChildren = ref<Record<string, unknown>[]>([])
+
+const parentTableRef = ref<TableInstance>()
+const childTableRefs = reactive<Record<string, TableInstance | null>>({})
+const qrCanvasRefs = reactive<Record<number, HTMLCanvasElement | null>>({})
+const selectedParentKeys = ref<Set<string>>(new Set())
 
 const dialogVisible = ref(false)
 const saving = ref(false)
@@ -246,6 +255,9 @@ const { loading, rows, total, pagination, load } = useDataTable(async (params) =
 
 function reload() {
   pagination.page = 1
+  Object.keys(childRows).forEach((k) => delete childRows[k])
+  Object.keys(childSelection).forEach((k) => delete childSelection[k])
+  selectedChildren.value = []
   return load(listParams())
 }
 
@@ -256,9 +268,16 @@ function resetFilters() {
     serialNumber: '',
     expmanageLineId: '',
     privateLeaseType: '',
-    type: '',
   })
   reload()
+}
+
+function setChildTableRef(rowKey: string, el: unknown) {
+  childTableRefs[rowKey] = (el as TableInstance) || null
+}
+
+function setQrCanvasRef(idx: number, el: unknown) {
+  qrCanvasRefs[idx] = (el as HTMLCanvasElement) || null
 }
 
 function refreshSelected() {
@@ -266,25 +285,29 @@ function refreshSelected() {
 }
 
 function clearSelection() {
+  parentTableRef.value?.clearSelection()
+  Object.values(childTableRefs).forEach((table) => table?.clearSelection())
   Object.keys(childSelection).forEach((k) => {
     childSelection[k] = []
   })
+  selectedParentKeys.value = new Set()
   selectedChildren.value = []
 }
 
-function onParentSelect() {
-  // 父行勾选仅作辅助；编辑/二维码以明细勾选为准
+function syncChildTableSelection(rowKey: string) {
+  const childTable = childTableRefs[rowKey]
+  const children = childRows[rowKey]
+  const selected = childSelection[rowKey]
+  if (!childTable || !children?.length || !selected?.length) return
+  children.forEach((child) => {
+    const checked = selected.some((s) => String(s.id) === String(child.id))
+    childTable.toggleRowSelection(child, checked)
+  })
 }
 
-function onChildSelect(rowKey: string, sel: Record<string, unknown>[]) {
-  childSelection[rowKey] = sel
-  refreshSelected()
-}
-
-async function onExpand(row: Record<string, unknown>, expanded: Record<string, unknown>[]) {
+async function ensureChildren(row: Record<string, unknown>) {
   const key = String(row.rowKey)
-  const open = expanded.some((r) => String(r.rowKey) === key)
-  if (!open || childRows[key]) return
+  if (childRows[key]) return childRows[key]
   childLoading[key] = true
   try {
     const res = await fetchInventoryChildren({
@@ -304,6 +327,47 @@ async function onExpand(row: Record<string, unknown>, expanded: Record<string, u
   } finally {
     childLoading[key] = false
   }
+  return childRows[key]
+}
+
+async function onParentSelect(selection: Record<string, unknown>[]) {
+  const currentKeys = new Set(selection.map((r) => String(r.rowKey)))
+
+  for (const key of selectedParentKeys.value) {
+    if (!currentKeys.has(key)) {
+      childTableRefs[key]?.clearSelection()
+      childSelection[key] = []
+    }
+  }
+  selectedParentKeys.value = currentKeys
+
+  for (const row of selection) {
+    const key = String(row.rowKey)
+    const children = await ensureChildren(row)
+    await nextTick()
+    const childTable = childTableRefs[key]
+    if (childTable && children?.length) {
+      children.forEach((child) => childTable.toggleRowSelection(child, true))
+      childSelection[key] = [...children]
+    } else if (children?.length) {
+      childSelection[key] = [...children]
+    }
+  }
+  refreshSelected()
+}
+
+function onChildSelect(rowKey: string, sel: Record<string, unknown>[]) {
+  childSelection[rowKey] = sel
+  refreshSelected()
+}
+
+async function onExpand(row: Record<string, unknown>, expanded: Record<string, unknown>[]) {
+  const key = String(row.rowKey)
+  const open = expanded.some((r) => String(r.rowKey) === key)
+  if (!open) return
+  await ensureChildren(row)
+  await nextTick()
+  syncChildTableSelection(key)
 }
 
 function openEdit(row: Record<string, unknown>) {
@@ -324,7 +388,7 @@ function openEdit(row: Record<string, unknown>) {
 
 function editSelected() {
   if (!selectedChildren.value.length) {
-    ElMessage.warning('请先展开并勾选明细行')
+    ElMessage.warning('请先勾选明细行（可勾选父行自动加载并选中明细）')
     return
   }
   if (selectedChildren.value.length > 1) {
@@ -334,9 +398,9 @@ function editSelected() {
   openEdit(selectedChildren.value[0])
 }
 
-function showQr() {
+async function showQr() {
   if (!selectedChildren.value.length) {
-    ElMessage.warning('请先展开并勾选明细行')
+    ElMessage.warning('请先勾选明细行（可勾选父行自动加载并选中明细）')
     return
   }
   qrItems.value = selectedChildren.value.map((row) => {
@@ -348,6 +412,19 @@ function showQr() {
   qrVisible.value = true
 }
 
+async function renderQrCodes() {
+  await nextTick()
+  for (let i = 0; i < qrItems.value.length; i++) {
+    const canvas = qrCanvasRefs[i]
+    if (!canvas) continue
+    try {
+      await QRCode.toCanvas(canvas, qrItems.value[i], { width: 160, margin: 1 })
+    } catch {
+      ElMessage.warning(`第 ${i + 1} 条二维码生成失败`)
+    }
+  }
+}
+
 async function copyText(text: string) {
   try {
     await navigator.clipboard.writeText(text)
@@ -357,51 +434,106 @@ async function copyText(text: string) {
   }
 }
 
-function exportExcel() {
-  if (!rows.value.length) {
-    ElMessage.warning('当前无数据可导出')
+function csvCell(v: unknown) {
+  return `"${String(v ?? '').replace(/"/g, '""')}"`
+}
+
+async function exportExcel() {
+  try {
+    await ElMessageBox.confirm('确认导出当前数据为 Excel（CSV）？', '导出确认', {
+      type: 'warning',
+      confirmButtonText: '导出',
+      cancelButtonText: '取消',
+    })
+  } catch {
     return
   }
-  const header = [
-    '库存编号',
-    '商品名称',
-    '产品型号',
-    '产品厂家',
-    '可用数量',
-    '总数量',
-    '序列号',
-    '实验平台',
-    '租赁参考价',
-    '内部租赁价',
-    '生产日期',
-  ]
-  const lines = rows.value.map((row) =>
-    [
-      row.inventoryId,
-      row.goodsName,
-      row.goodsSpec,
-      row.goodsBrandName,
-      row.nums,
-      row.totalnum,
-      row.serialNumber,
-      row.lineNum,
-      row.zlckj,
-      row.nbzlj,
-      row.produceTime,
+
+  const detailSelected = selectedChildren.value
+  let header: string[]
+  let lines: string[]
+
+  if (detailSelected.length) {
+    header = [
+      '库存编号',
+      '商品名称',
+      '产品型号',
+      '产品厂家',
+      '数量',
+      '序列号',
+      '仓库',
+      '保存位置',
+      '状态',
+      '自用租赁',
+      '所属公司',
+      '备注',
     ]
-      .map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`)
-      .join(',')
-  )
+    lines = detailSelected.map((row) =>
+      [
+        row.inventoryId,
+        row.goodsName,
+        row.goodsSpec,
+        row.goodsBrandName,
+        row.inventoryNum,
+        row.serialNumber,
+        row.storeName,
+        row.storePosition,
+        row.giStatusLabel,
+        row.expmanageName,
+        row.companyName,
+        row.mark,
+      ]
+        .map(csvCell)
+        .join(',')
+    )
+  } else {
+    if (!rows.value.length) {
+      ElMessage.warning('当前无数据可导出')
+      return
+    }
+    header = [
+      '库存编号',
+      '商品名称',
+      '产品型号',
+      '产品厂家',
+      '可用数量',
+      '总数量',
+      '序列号',
+      '实验平台',
+      '租赁参考价',
+      '内部租赁价',
+      '生产日期',
+    ]
+    lines = rows.value.map((row) =>
+      [
+        row.inventoryId,
+        row.goodsName,
+        row.goodsSpec,
+        row.goodsBrandName,
+        row.nums,
+        row.totalnum,
+        row.serialNumber,
+        row.lineNum,
+        row.zlckj,
+        row.nbzlj,
+        row.produceTime,
+      ]
+        .map(csvCell)
+        .join(',')
+    )
+  }
+
   const bom = '\uFEFF'
   const blob = new Blob([bom + [header.join(','), ...lines].join('\n')], {
-    type: 'text/csv;charset=utf-8;',
+    type: 'application/vnd.ms-excel;charset=utf-8;',
   })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `库存列表_${new Date().toISOString().slice(0, 10)}.csv`
+  a.download = `库存列表_${new Date().toISOString().slice(0, 10)}.xls`
   a.click()
   URL.revokeObjectURL(url)
+  ElMessage.success('导出成功（CSV 内容，可用 Excel 打开）')
 }
 
 async function handleSubmit() {
@@ -414,7 +546,6 @@ async function handleSubmit() {
     }
     ElMessage.success('保存成功')
     dialogVisible.value = false
-    // 清缓存明细，强制重新加载
     Object.keys(childRows).forEach((k) => delete childRows[k])
     await load(listParams())
   } finally {
@@ -477,11 +608,21 @@ onMounted(async () => {
 .qr-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   border: 1px solid #ebeef5;
   border-radius: 6px;
-  padding: 10px 12px;
+  padding: 12px;
+}
+.qr-canvas {
+  flex-shrink: 0;
+}
+.qr-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
 }
 .qr-text {
   word-break: break-all;

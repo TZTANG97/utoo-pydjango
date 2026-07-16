@@ -4,7 +4,7 @@
       <div class="login-brand">
         <div class="logo">UTOO</div>
         <h1>愉兔检测管理平台</h1>
-        <p>Java 后台迁移 · Django + Vue 管理端</p>
+        <p>检测业务管理后台</p>
       </div>
       <el-form
         ref="formRef"

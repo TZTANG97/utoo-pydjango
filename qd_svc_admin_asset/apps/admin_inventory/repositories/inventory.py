@@ -140,7 +140,7 @@ def list_inventory_statis(
             MAX(t2.zlckj) AS zlckj,
             MAX(t.nbzlj) AS nbzlj,
             MAX(t.produce_time) AS produceTime,
-            MAX(l.line_num) AS lineNum,
+            GROUP_CONCAT(DISTINCT NULLIF(l.line_num, '') SEPARATOR ', ') AS lineNum,
             GROUP_CONCAT(DISTINCT NULLIF(t.serial_number, '') SEPARATOR ', ') AS serialNumber,
             GROUP_CONCAT(DISTINCT NULLIF(t.inventory_id, '') SEPARATOR ', ') AS inventoryId
         FROM goods_inventory t
@@ -162,7 +162,7 @@ def list_inventory_statis(
         ) t2 ON t.goods_spec = t2.goods_spec
         LEFT JOIN goods good ON t.goods_id = good.id
         LEFT JOIN experiment_manage m ON t.expmanage_id = m.id
-        LEFT JOIN experiment_line l ON t.expmanage_line_id = l.id
+        LEFT JOIN experiment_line l ON CAST(t.expmanage_line_id AS CHAR) = CAST(l.id AS CHAR)
         {where}
           AND IFNULL(t1.inventory_num, 0) > 0
         GROUP BY t.goods_id, t.goods_brand_id, t.goods_spec
@@ -226,7 +226,7 @@ def list_inventory_children(
         LEFT JOIN goods_storehouse s ON t.store_id = s.id
         LEFT JOIN user u ON t.company_id = u.id
         LEFT JOIN experiment_manage m ON t.expmanage_id = m.id
-        LEFT JOIN experiment_line l ON t.expmanage_line_id = l.id
+        LEFT JOIN experiment_line l ON CAST(t.expmanage_line_id AS CHAR) = CAST(l.id AS CHAR)
         LEFT JOIN goods_store_position p ON t.store_position_id = p.id
         LEFT JOIN goods_store_block b ON p.block_id = b.id
         {where}
@@ -268,6 +268,7 @@ def inventory_summary() -> dict[str, Any]:
         """
         SELECT id, line_num AS lineNum
         FROM experiment_line
+        WHERE IFNULL(deleteStatus, 0) = 0 AND status = 1
         ORDER BY line_num ASC
         LIMIT 500
         """

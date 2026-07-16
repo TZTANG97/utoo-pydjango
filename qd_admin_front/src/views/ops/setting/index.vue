@@ -1,6 +1,6 @@
 <template>
   <admin-page-card :title="pageTitle">
-    <!-- 二手 / 租赁：按 Java 为图片配置 -->
+    <!-- 二手 / 租赁：图片配置 -->
     <template v-if="isImageSetting">
       <el-form label-width="110px">
         <el-form-item label="图片地址" required>
@@ -35,7 +35,7 @@
             v-model="content"
             type="textarea"
             :rows="18"
-            placeholder="支持 HTML 富文本（对应 Java KindEditor 字段 imgsrc）"
+            placeholder="支持 HTML 富文本"
           />
         </el-form-item>
         <el-form-item label="预览">

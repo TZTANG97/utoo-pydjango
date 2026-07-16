@@ -286,7 +286,7 @@ function onCreate() {
 }
 
 function onCopy(_row: Record<string, unknown>) {
-  ElMessage.info('复制建单页后续完善（Java editPage.htm?type=2）')
+  ElMessage.info('复制建单功能后续完善')
 }
 
 function downloadCsv(filename: string, dataRows: Record<string, unknown>[]) {

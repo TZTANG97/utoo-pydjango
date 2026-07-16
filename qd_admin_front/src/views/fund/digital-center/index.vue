@@ -40,7 +40,7 @@
       </el-col>
     </el-row>
 
-    <p class="hint">流水笔数（当年）：{{ overview.logCount ?? 0 }}。完整图表看板可后续按 Java 数字化中心继续细化。</p>
+    <p class="hint">流水笔数（当年）：{{ overview.logCount ?? 0 }}</p>
   </admin-page-card>
 </template>
 
