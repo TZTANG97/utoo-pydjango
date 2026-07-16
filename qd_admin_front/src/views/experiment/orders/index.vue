@@ -82,7 +82,11 @@
 
     <el-table v-loading="loading" :data="rows" border stripe>
       <el-table-column type="index" width="50" label="#" align="center" />
-      <el-table-column prop="orderId" label="订单编号" min-width="170" show-overflow-tooltip />
+      <el-table-column prop="orderId" label="订单编号" min-width="170" show-overflow-tooltip>
+        <template #default="{ row }">
+          <el-button link type="primary" @click="openDetail(row)">{{ row.orderId }}</el-button>
+        </template>
+      </el-table-column>
       <el-table-column prop="customerName" label="客户企业名称" min-width="140" show-overflow-tooltip>
         <template #default="{ row }">{{ row.customerName || '' }}</template>
       </el-table-column>
@@ -122,46 +126,24 @@
       />
     </div>
 
-    <el-drawer v-model="drawerVisible" title="订单详情" size="760px">
-      <template v-if="detail">
-        <el-descriptions :column="2" border>
-          <el-descriptions-item label="订单编号">{{ detail.orderId }}</el-descriptions-item>
-          <el-descriptions-item label="订单状态">{{ detail.orderStatusLabel }}</el-descriptions-item>
-          <el-descriptions-item label="客户企业">{{ detail.companyName || detail.customerName || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="订单总价">{{ detail.totalPrice ?? '-' }}</el-descriptions-item>
-          <el-descriptions-item label="销售主管">{{ detail.saleManager }}</el-descriptions-item>
-          <el-descriptions-item label="销售人员">{{ detail.saleUser }}</el-descriptions-item>
-          <el-descriptions-item label="下单时间">{{ detail.orderTime || detail.addTime || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="创建时间">{{ detail.addTime || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="备注" :span="2">{{ detail.mark || '-' }}</el-descriptions-item>
-        </el-descriptions>
-        <h4 class="section-title">子单明细</h4>
-        <el-table :data="(detail.children as Record<string, unknown>[]) || []" border size="small">
-          <el-table-column prop="childOrderId" label="子单号" min-width="130" show-overflow-tooltip />
-          <el-table-column prop="goodsName" label="产品" min-width="120" show-overflow-tooltip />
-          <el-table-column prop="goodsSpec" label="型号" min-width="100" />
-          <el-table-column prop="projectName" label="测试项目" min-width="120" show-overflow-tooltip />
-          <el-table-column prop="testUserName" label="测试员" width="100" />
-          <el-table-column prop="orderStatusLabel" label="状态" width="90" />
-        </el-table>
-      </template>
-    </el-drawer>
   </admin-page-card>
 </template>
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AdminPageCard from '@/components/AdminPageCard.vue'
 import {
   exportExpOrders,
   fetchExpOrderList,
   fetchExpOrderStatusOptions,
-  getExpOrderDetail,
 } from '@/api/experiment'
 import { fetchSupplierAll, fetchUserList } from '@/api/system'
 import { useDataTable } from '@/composables/useDataTable'
 import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
+
+const router = useRouter()
 
 const filters = reactive({
   customerName: '',
@@ -179,8 +161,6 @@ const statusOpts = ref<Record<string, unknown>[]>([])
 const supplierOpts = ref<Record<string, unknown>[]>([])
 const managerOpts = ref<Record<string, unknown>[]>([])
 const saleUserOpts = ref<Record<string, unknown>[]>([])
-const drawerVisible = ref(false)
-const detail = ref<Record<string, unknown> | null>(null)
 const exporting = ref(false)
 
 function listParams() {
@@ -219,8 +199,9 @@ async function loadOptions() {
     statusOpts.value = statusRes.obj as Record<string, unknown>[]
   }
 
+  const silent = { silentError: true }
   try {
-    const supRes = await fetchSupplierAll()
+    const supRes = await fetchSupplierAll(silent)
     if (isAjaxOk(supRes)) {
       const raw = (supRes.obj || supRes.data) as unknown
       const list = Array.isArray(raw)
@@ -238,27 +219,25 @@ async function loadOptions() {
   }
 
   try {
-    const mgr = await fetchUserList({ start: 0, length: 500, type: 1, draw: 1 })
+    const mgr = await fetchUserList({ start: 0, length: 500, type: 1, draw: 1 }, silent)
     managerOpts.value = mapUserRows(Array.isArray(mgr.data) ? mgr.data : [])
   } catch {
     /* ignore */
   }
   try {
-    const sale = await fetchUserList({ start: 0, length: 500, type: -1, draw: 1 })
+    const sale = await fetchUserList({ start: 0, length: 500, type: -1, draw: 1 }, silent)
     saleUserOpts.value = mapUserRows(Array.isArray(sale.data) ? sale.data : [])
   } catch {
     /* ignore */
   }
 }
 
-async function openDetail(row: Record<string, unknown>) {
-  const res = await getExpOrderDetail(String(row.id))
-  if (!isAjaxOk(res)) {
-    ElMessage.error(ajaxErrorMessage(res, '加载失败'))
-    return
-  }
-  detail.value = (res.obj as Record<string, unknown>) || null
-  drawerVisible.value = true
+function openDetail(row: Record<string, unknown>) {
+  router.push({
+    name: 'ExperimentOrderDetail',
+    params: { id: String(row.id) },
+    query: { from: 'orders' },
+  })
 }
 
 function onCreate() {
@@ -324,5 +303,4 @@ onMounted(async () => {
 <style scoped lang="scss">
 .filter-form { margin-bottom: 12px; }
 .pager { display: flex; justify-content: flex-end; margin-top: 16px; }
-.section-title { margin: 20px 0 10px; font-size: 14px; font-weight: 600; }
 </style>

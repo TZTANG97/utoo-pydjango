@@ -36,7 +36,7 @@ git checkout dev
 | `qd_libs_common` | — | 公共包 `qd_common`（响应体、序列化等） |
 | `qd_worker` | — | Celery Worker（异步任务） |
 | `config/` | — | 共用数据库模板 `shared-database.env.example` |
-| `scripts/` | — | `start-admin-asset.ps1` / `start-admin-platform.ps1` / `start-order.ps1` |
+| `scripts/` | — | `start-ms-dev.ps1`（网关+6 svc）及 `start-gateway` / `auth` / `order` / `payment` / `wx` / `admin-asset` / `admin-platform` |
 
 对照仓库（不在本 monorepo 内）：
 
@@ -186,16 +186,23 @@ python run.py
 或使用仓库根脚本：
 
 ```powershell
+.\scripts\start-gateway.ps1
+.\scripts\start-auth.ps1
 .\scripts\start-order.ps1
+.\scripts\start-payment.ps1
+.\scripts\start-wx.ps1
 .\scripts\start-admin-asset.ps1
 .\scripts\start-admin-platform.ps1
+
+# 或一键开 7 个终端窗口（网关 + 6 业务服务）
+.\scripts\start-ms-dev.ps1
 ```
 
 > `qd_svc_entry` / `qd_svc_invoice` 已废弃，请改启 `qd_svc_admin_platform`。
 
 ### 4.3 开启微服务转发
 
-在 **网关** `.env` 中取消注释并填写：
+在 **网关** `.env` 中填写（模板见 `qd_test_server_django/.env.example`，本地 `.env` 已按此启用时须**同时启动全部上游**）：
 
 ```env
 SVC_AUTH_URL=http://127.0.0.1:18081
@@ -208,7 +215,13 @@ SVC_ENTRY_URL=http://127.0.0.1:18091
 SVC_WX_URL=http://127.0.0.1:18087
 ```
 
-未配置的上游仍走网关本地 `apps.*`。
+**行为说明：**
+
+- 已配置的 `SVC_*`：该域请求由网关 **HTTP 转发**到对应服务；上游未启动则接口 **503**（不再静默走本地 twin）。
+- 未配置的 `SVC_*`：仍走网关本地 `apps.*`（单体兜底）。
+- **始终留在网关**：后台登录与 Vue 壳（`admin_auth`、`/api/vue/*`、`/api/admin/userLogin.ajax` 等）——不是漏配。
+- 修改 `.env` 后需**重启网关**进程；可用 `.\scripts\start-ms-dev.ps1` 拉齐进程。
+- 支付异步队列可选再启 `qd_worker`，非菜单硬依赖。
 
 ---
 

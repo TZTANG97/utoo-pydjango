@@ -1,13 +1,3 @@
 # 启动后台 Asset 微服务 :18090
-$Root = Split-Path -Parent $PSScriptRoot
-Set-Location "$Root\qd_svc_admin_asset"
-
-if (-not (Test-Path ".venv")) {
-    python -m venv .venv
-    .\.venv\Scripts\pip install -r requirements.txt
-    .\.venv\Scripts\pip install -e "$Root\qd_libs_common"
-}
-if (-not (Test-Path ".env")) {
-    Copy-Item ".env.example" ".env"
-}
-.\.venv\Scripts\python.exe run.py
+. "$PSScriptRoot\_start-svc.ps1"
+Start-QdService -RelPath "qd_svc_admin_asset"

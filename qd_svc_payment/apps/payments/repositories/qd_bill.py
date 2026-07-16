@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 
 from apps.core.db_utils import execute
+
+logger = logging.getLogger(__name__)
 
 
 def insert_receive_bill(
@@ -24,3 +27,11 @@ def insert_receive_bill(
             "uid": user_id,
         },
     )
+    # 对齐 Java saveBillAndAccessory：type=2 且成本已结清时触发分钱
+    if int(bill_type or 2) == 2:
+        try:
+            from apps.payments.services.split_money import try_split_on_receive
+
+            try_split_on_receive(int(order_id))
+        except Exception:
+            logger.exception("split after insert_receive_bill order_id=%s", order_id)

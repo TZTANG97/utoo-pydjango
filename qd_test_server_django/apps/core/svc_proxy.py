@@ -45,7 +45,8 @@ def forward_request(
         headers["Content-Type"] = request.content_type
     params = dict(request.query_params)
     try:
-        with httpx.Client(timeout=30.0) as client:
+        # 本机微服务转发禁止走系统 HTTP_PROXY，否则上游宕机会变成空 502 被误报为「非 JSON」
+        with httpx.Client(timeout=30.0, trust_env=False) as client:
             if request.method.upper() == "GET":
                 upstream = client.get(url, params=params, headers=headers)
             elif request.method.upper() == "POST":
@@ -73,8 +74,26 @@ def forward_request(
     try:
         data = upstream.json()
     except json.JSONDecodeError:
+        body = (upstream.content or b"").decode("utf-8", errors="replace").strip()
+        host = base_url.rstrip("/")
+        if upstream.status_code >= 500 or not body:
+            return Response(
+                {
+                    "code": 502,
+                    "message": (
+                        f"{service_name}不可用（HTTP {upstream.status_code}，"
+                        f"请确认已启动：{host}）"
+                    ),
+                    "data": None,
+                },
+                status=502,
+            )
         return Response(
-            {"code": 502, "message": f"{service_name}返回非 JSON", "data": None},
+            {
+                "code": 502,
+                "message": f"{service_name}返回非 JSON（HTTP {upstream.status_code}）",
+                "data": None,
+            },
             status=502,
         )
     return Response(data, status=upstream.status_code)

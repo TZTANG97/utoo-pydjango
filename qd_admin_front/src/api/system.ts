@@ -24,9 +24,10 @@ async function getAjax(url: string, config?: RequestConfig) {
 
 async function fetchDatatable<T>(
   url: string,
-  params: Record<string, unknown>
+  params: Record<string, unknown>,
+  config?: RequestConfig
 ): Promise<DataTableResult<T>> {
-  const res = await postAjax(url, params)
+  const res = await postAjax(url, params, config)
   const payload = (res.data ? res : (res.obj as DataTableResult<T> | undefined) || res) as DataTableResult<T>
   return {
     draw: payload.draw || 1,
@@ -78,8 +79,8 @@ export function deleteDept(id: string | number) {
 }
 
 // --- user ---
-export function fetchUserList(params: Record<string, unknown>) {
-  return fetchDatatable('/sys/user/queryUsers.ajax', params)
+export function fetchUserList(params: Record<string, unknown>, config?: RequestConfig) {
+  return fetchDatatable('/sys/user/queryUsers.ajax', params, config)
 }
 
 export function getUserById(id: string | number) {
@@ -228,8 +229,8 @@ export function fetchSupplierList(params: Record<string, unknown>) {
   return fetchDatatable('/supplier/getSupplierList.ajax', params)
 }
 
-export function fetchSupplierAll() {
-  return postAjax('/supplier/queryAll.ajax')
+export function fetchSupplierAll(config?: RequestConfig) {
+  return postAjax('/supplier/queryAll.ajax', undefined, config)
 }
 
 export function getSupplierById(id: string | number) {

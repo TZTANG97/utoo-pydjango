@@ -119,10 +119,74 @@ export const getExpOrderDetail = (id: string | number) =>
   postAjax(`${BASE}/order/detail.ajax`, { id })
 export const auditExpOrder = (data: Record<string, unknown>) =>
   postAjax(`${BASE}/order/audit.ajax`, data)
+export const cancelExpOrder = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/cancel.ajax`, data)
+export const submitExpOrderAudit = (id: string | number) =>
+  postAjax(`${BASE}/order/submitAudit.ajax`, { id })
+export const withdrawExpOrderAudit = (id: string | number) =>
+  postAjax(`${BASE}/order/withdrawAudit.ajax`, { id })
+export const costSettleExpOrder = (id: string | number) =>
+  postAjax(`${BASE}/order/costSettle.ajax`, { id })
+export const saveExpOrderReceiveBill = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/saveReceiveBill.ajax`, data)
+export const updateExpOrderShareRatio = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/shareRatio.ajax`, data)
+export const addExpOrderRelated = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/addRelated.ajax`, data)
+export const saveExpOrderFinish = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/saveFinish.ajax`, data)
+export const fetchExpOrderMoreInfo = (id: string | number) =>
+  postAjax(`${BASE}/order/moreInfo.ajax`, { id })
 export const fetchExpOrderStatusOptions = (p: Record<string, unknown> = {}) =>
   postAjax(`${BASE}/order/statusOptions.ajax`, p)
 export const exportExpOrders = (p: Record<string, unknown>) =>
   postAjax(`${BASE}/order/export.ajax`, p)
+
+// type=10 样品/测试流转
+export const sampleArriveExpOrder = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/sampleArrive.ajax`, data)
+export const samplePickExpOrder = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/samplePick.ajax`, data)
+export const testStartExpOrder = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/testStart.ajax`, data)
+export const testEndExpOrder = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/testEnd.ajax`, data)
+export const sampleReturnExpOrder = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/sampleReturn.ajax`, data)
+export const sampleShipExpOrder = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/sampleShip.ajax`, data)
+export const sampleRetainExpOrder = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/sampleRetain.ajax`, data)
+export const addVideoExpOrder = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/addVideo.ajax`, data)
+export const confirmDoneExpOrder = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/confirmDone.ajax`, data)
+export const retestExpOrder = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/retest.ajax`, data)
+
+// type=6/8 开票收款确认
+export const saveExpOrderInvoiceBill = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/saveInvoiceBill.ajax`, data)
+export const confirmExpOrderCustomer = (id: string | number) =>
+  postAjax(`${BASE}/order/confirmCustomer.ajax`, { id })
+export const confirmExpOrderPay = (id: string | number) =>
+  postAjax(`${BASE}/order/confirmPay.ajax`, { id })
+export const generateExpOrderAppointment = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/generateAppointment.ajax`, data)
+export const updateExpOrderBasic = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/updateBasic.ajax`, data)
+export const createExpSubOrder = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/createSubOrder.ajax`, data)
+
+// type=9 确认已下单 / 付款申请 / 上传付款发票
+export const confirmExpOrdered = (id: string | number) =>
+  postAjax(`${BASE}/order/confirmOrdered.ajax`, { id })
+export const subPayExpOrder = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/subPay.ajax`, data)
+export const uploadSubPayExpOrder = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/uploadSubPay.ajax`, data)
+export const uploadSubInvoiceExpOrder = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/uploadSubInvoice.ajax`, data)
 
 export const fetchGrabOrderList = (p: Record<string, unknown>) =>
   fetchDatatable(`${BASE}/grab/list.ajax`, p)

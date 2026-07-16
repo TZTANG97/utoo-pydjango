@@ -496,6 +496,24 @@ export const constantRoutes: RouteRecordRaw[] = [
         component: () => import('@/views/experiment/subcontract-sub-orders/index.vue'),
         meta: { title: '实验分包子订单' },
       },
+      {
+        path: 'experiment/order-detail/:id',
+        name: 'ExperimentOrderDetail',
+        component: () => import('@/views/experiment/order-detail/index.vue'),
+        meta: { title: '订单详情', hidden: true },
+      },
+      {
+        path: 'experiment/order-edit/:id',
+        name: 'ExperimentOrderEdit',
+        component: () => import('@/views/experiment/order-edit/index.vue'),
+        meta: { title: '编辑订单', hidden: true },
+      },
+      {
+        path: 'experiment/sub-order-create',
+        name: 'ExperimentSubOrderCreate',
+        component: () => import('@/views/experiment/sub-order-create/index.vue'),
+        meta: { title: '创建实验子订单', hidden: true },
+      },
       // 资金管理
       {
         path: 'fund/account',

@@ -37,7 +37,11 @@
 
     <el-table v-loading="loading" :data="rows" border stripe>
       <el-table-column type="index" width="55" label="#" align="center" />
-      <el-table-column prop="orderId" label="订单号" min-width="160" show-overflow-tooltip />
+      <el-table-column prop="orderId" label="订单号" min-width="160" show-overflow-tooltip>
+        <template #default="{ row }">
+          <el-button link type="primary" @click="openDetail(row)">{{ row.orderId }}</el-button>
+        </template>
+      </el-table-column>
       <el-table-column v-if="showParent" prop="parentOrderId" label="来源单号" min-width="140" show-overflow-tooltip />
       <el-table-column prop="companyName" label="客户" min-width="140" show-overflow-tooltip />
       <el-table-column prop="saleManager" label="销售经理" min-width="110" />
@@ -69,36 +73,12 @@
       />
     </div>
 
-    <el-drawer v-model="drawerVisible" title="订单详情" size="720px">
-      <template v-if="detail">
-        <el-descriptions :column="2" border>
-          <el-descriptions-item label="订单号">{{ detail.orderId }}</el-descriptions-item>
-          <el-descriptions-item label="状态">{{ detail.orderStatusLabel }}</el-descriptions-item>
-          <el-descriptions-item label="客户">{{ detail.companyName }}</el-descriptions-item>
-          <el-descriptions-item label="金额">{{ detail.totalPrice ?? '-' }}</el-descriptions-item>
-          <el-descriptions-item label="销售经理">{{ detail.saleManager }}</el-descriptions-item>
-          <el-descriptions-item label="销售员">{{ detail.saleUser }}</el-descriptions-item>
-          <el-descriptions-item label="来源单号">{{ detail.parentOrderId || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="创建时间">{{ detail.addTime }}</el-descriptions-item>
-          <el-descriptions-item label="备注" :span="2">{{ detail.mark || '-' }}</el-descriptions-item>
-        </el-descriptions>
-
-        <h4 class="section-title">子单明细</h4>
-        <el-table :data="(detail.children as Record<string, unknown>[]) || []" border size="small">
-          <el-table-column prop="childOrderId" label="子单号" min-width="130" show-overflow-tooltip />
-          <el-table-column prop="goodsName" label="产品" min-width="120" show-overflow-tooltip />
-          <el-table-column prop="goodsSpec" label="型号" min-width="100" />
-          <el-table-column prop="projectName" label="测试项目" min-width="120" show-overflow-tooltip />
-          <el-table-column prop="testUserName" label="测试员" width="100" />
-          <el-table-column prop="orderStatusLabel" label="状态" width="90" />
-        </el-table>
-      </template>
-    </el-drawer>
   </admin-page-card>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminPageCard from '@/components/AdminPageCard.vue'
 import {
@@ -107,11 +87,12 @@ import {
   fetchExpOrderList,
   fetchExpOrderStatusOptions,
   fetchGrabOrderList,
-  getExpOrderDetail,
   grabExpOrder,
 } from '@/api/experiment'
 import { useDataTable } from '@/composables/useDataTable'
 import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
+
+const router = useRouter()
 
 const props = withDefaults(
   defineProps<{
@@ -141,8 +122,6 @@ const filters = reactive({
   orderStatus: '',
 })
 const statusOpts = ref<Record<string, unknown>[]>([])
-const drawerVisible = ref(false)
-const detail = ref<Record<string, unknown> | null>(null)
 const exporting = ref(false)
 
 function listParams() {
@@ -170,14 +149,19 @@ function reload() {
   return load(listParams())
 }
 
-async function openDetail(row: Record<string, unknown>) {
-  const res = await getExpOrderDetail(String(row.id))
-  if (!isAjaxOk(res)) {
-    ElMessage.error(ajaxErrorMessage(res, '加载失败'))
-    return
+function openDetail(row: Record<string, unknown>) {
+  const ot = String(props.orderType)
+  const fromMap: Record<string, string> = {
+    '8': 'subcontract-orders',
+    '9': 'subcontract-sub-orders',
+    '10': 'sub-orders',
+    '6': 'orders',
   }
-  detail.value = (res.obj as Record<string, unknown>) || null
-  drawerVisible.value = true
+  router.push({
+    name: 'ExperimentOrderDetail',
+    params: { id: String(row.id) },
+    query: { from: fromMap[ot] || 'orders' },
+  })
 }
 
 async function handleGrab(row: Record<string, unknown>) {

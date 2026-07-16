@@ -1,0 +1,1378 @@
+<template>
+  <div v-loading="loading" class="detail-panel">
+    <template v-if="detail">
+      <header class="hero">
+        <div class="hero-main">
+          <button type="button" class="back-link" @click="emit('back')">← 返回列表</button>
+          <div class="hero-title-row">
+            <h2 class="hero-title">{{ titleText }}</h2>
+            <el-tag :type="statusTagType" effect="dark" round>{{ detail.orderStatusLabel }}</el-tag>
+            <el-tag v-if="isChildKind" type="info" effect="plain" round>{{ detail.confirmLabel }}</el-tag>
+          </div>
+          <p class="hero-sub">
+            <span class="mono">{{ detail.orderId }}</span>
+            <span class="dot">·</span>
+            {{ orderTypeLabel }}
+            <template v-if="detail.parentOrderId">
+              <span class="dot">·</span>
+              来源
+              <el-button
+                v-if="detail.parentPkId"
+                link
+                type="primary"
+                @click="goDetail(Number(detail.parentPkId))"
+              >
+                {{ detail.parentOrderId }}
+              </el-button>
+              <span v-else>{{ detail.parentOrderId }}</span>
+            </template>
+          </p>
+        </div>
+        <div class="hero-meta">
+          <div class="meta-item">
+            <span class="meta-label">总价</span>
+            <strong>{{ detail.totalPrice ?? '-' }}</strong>
+            <small>{{ detail.currencyLabel }}</small>
+          </div>
+          <div v-if="!isChildKind" class="meta-item">
+            <span class="meta-label">已开票 / 已收款</span>
+            <strong>{{ detail.invoiceAmount ?? 0 }} / {{ detail.receiveAmount ?? 0 }}</strong>
+          </div>
+        </div>
+      </header>
+
+      <section class="action-bar">
+        <el-button v-if="detail.canCancel" class="btn-warn" :loading="acting" @click="onCancel">
+          取消订单
+        </el-button>
+        <el-button v-if="detail.canEdit" plain @click="onEditOrder">编辑订单</el-button>
+        <el-button
+          v-if="detail.canSubmitAudit"
+          type="warning"
+          :loading="acting"
+          @click="onSubmitAudit"
+        >
+          提交审核
+        </el-button>
+        <el-button
+          v-if="detail.canWithdrawAudit"
+          plain
+          :loading="acting"
+          @click="onWithdrawAudit"
+        >
+          取消审核申请
+        </el-button>
+        <el-button
+          v-if="detail.canAudit"
+          type="success"
+          :loading="acting"
+          @click="doAudit(true)"
+        >
+          审核通过
+        </el-button>
+        <el-button
+          v-if="detail.canAudit"
+          type="danger"
+          :loading="acting"
+          @click="doAudit(false)"
+        >
+          驳回
+        </el-button>
+        <el-button
+          v-if="detail.canConfirmOrdered"
+          type="warning"
+          :loading="acting"
+          @click="onConfirmOrdered"
+        >
+          确认已下单
+        </el-button>
+        <el-button
+          v-if="detail.canAskPay"
+          type="warning"
+          :loading="acting"
+          @click="onSubPay('1')"
+        >
+          申请付款
+        </el-button>
+        <el-button
+          v-if="detail.canAuditPay"
+          type="success"
+          :loading="acting"
+          @click="onSubPay('2')"
+        >
+          付款审核通过
+        </el-button>
+        <el-button
+          v-if="detail.canAuditPay"
+          type="danger"
+          :loading="acting"
+          @click="onSubPay('3')"
+        >
+          付款申请驳回
+        </el-button>
+        <el-button
+          v-if="detail.canReAskPay"
+          type="warning"
+          :loading="acting"
+          @click="onSubPay('1')"
+        >
+          重新发起付款申请
+        </el-button>
+        <el-button
+          v-if="detail.canUploadPay"
+          type="warning"
+          :loading="acting"
+          @click="subPayBillVisible = true"
+        >
+          上传付款信息
+        </el-button>
+        <el-button
+          v-if="detail.canUploadInvoice"
+          type="warning"
+          :loading="acting"
+          @click="subInvoiceVisible = true"
+        >
+          上传发票信息
+        </el-button>
+        <el-button
+          v-if="detail.canCreateChild"
+          class="btn-accent"
+          @click="onCreateChild"
+        >
+          {{ orderType === '8' ? '创建实验分包子订单' : '创建实验子订单' }}
+        </el-button>
+        <el-button
+          v-if="detail.canShareRatio"
+          class="btn-accent"
+          @click="shareVisible = true"
+        >
+          调整分成比例
+        </el-button>
+        <el-button
+          v-if="detail.canCostSettle"
+          class="btn-accent"
+          :loading="acting"
+          @click="onCostSettle"
+        >
+          所有成本已结清
+        </el-button>
+        <el-button
+          v-if="detail.canInvoice"
+          type="warning"
+          :loading="acting"
+          @click="invoiceVisible = true"
+        >
+          开票
+        </el-button>
+        <el-button
+          v-if="detail.canReceiveBill"
+          type="warning"
+          :loading="acting"
+          @click="receiveVisible = true"
+        >
+          收款
+        </el-button>
+        <el-button
+          v-if="detail.canConfirmPay"
+          type="success"
+          :loading="acting"
+          @click="onConfirmPay"
+        >
+          确认付款
+        </el-button>
+        <el-button
+          v-if="detail.canConfirmCustomer"
+          type="primary"
+          :loading="acting"
+          @click="onConfirmCustomer"
+        >
+          已和客户沟通确认
+        </el-button>
+        <el-button
+          v-if="detail.canGenerateAppointment"
+          class="btn-accent"
+          :loading="acting"
+          @click="onGenerateAppointment"
+        >
+          生成预约单
+        </el-button>
+        <el-button
+          v-if="detail.canAddRelated"
+          class="btn-accent"
+          @click="relatedVisible = true"
+        >
+          增加关联订单
+        </el-button>
+        <!-- type=9/10 样品流转 -->
+        <el-button
+          v-if="detail.ypdhShow"
+          type="primary"
+          :loading="acting"
+          @click="openSampleAction('arrive')"
+        >
+          样品到货
+        </el-button>
+        <el-button
+          v-if="detail.videoShow"
+          plain
+          :loading="acting"
+          @click="openSampleAction('video')"
+        >
+          预约云视频
+        </el-button>
+        <el-button
+          v-if="detail.yplyShow"
+          type="primary"
+          :loading="acting"
+          @click="openSampleAction('pick')"
+        >
+          样品领用
+        </el-button>
+        <el-button
+          v-if="detail.kscsShow"
+          type="success"
+          :loading="acting"
+          @click="openSampleAction('testStart')"
+        >
+          开始测试
+        </el-button>
+        <el-button
+          v-if="detail.cswcShow"
+          type="success"
+          :loading="acting"
+          @click="openSampleAction('testEnd')"
+        >
+          测试完成
+        </el-button>
+        <el-button
+          v-if="detail.ypghShow"
+          type="primary"
+          :loading="acting"
+          @click="openSampleAction('return')"
+        >
+          样品归还
+        </el-button>
+        <el-button
+          v-if="detail.ypjhShow"
+          type="warning"
+          :loading="acting"
+          @click="openSampleAction('ship')"
+        >
+          样品寄回
+        </el-button>
+        <el-button
+          v-if="detail.yplcShow"
+          plain
+          :loading="acting"
+          @click="openSampleAction('retain')"
+        >
+          样品留存
+        </el-button>
+        <el-button
+          v-if="detail.yplcShow"
+          type="danger"
+          :loading="acting"
+          @click="openSampleAction('scrap')"
+        >
+          样品报废
+        </el-button>
+        <el-button
+          v-if="detail.ypfcShow"
+          plain
+          :loading="acting"
+          @click="openSampleAction('retest')"
+        >
+          样品复测
+        </el-button>
+        <el-button
+          v-if="detail.qrwcShow || detail.canConfirmDone"
+          type="success"
+          :loading="acting"
+          @click="openSampleAction('confirmDone')"
+        >
+          确认完成
+        </el-button>
+        <el-button v-if="detail.canSaveFinish" type="primary" :loading="acting" @click="onSaveFinish">
+          保存
+        </el-button>
+        <el-button @click="onMoreInfo">更多信息</el-button>
+      </section>
+
+      <section class="card">
+        <h3 class="card-title">基本信息</h3>
+        <el-descriptions :column="3" border class="soft-desc">
+          <el-descriptions-item label="订单类型">
+            {{ detail.testClassName || orderTypeLabel }}
+          </el-descriptions-item>
+          <el-descriptions-item label="客户名称">
+            {{ detail.customerName || detail.companyName || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="所属公司">{{ detail.supplierName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="制单人员">{{ detail.addUser || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="销售主管">{{ detail.saleManager }}</el-descriptions-item>
+          <el-descriptions-item :label="isChildKind ? '采购人员' : '销售人员'">
+            {{ detail.saleUser }}
+          </el-descriptions-item>
+          <el-descriptions-item v-if="isChildKind" label="测试人员">
+            {{ detail.testName || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="录入时间">{{ detail.addTime || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="下单时间">{{ detail.orderTime || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="预计收货">{{ detail.deliveryTime || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="!isChildKind" label="是否开票">
+            {{ detail.invoiceLabel || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item v-if="!isChildKind" label="成本结清">
+            {{ detail.costSettleLabel || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="云视频">{{ detail.isVideoLabel || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="收件人">{{ detail.shipUser || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="联系电话">{{ detail.shipPhone || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="寄回地址" :span="3">
+            {{ detail.shipAddress || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="备注" :span="3">
+            <span class="mark-text">{{ detail.mark || '-' }}</span>
+          </el-descriptions-item>
+        </el-descriptions>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h3 class="card-title">产品 / 测试明细</h3>
+          <span class="card-hint">共 {{ editChildren.length }} 行</span>
+        </div>
+        <el-table :data="editChildren" border stripe class="detail-table">
+          <el-table-column type="index" width="50" label="#" align="center" />
+          <el-table-column prop="childOrderId" label="子单号" min-width="130" show-overflow-tooltip />
+          <el-table-column prop="goodsName" label="产品名称" min-width="120" show-overflow-tooltip />
+          <el-table-column prop="goodsSpec" label="型号" min-width="100" show-overflow-tooltip />
+          <el-table-column prop="goodsBrand" label="品牌" min-width="90" show-overflow-tooltip />
+          <el-table-column prop="goodsCount" label="数量" width="70" align="center" />
+          <el-table-column prop="projectName" label="测试项目" min-width="120" show-overflow-tooltip />
+          <el-table-column prop="className" label="分类" min-width="100" show-overflow-tooltip />
+          <el-table-column prop="price" label="单价" width="90" align="right" />
+          <el-table-column
+            v-if="isChildKind"
+            prop="referencePrice"
+            label="测试金额"
+            width="90"
+            align="right"
+          />
+          <el-table-column prop="testUserName" label="测试员" width="100" />
+          <el-table-column v-if="isChildKind" prop="confirmLabel" label="确认" width="80" align="center" />
+          <el-table-column v-if="isChildKind" label="完成时间" width="170">
+            <template #default="{ row }">
+              <el-date-picker
+                v-if="detail.canSaveFinish"
+                v-model="row.finishTime"
+                type="datetime"
+                value-format="YYYY-MM-DD HH:mm:ss"
+                placeholder="完成时间"
+                style="width: 158px"
+              />
+              <span v-else>{{ row.finishTime || '-' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="orderStatusLabel" label="状态" width="100" />
+        </el-table>
+      </section>
+
+      <section v-if="linkedOrders.length" class="card">
+        <h3 class="card-title">{{ linkedTitle }}</h3>
+        <el-table :data="linkedOrders" border stripe class="detail-table">
+          <el-table-column type="index" width="50" label="#" align="center" />
+          <el-table-column prop="orderId" label="订单编号" min-width="160" show-overflow-tooltip>
+            <template #default="{ row }">
+              <el-button link type="primary" @click="goDetail(Number(row.id))">
+                {{ row.orderId }}
+              </el-button>
+            </template>
+          </el-table-column>
+          <el-table-column prop="saleManager" label="销售主管" width="100" />
+          <el-table-column prop="saleUser" label="采购人员" width="100" />
+          <el-table-column prop="orderTime" label="下单时间" width="110" />
+          <el-table-column prop="confirmLabel" label="确认状态" width="90" />
+          <el-table-column prop="orderStatusLabel" label="状态" width="120" />
+          <el-table-column prop="totalPrice" label="金额" width="90" align="right" />
+          <el-table-column label="操作" width="80">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="goDetail(Number(row.id))">查看</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </section>
+
+      <section class="card">
+        <h3 class="card-title">操作日志</h3>
+        <el-table :data="logs" border stripe class="detail-table" max-height="360">
+          <el-table-column prop="addTime" label="时间" width="170" />
+          <el-table-column prop="logUser" label="操作人" width="120" />
+          <el-table-column prop="logInfo" label="内容" min-width="240" show-overflow-tooltip />
+        </el-table>
+      </section>
+    </template>
+    <el-empty v-else-if="!loading" description="订单不存在或加载失败" />
+
+    <el-dialog v-model="shareVisible" title="调整分成比例" width="480px">
+      <el-input
+        v-model="shareText"
+        type="textarea"
+        :rows="5"
+        placeholder="填写分成说明，例如：毛利分成 A 30%；成本分成 B 100"
+      />
+      <template #footer>
+        <el-button @click="shareVisible = false">取消</el-button>
+        <el-button type="primary" :loading="acting" @click="onShareSave">提交</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="relatedVisible" title="增加关联订单" width="420px">
+      <el-form label-width="100px">
+        <el-form-item label="订单编号">
+          <el-input v-model="relatedOrderNo" placeholder="输入要关联的订单编号" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="relatedVisible = false">取消</el-button>
+        <el-button type="primary" :loading="acting" @click="onAddRelated">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="receiveVisible" title="收款" width="420px">
+      <el-form label-width="100px">
+        <el-form-item label="收款金额" required>
+          <el-input v-model="receiveMoney" placeholder="请输入收款金额" clearable />
+        </el-form-item>
+        <el-form-item label="收款日期">
+          <el-date-picker
+            v-model="receiveDate"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="默认今天"
+            clearable
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="receiveRemark" type="textarea" :rows="2" placeholder="可选" />
+        </el-form-item>
+        <p class="receive-hint">
+          成本已结清时，保存后将按订单分成配置自动分钱到相关账户。
+        </p>
+      </el-form>
+      <template #footer>
+        <el-button @click="receiveVisible = false">取消</el-button>
+        <el-button type="primary" :loading="acting" @click="onSaveReceive">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="invoiceVisible" title="开票" width="420px">
+      <el-form label-width="100px">
+        <el-form-item label="开票金额" required>
+          <el-input v-model="invoiceMoney" placeholder="请输入开票金额" clearable />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="invoiceRemark" type="textarea" :rows="2" placeholder="可选" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="invoiceVisible = false">取消</el-button>
+        <el-button type="primary" :loading="acting" @click="onSaveInvoice">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="subPayBillVisible" title="上传付款信息" width="420px">
+      <el-form label-width="100px">
+        <el-form-item label="付款金额" required>
+          <el-input v-model="subPayMoney" placeholder="请输入付款金额" clearable />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="subPayRemark" type="textarea" :rows="2" placeholder="可选" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="subPayBillVisible = false">取消</el-button>
+        <el-button type="primary" :loading="acting" @click="onUploadSubPay">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="subInvoiceVisible" title="上传发票信息" width="420px">
+      <el-form label-width="100px">
+        <el-form-item label="发票金额" required>
+          <el-input v-model="subInvoiceMoney" placeholder="请输入发票金额" clearable />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="subInvoiceRemark" type="textarea" :rows="2" placeholder="可选" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="subInvoiceVisible = false">取消</el-button>
+        <el-button type="primary" :loading="acting" @click="onUploadSubInvoice">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="sampleVisible" :title="sampleDialogTitle" width="720px">
+      <el-alert
+        v-if="sampleAction === 'arrive' || sampleAction === 'ship' || sampleAction === 'video'"
+        type="info"
+        :closable="false"
+        show-icon
+        class="sample-alert"
+        :title="sampleExtraHint"
+      />
+      <el-form v-if="sampleNeedExtra" label-width="90px" class="sample-extra">
+        <el-form-item v-if="sampleAction === 'arrive'" label="仓位">
+          <el-input v-model="sampleStorePos" placeholder="仓位编号（可选）" clearable />
+        </el-form-item>
+        <el-form-item v-if="sampleAction === 'ship'" label="快递单号">
+          <el-input v-model="sampleExpress" placeholder="快递单号（可选）" clearable />
+        </el-form-item>
+        <el-form-item v-if="sampleAction === 'video'" label="会议号" required>
+          <el-input v-model="sampleMeeting" placeholder="请输入云视频会议号" clearable />
+        </el-form-item>
+        <el-form-item v-if="sampleAction === 'confirmDone'" label="备注">
+          <el-input v-model="sampleConfirmMark" placeholder="可选" clearable />
+        </el-form-item>
+      </el-form>
+      <el-table
+        ref="sampleTableRef"
+        :data="sampleSelectableRows"
+        border
+        stripe
+        max-height="360"
+        @selection-change="onSampleSelectionChange"
+      >
+        <el-table-column type="selection" width="48" />
+        <el-table-column prop="childOrderId" label="子单号" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="goodsName" label="产品" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="orderStatusLabel" label="状态" width="100" />
+        <el-table-column prop="confirmLabel" label="确认" width="80" />
+      </el-table>
+      <template #footer>
+        <el-button @click="sampleVisible = false">取消</el-button>
+        <el-button type="primary" :loading="acting" @click="onSubmitSampleAction">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="moreVisible" title="更多信息" width="560px">
+      <el-descriptions v-if="moreInfo" :column="1" border>
+        <el-descriptions-item label="订单编号">{{ moreInfo.orderId }}</el-descriptions-item>
+        <el-descriptions-item label="客户">{{ moreInfo.customerName || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="所属公司">{{ moreInfo.supplierName || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="收件人 / 电话">
+          {{ moreInfo.shipUser || '-' }} / {{ moreInfo.shipPhone || '-' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="寄回地址">{{ moreInfo.shipAddress || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="分成信息">
+          {{ moreInfo.userScaleInfo || '-' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="备注">{{ moreInfo.mark || '-' }}</el-descriptions-item>
+      </el-descriptions>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, nextTick, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import type { ElTable } from 'element-plus'
+import {
+  addExpOrderRelated,
+  addVideoExpOrder,
+  auditExpOrder,
+  cancelExpOrder,
+  confirmDoneExpOrder,
+  confirmExpOrdered,
+  confirmExpOrderCustomer,
+  confirmExpOrderPay,
+  costSettleExpOrder,
+  fetchExpOrderMoreInfo,
+  generateExpOrderAppointment,
+  getExpOrderDetail,
+  retestExpOrder,
+  sampleArriveExpOrder,
+  samplePickExpOrder,
+  sampleRetainExpOrder,
+  sampleReturnExpOrder,
+  sampleShipExpOrder,
+  saveExpOrderFinish,
+  saveExpOrderInvoiceBill,
+  saveExpOrderReceiveBill,
+  submitExpOrderAudit,
+  subPayExpOrder,
+  testEndExpOrder,
+  testStartExpOrder,
+  updateExpOrderShareRatio,
+  uploadSubInvoiceExpOrder,
+  uploadSubPayExpOrder,
+  withdrawExpOrderAudit,
+} from '@/api/experiment'
+import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
+
+type SampleAction =
+  | 'arrive'
+  | 'video'
+  | 'pick'
+  | 'testStart'
+  | 'testEnd'
+  | 'return'
+  | 'ship'
+  | 'retain'
+  | 'scrap'
+  | 'retest'
+  | 'confirmDone'
+
+const props = defineProps<{ orderId: string | number }>()
+const emit = defineEmits<{ back: []; refreshed: [] }>()
+
+const router = useRouter()
+const loading = ref(false)
+const acting = ref(false)
+const detail = ref<Record<string, unknown> | null>(null)
+const editChildren = ref<Record<string, unknown>[]>([])
+const shareVisible = ref(false)
+const shareText = ref('')
+const relatedVisible = ref(false)
+const relatedOrderNo = ref('')
+const receiveVisible = ref(false)
+const receiveMoney = ref('')
+const receiveDate = ref('')
+const receiveRemark = ref('')
+const invoiceVisible = ref(false)
+const invoiceMoney = ref('')
+const invoiceRemark = ref('')
+const subPayBillVisible = ref(false)
+const subPayMoney = ref('')
+const subPayRemark = ref('')
+const subInvoiceVisible = ref(false)
+const subInvoiceMoney = ref('')
+const subInvoiceRemark = ref('')
+const moreVisible = ref(false)
+const moreInfo = ref<Record<string, unknown> | null>(null)
+
+const sampleVisible = ref(false)
+const sampleAction = ref<SampleAction>('arrive')
+const sampleTableRef = ref<InstanceType<typeof ElTable>>()
+const sampleSelected = ref<Record<string, unknown>[]>([])
+const sampleStorePos = ref('')
+const sampleExpress = ref('')
+const sampleMeeting = ref('')
+const sampleConfirmMark = ref('')
+
+const logs = computed(() => (detail.value?.logs as Record<string, unknown>[]) || [])
+const linkedOrders = computed(
+  () => (detail.value?.linkedOrders as Record<string, unknown>[]) || []
+)
+const orderType = computed(() => String(detail.value?.orderType || ''))
+const isChildKind = computed(() => ['9', '10'].includes(orderType.value))
+
+const orderTypeLabel = computed(() => {
+  const map: Record<string, string> = {
+    '6': '实验订单',
+    '10': '实验子订单',
+    '8': '实验分包订单',
+    '9': '实验分包子订单',
+  }
+  return map[orderType.value] || orderType.value || '-'
+})
+const titleText = computed(() => `${orderTypeLabel.value}详情`)
+const linkedTitle = computed(() =>
+  orderType.value === '8' ? '关联分包子订单' : '关联实验子订单'
+)
+
+const statusTagType = computed(() => {
+  const st = Number(detail.value?.orderStatus)
+  if (st === 0) return 'info'
+  if (st === 10) return 'danger'
+  if (st === 20) return 'warning'
+  if (st === 30 || st === 50) return 'success'
+  return 'primary'
+})
+
+const SAMPLE_TITLES: Record<SampleAction, string> = {
+  arrive: '样品到货',
+  video: '预约云视频',
+  pick: '样品领用',
+  testStart: '开始测试',
+  testEnd: '测试完成',
+  return: '样品归还',
+  ship: '样品寄回',
+  retain: '样品留存',
+  scrap: '样品报废',
+  retest: '样品复测',
+  confirmDone: '确认完成',
+}
+
+const sampleDialogTitle = computed(() => SAMPLE_TITLES[sampleAction.value] || '选择子单行')
+const sampleNeedExtra = computed(() =>
+  ['arrive', 'ship', 'video', 'confirmDone'].includes(sampleAction.value)
+)
+const sampleExtraHint = computed(() => {
+  if (sampleAction.value === 'arrive') return '请勾选已处理(状态2)的子行，可填仓位'
+  if (sampleAction.value === 'ship') return '请勾选已归还(状态41)的子行'
+  if (sampleAction.value === 'video') return '请勾选尚未预约会议的子行'
+  return ''
+})
+
+function childStatusNum(row: Record<string, unknown>) {
+  return Number(row.orderStatus ?? -1)
+}
+
+function childConfirmNum(row: Record<string, unknown>) {
+  return Number(row.isConfirm ?? 0)
+}
+
+const sampleSelectableRows = computed(() => {
+  const rows = editChildren.value
+  const act = sampleAction.value
+  return rows.filter((r) => {
+    const st = childStatusNum(r)
+    if (act === 'arrive') return st === 2
+    if (act === 'pick') return st === 36
+    if (act === 'testStart') return st === 37
+    if (act === 'testEnd') return st === 38
+    if (act === 'return') return st === 39
+    if (act === 'ship' || act === 'retain' || act === 'scrap') return st === 41
+    if (act === 'retest') return st === 39 || st === 41
+    if (act === 'confirmDone') return st >= 39 && childConfirmNum(r) === 0
+    if (act === 'video') return st >= 36 && Number(r.isMeeting ?? 0) === 0
+    return true
+  })
+})
+
+async function load() {
+  if (!props.orderId) return
+  loading.value = true
+  try {
+    const res = await getExpOrderDetail(props.orderId)
+    if (!isAjaxOk(res) || !res.obj) {
+      detail.value = null
+      editChildren.value = []
+      ElMessage.error(ajaxErrorMessage(res, '加载详情失败'))
+      return
+    }
+    detail.value = res.obj as Record<string, unknown>
+    const kids = (detail.value.children as Record<string, unknown>[]) || []
+    editChildren.value = kids.map((c) => ({ ...c }))
+    shareText.value = String(detail.value.userScaleInfo || detail.value.scaleInfo || '')
+  } finally {
+    loading.value = false
+  }
+}
+
+function goDetail(id: number) {
+  if (!id) return
+  router.push({ name: 'ExperimentOrderDetail', params: { id: String(id) } })
+}
+
+async function runAction(fn: () => Promise<void>) {
+  acting.value = true
+  try {
+    await fn()
+  } finally {
+    acting.value = false
+  }
+}
+
+async function doAudit(pass: boolean) {
+  await ElMessageBox.confirm(pass ? '确认审核通过？' : '确认驳回该订单？', '提示', {
+    type: pass ? 'warning' : 'error',
+  })
+  await runAction(async () => {
+    const res = await auditExpOrder({ id: props.orderId, pass })
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '操作失败'))
+      return
+    }
+    ElMessage.success(pass ? '审核通过' : '已驳回')
+    await load()
+    emit('refreshed')
+  })
+}
+
+async function onCancel() {
+  const { value } = await ElMessageBox.prompt('确认取消订单？可填写原因', '取消订单', {
+    confirmButtonText: '确定取消',
+    cancelButtonText: '返回',
+    inputPlaceholder: '取消原因（可选）',
+    type: 'warning',
+  }).catch(() => ({ value: null as string | null }))
+  if (value === null) return
+  await runAction(async () => {
+    const res = await cancelExpOrder({ id: props.orderId, remark: value || '' })
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '取消失败'))
+      return
+    }
+    ElMessage.success('订单已取消')
+    await load()
+    emit('refreshed')
+  })
+}
+
+async function onSubmitAudit() {
+  await ElMessageBox.confirm('确认提交审核？', '提交审核', { type: 'warning' })
+  await runAction(async () => {
+    const res = await submitExpOrderAudit(props.orderId)
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '提交失败'))
+      return
+    }
+    ElMessage.success('已提交审核')
+    await load()
+    emit('refreshed')
+  })
+}
+
+async function onWithdrawAudit() {
+  await ElMessageBox.confirm('确认取消审核申请？', '取消审核', { type: 'warning' })
+  await runAction(async () => {
+    const res = await withdrawExpOrderAudit(props.orderId)
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '操作失败'))
+      return
+    }
+    ElMessage.success('已取消审核申请')
+    await load()
+    emit('refreshed')
+  })
+}
+
+async function onCostSettle() {
+  await ElMessageBox.confirm(
+    '确认标记「所有成本已结清」？若已有收款将按分成配置补分钱。',
+    '成本结清',
+    { type: 'warning' }
+  )
+  await runAction(async () => {
+    const res = await costSettleExpOrder(props.orderId)
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '操作失败'))
+      return
+    }
+    ElMessage.success(String(res.resMsg || '已结清'))
+    await load()
+    emit('refreshed')
+  })
+}
+
+async function onSaveReceive() {
+  const money = Number(receiveMoney.value)
+  if (!Number.isFinite(money) || money <= 0) {
+    ElMessage.warning('请输入有效收款金额')
+    return
+  }
+  await runAction(async () => {
+    const res = await saveExpOrderReceiveBill({
+      id: props.orderId,
+      money,
+      billDate: receiveDate.value || undefined,
+      logInfo: receiveRemark.value.trim() || '录入收款',
+    })
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '收款失败'))
+      return
+    }
+    ElMessage.success(String(res.resMsg || '收款成功'))
+    receiveVisible.value = false
+    receiveMoney.value = ''
+    receiveDate.value = ''
+    receiveRemark.value = ''
+    await load()
+    emit('refreshed')
+  })
+}
+
+async function onShareSave() {
+  await runAction(async () => {
+    const res = await updateExpOrderShareRatio({
+      id: props.orderId,
+      scaleInfo: shareText.value,
+    })
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '保存失败'))
+      return
+    }
+    ElMessage.success('分成比例已更新')
+    shareVisible.value = false
+    await load()
+    emit('refreshed')
+  })
+}
+
+async function onAddRelated() {
+  await runAction(async () => {
+    const res = await addExpOrderRelated({
+      id: props.orderId,
+      relatedOrderNo: relatedOrderNo.value.trim(),
+    })
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '关联失败'))
+      return
+    }
+    ElMessage.success('关联成功')
+    relatedVisible.value = false
+    relatedOrderNo.value = ''
+    await load()
+    emit('refreshed')
+  })
+}
+
+async function onSaveFinish() {
+  await runAction(async () => {
+    const res = await saveExpOrderFinish({
+      id: props.orderId,
+      items: editChildren.value.map((c) => ({
+        id: c.id,
+        finishTime: c.finishTime || '',
+      })),
+    })
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '保存失败'))
+      return
+    }
+    ElMessage.success('保存成功')
+    await load()
+    emit('refreshed')
+  })
+}
+
+async function onMoreInfo() {
+  const res = await fetchExpOrderMoreInfo(props.orderId)
+  if (!isAjaxOk(res) || !res.obj) {
+    ElMessage.error(ajaxErrorMessage(res, '加载失败'))
+    return
+  }
+  moreInfo.value = res.obj as Record<string, unknown>
+  moreVisible.value = true
+}
+
+function onEditOrder() {
+  router.push({
+    name: 'ExperimentOrderEdit',
+    params: { id: String(props.orderId) },
+  })
+}
+
+function onCreateChild() {
+  router.push({
+    name: 'ExperimentSubOrderCreate',
+    query: { saleOrderId: String(props.orderId) },
+  })
+}
+
+async function onSaveInvoice() {
+  const money = Number(invoiceMoney.value)
+  if (!Number.isFinite(money) || money <= 0) {
+    ElMessage.warning('请输入有效开票金额')
+    return
+  }
+  await runAction(async () => {
+    const res = await saveExpOrderInvoiceBill({
+      id: props.orderId,
+      money,
+      logInfo: invoiceRemark.value.trim() || '录入开票',
+    })
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '开票失败'))
+      return
+    }
+    ElMessage.success(String(res.resMsg || '开票成功'))
+    invoiceVisible.value = false
+    invoiceMoney.value = ''
+    invoiceRemark.value = ''
+    await load()
+    emit('refreshed')
+  })
+}
+
+async function onConfirmPay() {
+  await ElMessageBox.confirm('确认将线上未结清差额记为已收款？', '确认付款', { type: 'warning' })
+  await runAction(async () => {
+    const res = await confirmExpOrderPay(props.orderId)
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '确认失败'))
+      return
+    }
+    ElMessage.success(String(res.resMsg || '已确认付款'))
+    await load()
+    emit('refreshed')
+  })
+}
+
+async function onConfirmOrdered() {
+  await ElMessageBox.confirm('确认已向厂家/分包方下单？（附件可后续补充）', '确认已下单', {
+    type: 'warning',
+  })
+  await runAction(async () => {
+    const res = await confirmExpOrdered(props.orderId)
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '确认失败'))
+      return
+    }
+    ElMessage.success(String(res.resMsg || '已确认下单'))
+    await load()
+    emit('refreshed')
+  })
+}
+
+async function onSubPay(type: '1' | '2' | '3') {
+  const titles: Record<string, string> = {
+    '1': '确认提交付款申请？',
+    '2': '确认付款审核通过？',
+    '3': '确认驳回付款申请？',
+  }
+  await ElMessageBox.confirm(titles[type] || '确认操作？', '付款申请', {
+    type: type === '3' ? 'error' : 'warning',
+  })
+  await runAction(async () => {
+    const res = await subPayExpOrder({ id: props.orderId, type })
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '操作失败'))
+      return
+    }
+    ElMessage.success(String(res.resMsg || '操作成功'))
+    await load()
+    emit('refreshed')
+  })
+}
+
+async function onUploadSubPay() {
+  const money = Number(subPayMoney.value)
+  if (!Number.isFinite(money) || money <= 0) {
+    ElMessage.warning('请输入有效付款金额')
+    return
+  }
+  await runAction(async () => {
+    const res = await uploadSubPayExpOrder({
+      id: props.orderId,
+      money,
+      logInfo: subPayRemark.value.trim() || '上传付款信息',
+    })
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '上传失败'))
+      return
+    }
+    ElMessage.success(String(res.resMsg || '上传成功'))
+    subPayBillVisible.value = false
+    subPayMoney.value = ''
+    subPayRemark.value = ''
+    await load()
+    emit('refreshed')
+  })
+}
+
+async function onUploadSubInvoice() {
+  const money = Number(subInvoiceMoney.value)
+  if (!Number.isFinite(money) || money <= 0) {
+    ElMessage.warning('请输入有效发票金额')
+    return
+  }
+  await runAction(async () => {
+    const res = await uploadSubInvoiceExpOrder({
+      id: props.orderId,
+      money,
+      logInfo: subInvoiceRemark.value.trim() || '上传发票信息',
+    })
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '上传失败'))
+      return
+    }
+    ElMessage.success(String(res.resMsg || '上传成功'))
+    subInvoiceVisible.value = false
+    subInvoiceMoney.value = ''
+    subInvoiceRemark.value = ''
+    await load()
+    emit('refreshed')
+  })
+}
+
+async function onConfirmCustomer() {
+  await ElMessageBox.confirm('确认已和客户沟通？订单将进入已审核状态。', '客户确认', {
+    type: 'warning',
+  })
+  await runAction(async () => {
+    const res = await confirmExpOrderCustomer(props.orderId)
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '确认失败'))
+      return
+    }
+    ElMessage.success(String(res.resMsg || '已确认'))
+    await load()
+    emit('refreshed')
+  })
+}
+
+async function onGenerateAppointment() {
+  await ElMessageBox.confirm('确认生成预约单？', '生成预约单', { type: 'warning' })
+  await runAction(async () => {
+    const res = await generateExpOrderAppointment({ id: props.orderId })
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '生成失败'))
+      return
+    }
+    ElMessage.success(String(res.resMsg || '已生成预约单'))
+    await load()
+    emit('refreshed')
+  })
+}
+
+function onSampleSelectionChange(rows: Record<string, unknown>[]) {
+  sampleSelected.value = rows
+}
+
+async function openSampleAction(act: SampleAction) {
+  sampleAction.value = act
+  sampleSelected.value = []
+  sampleStorePos.value = ''
+  sampleExpress.value = ''
+  sampleMeeting.value = ''
+  sampleConfirmMark.value = ''
+  sampleVisible.value = true
+  await nextTick()
+  sampleTableRef.value?.clearSelection()
+}
+
+async function onSubmitSampleAction() {
+  const ids = sampleSelected.value.map((r) => r.id).filter((id) => id != null)
+  if (!ids.length) {
+    ElMessage.warning('请至少选择一行')
+    return
+  }
+  if (sampleAction.value === 'video' && !sampleMeeting.value.trim()) {
+    ElMessage.warning('请填写会议号')
+    return
+  }
+  const act = sampleAction.value
+  await runAction(async () => {
+    let res
+    const base = { id: props.orderId, childIds: ids }
+    if (act === 'arrive') {
+      res = await sampleArriveExpOrder({ ...base, storePositionId: sampleStorePos.value })
+    } else if (act === 'pick') {
+      res = await samplePickExpOrder(base)
+    } else if (act === 'testStart') {
+      res = await testStartExpOrder(base)
+    } else if (act === 'testEnd') {
+      res = await testEndExpOrder(base)
+    } else if (act === 'return') {
+      res = await sampleReturnExpOrder(base)
+    } else if (act === 'ship') {
+      res = await sampleShipExpOrder({ ...base, expressNo: sampleExpress.value })
+    } else if (act === 'retain') {
+      res = await sampleRetainExpOrder({ ...base, scrap: false })
+    } else if (act === 'scrap') {
+      res = await sampleRetainExpOrder({ ...base, scrap: true })
+    } else if (act === 'retest') {
+      res = await retestExpOrder(base)
+    } else if (act === 'video') {
+      res = await addVideoExpOrder({ ...base, meetingNum: sampleMeeting.value.trim() })
+    } else {
+      res = await confirmDoneExpOrder({ ...base, mark: sampleConfirmMark.value })
+    }
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '操作失败'))
+      return
+    }
+    ElMessage.success(String(res.resMsg || '操作成功'))
+    sampleVisible.value = false
+    await load()
+    emit('refreshed')
+  })
+}
+
+watch(
+  () => props.orderId,
+  () => {
+    load()
+  },
+  { immediate: true }
+)
+
+defineExpose({ reload: load })
+</script>
+
+<style scoped lang="scss">
+.detail-panel {
+  --ink: #1f2a24;
+  --muted: #5f7068;
+  --line: #d7e0db;
+  --cream: #f4f7f5;
+  --accent: #c45c26;
+  --accent-soft: #f3e0d4;
+  --sea: #1f6f5b;
+  min-height: 240px;
+  color: var(--ink);
+}
+
+.hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 20px;
+  margin-bottom: 14px;
+  border-radius: 14px;
+  background:
+    radial-gradient(1200px 180px at 0% 0%, rgba(31, 111, 91, 0.12), transparent 55%),
+    linear-gradient(135deg, #f7faf8 0%, #eef4f1 100%);
+  border: 1px solid var(--line);
+}
+
+.back-link {
+  border: 0;
+  background: transparent;
+  color: var(--sea);
+  padding: 0;
+  margin-bottom: 8px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.back-link:hover {
+  text-decoration: underline;
+}
+
+.hero-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.hero-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.hero-sub {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--ink);
+}
+.dot {
+  margin: 0 6px;
+  opacity: 0.45;
+}
+
+.hero-meta {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  min-width: 200px;
+}
+.meta-item {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(215, 224, 219, 0.9);
+}
+.meta-label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.meta-item strong {
+  font-size: 18px;
+  margin-right: 6px;
+}
+.meta-item small {
+  color: var(--muted);
+}
+
+.action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  border: 1px solid #e8c9b4;
+}
+
+.btn-accent {
+  --el-button-bg-color: var(--accent);
+  --el-button-border-color: var(--accent);
+  --el-button-text-color: #fff;
+  --el-button-hover-bg-color: #a84c1d;
+  --el-button-hover-border-color: #a84c1d;
+  --el-button-hover-text-color: #fff;
+}
+.btn-warn {
+  --el-button-bg-color: #b45309;
+  --el-button-border-color: #b45309;
+  --el-button-text-color: #fff;
+  --el-button-hover-bg-color: #92400e;
+  --el-button-hover-border-color: #92400e;
+  --el-button-hover-text-color: #fff;
+}
+
+.card {
+  margin-bottom: 16px;
+  padding: 16px 18px 18px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 0 rgba(31, 42, 36, 0.03);
+}
+.card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.card-title {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--sea);
+}
+.card-hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+.mark-text {
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+.receive-hint {
+  margin: 0;
+  padding-left: 100px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.sample-alert {
+  margin-bottom: 12px;
+}
+.sample-extra {
+  margin-bottom: 8px;
+}
+
+.soft-desc :deep(.el-descriptions__label) {
+  width: 110px;
+  background: var(--cream) !important;
+  color: var(--muted);
+}
+.detail-table :deep(th.el-table__cell) {
+  background: var(--cream);
+  color: var(--muted);
+  font-weight: 600;
+}
+
+@media (max-width: 900px) {
+  .hero {
+    flex-direction: column;
+  }
+  .hero-meta {
+    min-width: 0;
+  }
+}
+</style>
