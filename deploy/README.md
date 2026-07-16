@@ -10,24 +10,28 @@
 ## 发布流程
 
 1. 推送到 `dev` 或 `prod`
-2. GitLab → **CI/CD → Pipelines**
-3. 手动点 **`build_frontend_*`** → 成功后再点 **`deploy_*`**
+2. GitLab → **CI/CD → Pipelines**（应看到 **4 个 stages**，不是 2 个）
+3. 手动 Play **`build_frontend_*`**
+4. 手动 Play **`deploy_services_*`**（6 上游）
+5. 其后 **`deploy_gateway_*` → `deploy_static_*`** 会自动接着跑
 
-| Job | 作用 |
-|-----|------|
-| `build_frontend_dev/prod` | `npm ci && npm run build`（`qd_test_front_v3` + `qd_admin_front`） |
-| `deploy_dev/prod` | 同步 `qd_libs_common` → 6 上游 + 网关（pip / check / restart / `/health`）→ 静态目录 |
+| Stage | Job | 作用 |
+|-------|-----|------|
+| `build` | `build_frontend_*` | 构建双前端 dist |
+| `deploy_services` | `deploy_services_*` | `qd_libs_common` + 6 上游（auth/order/payment/wx/asset/platform） |
+| `deploy_gateway` | `deploy_gateway_*` | 网关 `qd-gateway` |
+| `deploy_static` | `deploy_static_*` | `/var/www/utoo-c`、`/var/www/utoo-admin` |
 
-部署顺序（脚本内写死）：
+`deploy_services` 内顺序：
 
-1. `qd_svc_auth` → `qd-auth` `:18081`
-2. `qd_svc_order` → `qd-order` `:18082`
-3. `qd_svc_payment` → `qd-payment` `:18084`
-4. `qd_svc_wx` → `qd-wx` `:18087`
-5. `qd_svc_admin_asset` → `qd-admin-asset` `:18090`
-6. `qd_svc_admin_platform` → `qd-admin-platform` `:18091`
-7. `qd_test_server_django` → `qd-gateway` `:18083`
-8. 静态：`/var/www/utoo-c`、`/var/www/utoo-admin`
+1. `qd_svc_auth` `:18081`
+2. `qd_svc_order` `:18082`
+3. `qd_svc_payment` `:18084`
+4. `qd_svc_wx` `:18087`
+5. `qd_svc_admin_asset` `:18090`
+6. `qd_svc_admin_platform` `:18091`
+
+若 Pipeline 显示 **stuck**：没有 tag=`utoo-windows` 的 Runner，先注册 Runner，不是 stages 少了。
 
 不发：`qd_svc_entry` / `qd_svc_invoice`（已废弃）。`qd_worker` 未进流水线（支付异步队列需要时再加）。
 

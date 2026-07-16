@@ -1,10 +1,16 @@
-# .gitlab-ci.yml — Utoo 微服务独立发版（与 EMKU 无关，勿共用 emku-windows Runner）
-# Windows Shell Runner + SSH → Linux systemd；不做蓝绿。
-# 一次 deploy：6 上游 + 网关 + 双前端（与本地 SVC_* / start-ms-dev 一致）。
-# Runner tag 固定：utoo-windows（需为本项目单独注册）。
+# .gitlab-ci.yml — Utoo 微服务独立发版（与 EMKU 无关）
+# Runner tag：utoo-windows（须为本项目单独注册，否则会 stuck）
+#
+# Stages（4 段，对应微服务发版步骤）：
+#   build           → 构建双前端
+#   deploy_services → qd_libs_common + 6 上游微服务
+#   deploy_gateway  → 网关（SVC_* 转发）
+#   deploy_static   → C 端 / 管理后台静态
 stages:
   - build
-  - deploy
+  - deploy_services
+  - deploy_gateway
+  - deploy_static
 
 variables:
   GIT_STRATEGY: fetch
@@ -12,32 +18,23 @@ variables:
   UTOO_REMOTE_ROOT: "/opt/utoo"
   UTOO_STATIC_C: "/var/www/utoo-c"
   UTOO_STATIC_ADMIN: "/var/www/utoo-admin"
-  # 部署单元（脚本内写死同序；此处仅作文档提示）
-  UTOO_DEPLOY_UNITS: "qd-auth,qd-order,qd-payment,qd-wx,qd-admin-asset,qd-admin-platform,qd-gateway"
 
-# 勿在 GitLab Variables 配置多行 SSH_KNOWN_HOSTS（Windows PowerShell executor 易 ParserError）。
-# 脚本在 known_hosts 为空时会自动 ssh-keyscan。
 .windows_ci_clear_ssh_known_hosts:
   variables:
     SSH_KNOWN_HOSTS: ""
     SSH_KNOWN_HOSTS_DEV: ""
     SSH_KNOWN_HOSTS_PROD: ""
 
-push_record:
-  stage: build
-  only:
-    - dev
-    - prod
-  except:
-    - merge_requests
-  script:
-    - 'echo "push record only - $CI_COMMIT_SHORT_SHA by $GITLAB_USER_LOGIN"'
+.utoo_windows_runner:
+  extends: .windows_ci_clear_ssh_known_hosts
+  tags:
+    - utoo-windows
+
+# --- build ---
 
 build_frontend_dev:
-  extends: .windows_ci_clear_ssh_known_hosts
+  extends: .utoo_windows_runner
   stage: build
-  tags:
-    - utoo-windows
   only:
     - dev
   except:
@@ -50,13 +47,11 @@ build_frontend_dev:
     paths:
       - qd_test_front_v3/dist/
       - qd_admin_front/dist/
-    expire_in: 1 hour
+    expire_in: 2 hours
 
 build_frontend_prod:
-  extends: .windows_ci_clear_ssh_known_hosts
+  extends: .utoo_windows_runner
   stage: build
-  tags:
-    - utoo-windows
   only:
     - prod
   except:
@@ -69,40 +64,124 @@ build_frontend_prod:
     paths:
       - qd_test_front_v3/dist/
       - qd_admin_front/dist/
-    expire_in: 1 hour
+    expire_in: 2 hours
 
-deploy_dev:
-  extends: .windows_ci_clear_ssh_known_hosts
-  stage: deploy
-  tags:
-    - utoo-windows
+# --- deploy_services：6 上游 ---
+
+deploy_services_dev:
+  extends: .utoo_windows_runner
+  stage: deploy_services
   only:
     - dev
   except:
     - merge_requests
   variables:
     UTOO_DEPLOY_TARGET: dev
-  dependencies:
+    UTOO_DEPLOY_PHASE: libs_services
+  needs:
     - build_frontend_dev
   when: manual
   allow_failure: false
   script:
     - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
 
-deploy_prod:
-  extends: .windows_ci_clear_ssh_known_hosts
-  stage: deploy
-  tags:
-    - utoo-windows
+deploy_services_prod:
+  extends: .utoo_windows_runner
+  stage: deploy_services
   only:
     - prod
   except:
     - merge_requests
   variables:
     UTOO_DEPLOY_TARGET: prod
-  dependencies:
+    UTOO_DEPLOY_PHASE: libs_services
+  needs:
     - build_frontend_prod
   when: manual
+  allow_failure: false
+  script:
+    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
+
+# --- deploy_gateway ---
+
+deploy_gateway_dev:
+  extends: .utoo_windows_runner
+  stage: deploy_gateway
+  only:
+    - dev
+  except:
+    - merge_requests
+  variables:
+    UTOO_DEPLOY_TARGET: dev
+    UTOO_DEPLOY_PHASE: gateway
+  needs:
+    - job: deploy_services_dev
+      artifacts: false
+    - job: build_frontend_dev
+      artifacts: true
+  when: on_success
+  allow_failure: false
+  script:
+    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
+
+deploy_gateway_prod:
+  extends: .utoo_windows_runner
+  stage: deploy_gateway
+  only:
+    - prod
+  except:
+    - merge_requests
+  variables:
+    UTOO_DEPLOY_TARGET: prod
+    UTOO_DEPLOY_PHASE: gateway
+  needs:
+    - job: deploy_services_prod
+      artifacts: false
+    - job: build_frontend_prod
+      artifacts: true
+  when: on_success
+  allow_failure: false
+  script:
+    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
+
+# --- deploy_static ---
+
+deploy_static_dev:
+  extends: .utoo_windows_runner
+  stage: deploy_static
+  only:
+    - dev
+  except:
+    - merge_requests
+  variables:
+    UTOO_DEPLOY_TARGET: dev
+    UTOO_DEPLOY_PHASE: static
+  needs:
+    - job: deploy_gateway_dev
+      artifacts: false
+    - job: build_frontend_dev
+      artifacts: true
+  when: on_success
+  allow_failure: false
+  script:
+    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
+
+deploy_static_prod:
+  extends: .utoo_windows_runner
+  stage: deploy_static
+  only:
+    - prod
+  except:
+    - merge_requests
+  variables:
+    UTOO_DEPLOY_TARGET: prod
+    UTOO_DEPLOY_PHASE: static
+  needs:
+    - job: deploy_gateway_prod
+      artifacts: false
+    - job: build_frontend_prod
+      artifacts: true
+  when: on_success
   allow_failure: false
   script:
     - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"

@@ -100,18 +100,28 @@ $RemoteRoot = Normalize-DeployLinuxPath (Get-CiEnv 'UTOO_REMOTE_ROOT') '/opt/uto
 $StaticC = Normalize-DeployLinuxPath (Get-CiEnv 'UTOO_STATIC_C') '/var/www/utoo-c'
 $StaticAdmin = Normalize-DeployLinuxPath (Get-CiEnv 'UTOO_STATIC_ADMIN') '/var/www/utoo-admin'
 
-# 顺序：先 6 上游，再网关（与 start-ms-dev / SVC_* 一致）
-$DeployUnits = @(
+# 上游微服务（不含网关）
+$UpstreamUnits = @(
 	@{ Dir = 'qd_svc_auth'; Service = 'qd-auth'; Port = 18081 },
 	@{ Dir = 'qd_svc_order'; Service = 'qd-order'; Port = 18082 },
 	@{ Dir = 'qd_svc_payment'; Service = 'qd-payment'; Port = 18084 },
 	@{ Dir = 'qd_svc_wx'; Service = 'qd-wx'; Port = 18087 },
 	@{ Dir = 'qd_svc_admin_asset'; Service = 'qd-admin-asset'; Port = 18090 },
-	@{ Dir = 'qd_svc_admin_platform'; Service = 'qd-admin-platform'; Port = 18091 },
-	@{ Dir = 'qd_test_server_django'; Service = 'qd-gateway'; Port = 18083 }
+	@{ Dir = 'qd_svc_admin_platform'; Service = 'qd-admin-platform'; Port = 18091 }
 )
+$GatewayUnit = @{ Dir = 'qd_test_server_django'; Service = 'qd-gateway'; Port = 18083 }
 
-Write-Host ("[deploy] target={0} host={1}@{2} root={3} units={4}" -f $deployTarget, $DeployUser, $deployHost, $RemoteRoot, $DeployUnits.Count)
+# libs_services | gateway | static | all（默认 all，兼容旧单 Job）
+$DeployPhase = (Get-CiEnv 'UTOO_DEPLOY_PHASE')
+if ([string]::IsNullOrWhiteSpace($DeployPhase)) { $DeployPhase = 'all' }
+$DeployPhase = $DeployPhase.Trim().ToLowerInvariant()
+$validPhases = @('libs_services', 'gateway', 'static', 'all')
+if ($validPhases -notcontains $DeployPhase) {
+	Write-Error ("Invalid UTOO_DEPLOY_PHASE={0}. Use: {1}" -f $DeployPhase, ($validPhases -join ', '))
+	exit 1
+}
+
+Write-Host ("[deploy] target={0} host={1}@{2} root={3} phase={4}" -f $deployTarget, $DeployUser, $deployHost, $RemoteRoot, $DeployPhase)
 
 # --- SSH key / known_hosts ---
 $keyFile = Join-Path $env:TEMP ("gitlab_ci_utoo_key_{0}" -f [Guid]::NewGuid().ToString('N'))
@@ -250,33 +260,42 @@ try {
 		Invoke-RemoteSudo $healthWait
 	}
 
-	# 0) shared lib first（各服务 settings 依赖上级 qd_libs_common）
-	Write-Host '[deploy] sync qd_libs_common...'
-	Sync-DirToRemote `
-		-LocalDir (Join-Path $root 'qd_libs_common') `
-		-RemoteDir ("{0}/qd_libs_common" -f $RemoteRoot) `
-		-Exclude @('.venv', '__pycache__', '*.pyc', '.git', '*.egg-info') `
-		-PreserveNames @('.keep')
+	$doLibsServices = ($DeployPhase -eq 'all' -or $DeployPhase -eq 'libs_services')
+	$doGateway = ($DeployPhase -eq 'all' -or $DeployPhase -eq 'gateway')
+	$doStatic = ($DeployPhase -eq 'all' -or $DeployPhase -eq 'static')
 
-	Invoke-RemoteSudo ("mkdir -p {0}/config" -f $RemoteRoot)
-
-	# 1) 上游微服务 → 网关
-	foreach ($unit in $DeployUnits) {
-		Deploy-DjangoUnit -Unit $unit
+	if ($doLibsServices) {
+		Write-Host '[deploy] sync qd_libs_common...'
+		Sync-DirToRemote `
+			-LocalDir (Join-Path $root 'qd_libs_common') `
+			-RemoteDir ("{0}/qd_libs_common" -f $RemoteRoot) `
+			-Exclude @('.venv', '__pycache__', '*.pyc', '.git', '*.egg-info') `
+			-PreserveNames @('.keep')
+		Invoke-RemoteSudo ("mkdir -p {0}/config" -f $RemoteRoot)
+		foreach ($unit in $UpstreamUnits) {
+			Deploy-DjangoUnit -Unit $unit
+		}
+		Write-Host '[deploy] phase libs_services done.'
 	}
 
-	# 2) frontends（全部后端健康后再换静态）
-	$cDist = Join-Path $root 'qd_test_front_v3/dist'
-	$aDist = Join-Path $root 'qd_admin_front/dist'
-	if (-not (Test-Path -LiteralPath $cDist)) { Write-Error "Missing $cDist — run build_frontend_* first"; exit 1 }
-	if (-not (Test-Path -LiteralPath $aDist)) { Write-Error "Missing $aDist — run build_frontend_* first"; exit 1 }
+	if ($doGateway) {
+		Deploy-DjangoUnit -Unit $GatewayUnit
+		Write-Host '[deploy] phase gateway done.'
+	}
 
-	Write-Host '[deploy] sync C-front static...'
-	Sync-DirToRemote -LocalDir $cDist -RemoteDir $StaticC -Exclude @() -PreserveNames @('.keep')
-	Write-Host '[deploy] sync admin-front static...'
-	Sync-DirToRemote -LocalDir $aDist -RemoteDir $StaticAdmin -Exclude @() -PreserveNames @('.keep')
+	if ($doStatic) {
+		$cDist = Join-Path $root 'qd_test_front_v3/dist'
+		$aDist = Join-Path $root 'qd_admin_front/dist'
+		if (-not (Test-Path -LiteralPath $cDist)) { Write-Error "Missing $cDist — run build_frontend_* first"; exit 1 }
+		if (-not (Test-Path -LiteralPath $aDist)) { Write-Error "Missing $aDist — run build_frontend_* first"; exit 1 }
+		Write-Host '[deploy] sync C-front static...'
+		Sync-DirToRemote -LocalDir $cDist -RemoteDir $StaticC -Exclude @() -PreserveNames @('.keep')
+		Write-Host '[deploy] sync admin-front static...'
+		Sync-DirToRemote -LocalDir $aDist -RemoteDir $StaticAdmin -Exclude @() -PreserveNames @('.keep')
+		Write-Host '[deploy] phase static done.'
+	}
 
-	Write-Host 'utoo microservice deploy finished OK.'
+	Write-Host ("utoo deploy phase={0} finished OK." -f $DeployPhase)
 } finally {
 	Remove-Item -LiteralPath $keyFile -Force -ErrorAction SilentlyContinue
 	Remove-Item -LiteralPath $knownHostsFile -Force -ErrorAction SilentlyContinue
