@@ -1,7 +1,7 @@
-# .gitlab-ci.yml — utoo 微服务发版（手动发布，systemd 裸进程）
-# 对齐 factoryproductsystem2：Windows Shell Runner + SSH；不做蓝绿。
+# .gitlab-ci.yml — Utoo 微服务独立发版（与 EMKU 无关，勿共用 emku-windows Runner）
+# Windows Shell Runner + SSH → Linux systemd；不做蓝绿。
 # 一次 deploy：6 上游 + 网关 + 双前端（与本地 SVC_* / start-ms-dev 一致）。
-# Runner tag：与工厂 EMKU 共用 Windows Runner（emku-windows）。
+# Runner tag 固定：utoo-windows（需为本项目单独注册）。
 stages:
   - build
   - deploy
@@ -37,7 +37,7 @@ build_frontend_dev:
   extends: .windows_ci_clear_ssh_known_hosts
   stage: build
   tags:
-    - emku-windows
+    - utoo-windows
   only:
     - dev
   except:
@@ -56,7 +56,7 @@ build_frontend_prod:
   extends: .windows_ci_clear_ssh_known_hosts
   stage: build
   tags:
-    - emku-windows
+    - utoo-windows
   only:
     - prod
   except:
@@ -75,7 +75,7 @@ deploy_dev:
   extends: .windows_ci_clear_ssh_known_hosts
   stage: deploy
   tags:
-    - emku-windows
+    - utoo-windows
   only:
     - dev
   except:
@@ -93,7 +93,7 @@ deploy_prod:
   extends: .windows_ci_clear_ssh_known_hosts
   stage: deploy
   tags:
-    - emku-windows
+    - utoo-windows
   only:
     - prod
   except:

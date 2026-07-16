@@ -1,7 +1,9 @@
-# utoo GitLab CI/CD（微服务模式）
+# utoo GitLab CI/CD（微服务独立发版）
 
-对齐 `factoryproductsystem2`：**Windows Shell Runner + SSH → Linux systemd 裸进程**。  
-一次 `deploy_*` 发布：**6 个上游微服务 + 网关 + C 端 / 管理后台静态**（不做蓝绿）。
+**本流水线专用于 Utoo 微服务 monorepo，与工厂 EMKU 发版完全分开**：独立 Runner tag（`utoo-windows`）、独立 Variables、独立服务器目录（`/opt/utoo`）。不要使用 `emku-windows` / EMKU 的部署脚本或机器路径。
+
+机制：Windows Shell Runner + SSH → Linux **systemd 裸进程**。  
+一次 `deploy_*`：**6 个上游微服务 + 网关 + C 端 / 管理后台静态**（不做蓝绿）。
 
 与本地一致：网关 `.env` 配置 `SVC_*_URL` 后必须启全部上游，否则对应域 **503**。
 
@@ -75,28 +77,54 @@ DEBUG_RELOAD=false
 
 各 `qd_svc_*` 也需自有 `.env`（端口等）+ 共用 `config/shared-database.env`。CI **不会**覆盖这些文件。
 
-## GitLab / Runner 配置
+## GitLab / Runner 配置（独立于 EMKU）
 
-1. Windows Runner tag 已设为 **`emku-windows`**（与工厂 EMKU 共用）；Settings → CI/CD → Runners 确认该 tag 为绿色可用
-2. 项目 **Settings → CI/CD → Variables**（建议按环境拆 `_DEV` / `_PROD`）：
+### 1. 为本项目注册 Windows Runner
+
+1. 准备一台 Windows 机器（建议与 EMKU Runner **分开**），安装 [GitLab Runner](https://docs.gitlab.com/runner/install/windows.html)
+2. 使用 **本项目**（`web/utoo-pydjango`）的 registration token 注册
+3. Executor 选 **`shell`**
+4. Tag 只打：**`utoo-windows`**（不要打 `emku-windows`）
+5. 机器需已装：PowerShell、OpenSSH Client（`ssh`/`scp`）、Node.js（前端构建）、能访问目标 Linux 服务器
+
+Settings → CI/CD → Runners：确认本项目 Runner 为绿色且带 `utoo-windows`。
+
+### 2. CI 变量（本项目自己的）
+
+Settings → CI/CD → Variables（勿复用 EMKU 项目变量；至少先配 **dev**）：
 
 | 变量 | 说明 |
 |------|------|
 | `DEPLOY_USER` | SSH 用户（如 `deploy`） |
-| `DEPLOY_HOST` | 服务器 IP/域名 |
-| `SSH_PRIVATE_KEY` | 私钥（脚本会规范化换行） |
+| `DEPLOY_HOST` | **Utoo** 服务器 IP/域名 |
+| `SSH_PRIVATE_KEY` | 对应私钥（脚本会规范化换行） |
 
 可选：`DEPLOY_USER_DEV`、`DEPLOY_HOST_PROD` 等带后缀变量，脚本会按分支优先读取。
 
-3. 远端用户需对 `/opt/utoo`、静态目录及下列 unit **免密 sudo**（可参考 EMKU 的 `sudoers.d`）：
+### 3. 远端 sudo
+
+远端用户需对 `/opt/utoo`、静态目录及下列 unit **免密 sudo**：
 
 ```text
 qd-auth qd-order qd-payment qd-wx qd-admin-asset qd-admin-platform qd-gateway
 ```
 
-4. **不要**在 Variables 里配多行 `SSH_KNOWN_HOSTS`；脚本会自动 `ssh-keyscan`
+示例 drop-in（路径按你们规范调整，**不要**直接拷贝 EMKU 的 sudoers 文件名混用）：
 
-本机调试：
+```text
+# /etc/sudoers.d/utoo-gitlab-deploy
+deploy ALL=(root) NOPASSWD: /bin/bash, /usr/bin/bash, /bin/systemctl, /usr/bin/systemctl, /bin/mkdir, /bin/rm, /bin/tar, /usr/bin/tar, /bin/chown, /usr/bin/find, /usr/bin/xargs, /bin/chmod
+```
+
+### 4. known_hosts
+
+**不要**在 Variables 里配多行 `SSH_KNOWN_HOSTS`；脚本会自动 `ssh-keyscan`。
+
+### 5. 关闭 Auto DevOps
+
+Settings → CI/CD → Auto DevOps → **Disable**，避免再跑出带 Auto DevOps 标签的失败流水线。
+
+本机调试变量文件：
 
 ```powershell
 copy deploy\ci-local\utoo-deploy-dev.env.ps1.example deploy\ci-local\utoo-deploy-dev.env.ps1
@@ -135,5 +163,4 @@ curl -sf http://127.0.0.1:18083/health && echo gateway_ok
 
 ## 回滚
 
-无蓝绿：对旧 commit 再跑一次 `deploy_*`，或从备份目录恢复对应服务后 `systemctl restart`。  
-后续若要对齐 EMKU，可再加 Nginx upstream 切换。
+无蓝绿：对旧 commit 再跑一次 `deploy_*`，或从备份目录恢复对应服务后 `systemctl restart`。
