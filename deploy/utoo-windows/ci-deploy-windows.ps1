@@ -1,5 +1,5 @@
 # GitLab CI：Windows Shell Runner + OpenSSH → Linux systemd
-# 微服务模式：6 上游 + 网关 + 双前端静态（无蓝绿）
+# 微服务模式：4 上游 + 网关 + 双前端静态（无蓝绿；auth/wx 已废弃）
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'ci-project-root.ps1')
 $root = Get-UtooCiProjectRoot
@@ -101,11 +101,10 @@ $StaticC = Normalize-DeployLinuxPath (Get-CiEnv 'UTOO_STATIC_C') '/var/www/utoo-
 $StaticAdmin = Normalize-DeployLinuxPath (Get-CiEnv 'UTOO_STATIC_ADMIN') '/var/www/utoo-admin'
 
 # 上游微服务（不含网关）
+# auth/wx 已废弃：C 端认证在网关；/api/wx/* 在 payment :18084
 $UpstreamUnits = @(
-	@{ Dir = 'qd_svc_auth'; Service = 'qd-auth'; Port = 18081 },
 	@{ Dir = 'qd_svc_order'; Service = 'qd-order'; Port = 18082 },
 	@{ Dir = 'qd_svc_payment'; Service = 'qd-payment'; Port = 18084 },
-	@{ Dir = 'qd_svc_wx'; Service = 'qd-wx'; Port = 18087 },
 	@{ Dir = 'qd_svc_admin_asset'; Service = 'qd-admin-asset'; Port = 18090 },
 	@{ Dir = 'qd_svc_admin_platform'; Service = 'qd-admin-platform'; Port = 18091 }
 )

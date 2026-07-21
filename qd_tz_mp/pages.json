@@ -1,0 +1,578 @@
+{
+	"easycom": {
+		"^u-(.*)": "@/uview-ui/components/u-$1/u-$1.vue"
+	},
+	"pages": [{
+			"path": "pages/cover/cover",
+			"style": {
+				 "navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/test_sub/test_sub",
+			"style": {
+				"navigationBarTitleText": "途哲科技"
+			}
+		},
+		{
+			"path": "pages/index/index",
+			"style": {
+				"navigationBarBackgroundColor": "#EFF6FF",
+				"navigationBarTitleText": "测试预约"
+			}
+		},
+		{
+			"path": "pages/my/my",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTextStyle": "black"
+			}
+		},
+		{
+			"path": "pages/login/login",
+			"style": {
+				"navigationBarTitleText": "登录"
+			}
+		}
+
+	],
+	"subPackages": [{
+			"root": "pagesB",
+			"pages": [{
+					"path": "make_list/make_list",
+					"style": {
+						"navigationBarTitleText": "预约列表"
+					}
+				},
+				{
+					"path": "reservationList/reservationList",
+					"style": {
+						"navigationBarTitleText": "预约列表"
+					}
+				},
+				{
+					"path": "reservationDetial/reservationDetial",
+					"style": {
+						"navigationBarTitleText": "预约详情"
+					}
+				},
+				{
+					"path": "reservationDetial/saveExpProject",
+					"style": {
+						"navigationBarTitleText": "新增实验项目"
+					}
+				},
+				{
+					"path": "reservationDetial/saveExpGoods",
+					"style": {
+						"navigationBarTitleText": "新增产品"
+					}
+				},
+				{
+					"path": "points/points",
+					"style": {
+						"navigationBarTitleText": "我的积分",
+						"enablePullDownRefresh": false
+					}
+				},
+				{
+					"path": "my_assets/my_assets",
+					"style": {
+						"navigationBarTitleText": "我的资产",
+						"enablePullDownRefresh": false
+					}
+				},
+				{
+					"path": "my_invoice/my_invoice",
+					"style": {
+						"navigationBarTitleText": "我的发票",
+						"enablePullDownRefresh": false
+					}
+				},
+				{
+					"path": "make_invoice/make_invoice",
+					"style": {
+						"navigationBarTitleText": "开票",
+						"enablePullDownRefresh": false
+					}
+				},
+				{
+					"path": "confirm_make_invoice/confirm_make_invoice",
+					"style": {
+						"navigationBarTitleText": "确认开票",
+						"enablePullDownRefresh": false
+					}
+				},
+				{
+					"path": "make_detail/make_detail",
+					"style": {
+						"navigationBarTitleText": "预约详情",
+						"enablePullDownRefresh": false
+					}
+				},
+				{
+					"path": "invoice_info/invoice_info",
+					"style": {
+						"navigationBarTitleText": "新增发票",
+						"enablePullDownRefresh": false
+					}
+				},
+				{
+					"path": "repayment/repayment",
+					"style": {
+						"navigationBarTitleText": "支付",
+						"enablePullDownRefresh": false
+					}
+				},
+				{
+					"path": "order_list/order_list",
+					"style": {
+						"navigationBarTitleText": "我的订单",
+						"enablePullDownRefresh": false
+					}
+				},
+				{
+					"path": "order_detail/order_detail",
+					"style": {
+						"navigationBarTitleText": "订单详情",
+						"enablePullDownRefresh": false
+					}
+				},
+				{
+					"path": "child_order_list/child_order_list",
+					"style": {
+						"navigationBarTitleText": "子订单",
+						"enablePullDownRefresh": false
+					}
+				},
+				{
+					"path": "test_child_order_list/test_child_order_list",
+					"style": {
+						"navigationBarTitleText": "子订单",
+						"enablePullDownRefresh": false
+					}
+				},
+				{
+					"path": "test_child_order_detail/test_child_order_detail",
+					"style": {
+						"navigationBarTitleText": "子订单详情",
+						"enablePullDownRefresh": false
+					}
+				},
+				{
+					// 普通用户的
+					"path": "test_child_order_product_list/test_child_order_product_list",
+					"style": {
+						"navigationBarTitleText": "产品列表",
+						"enablePullDownRefresh": false
+					}
+				},
+				{
+					"path": "evaluate/evaluate",
+					"style": {
+						"navigationBarTitleText": "评价",
+						"enablePullDownRefresh": false
+					}
+				},
+				{
+					"path": "anew_test/anew_test",
+					"style": {
+						"navigationBarTitleText": "",
+						"enablePullDownRefresh": false
+					}
+				},
+				{
+					"path": "balance_recharge/balance_recharge",
+					"style": {
+						"navigationBarTitleText": "余额充值",
+						"enablePullDownRefresh": false
+					}
+				},
+				{
+					"path": "config/config",
+					"style": {
+						"navigationBarTitleText": "获取code"
+					}
+				},
+				{
+					"path": "regular_user/regular_user",
+					"style": {
+						"navigationBarTitleText": ""
+					}
+				},
+				{
+					"path": "webview",
+					"style": {
+						"navigationBarTitleText": ""
+					}
+				},
+				{
+					"path": "invoice_list/invoice_list",
+					"style": {
+						"navigationBarTitleText": "发票信息"
+					}
+				},
+				{
+					"path": "proposal/proposal",
+					"style": {
+						"navigationBarTitleText": "提案改善"
+					}
+				}
+
+			]
+		},
+		{
+
+			// 存放一些只有 公司员工/内部用户/管理员/测试人员 看见的页面
+			"root": "staff",
+			"pages": [{
+					"path": "order_list/order_list",
+					"style": {
+						"navigationBarTitleText": "我的订单"
+					}
+				},
+				{
+					"path": "points_mall/points_mall",
+					"style": {
+						"navigationBarTitleText": "积分商城"
+					}
+				},
+				{
+					"path": "points_mall/productDetails",
+					"style": {
+						"navigationBarTitleText": "商品详情"
+					}
+				},
+				{
+					"path": "fileView/fileView",
+					"style": {
+						"navigationBarTitleText": "文件预览"
+					}
+				},
+				{
+					"path": "order_detail/order_detail",
+					"style": {
+						"navigationBarTitleText": "订单详情"
+					}
+				},
+				{
+					"path": "add_em_sub_order/add_em_sub_order",
+					"style": {
+						"navigationBarTitleText": "创建实验子订单"
+					}
+				},
+				{
+					"path": "add_em_sub_son_order/add_em_sub_son_order",
+					"style": {
+						"navigationBarTitleText": "创建实验分包子订单"
+					}
+				},
+				{
+					"path": "child_order/child_order",
+					"style": {
+						"navigationBarTitleText": "子订单"
+					}
+				},
+				{
+					"path": "product_list/product_list",
+					"style": {
+						"navigationBarTitleText": "产品列表"
+					}
+				},
+				{
+					"path": "child_detail/child_detail",
+					"style": {
+						"navigationBarTitleText": "订单详情"
+					}
+				},
+				{
+					"path": "child_product_list/child_product_list",
+					"style": {
+						"navigationBarTitleText": "产品列表"
+					}
+				},
+				{
+					"path": "sub_detail/sub_detail",
+					"style": {
+						"navigationBarTitleText": "订单详情"
+					}
+				},
+				{
+					"path": "sub_child_detail/sub_child_detail",
+					"style": {
+						"navigationBarTitleText": "订单详情"
+					}
+				},
+				{
+					"path": "edit_order/edit_order",
+					"style": {
+						"navigationBarTitleText": ""
+					}
+				},
+				{
+					"path": "edit_sub_order/edit_sub_order",
+					"style": {
+						"navigationBarTitleText": ""
+					}
+				},
+				{
+					"path": "edit_child_order/edit_child_order",
+					"style": {
+						"navigationBarTitleText": ""
+					}
+				},
+				{
+					"path": "edit_sub_child_order/edit_sub_child_order",
+					"style": {
+						"navigationBarTitleText": ""
+					}
+				},
+				{
+					"path": "online_shopping_mall/online_shopping_mall",
+					"style": {
+						"navigationBarTitleText": "在线商城"
+					}
+				}
+			]
+		},
+		{
+			// 存放一些只有 公司员工/内部用户/管理员/测试人员 看见的页面
+			"root": "staffB",
+			"pages": [{
+					"path": "accountFunds/accountFunds",
+					"style": {
+						"navigationBarTitleText": "账户资金"
+					}
+				},
+				{
+					"path": "digitalOperationsCenter/digitalOperationsCenter",
+					"style": {
+						"navigationBarTitleText": "数字化运营中心"
+					}
+				},
+				{
+					"path": "pendingReview/pendingReview",
+					"style": {
+						"navigationBarTitleText": "待审核"
+					}
+				},
+				{
+					"path": "start/start",
+					"style": {
+						"navigationBarTitleText": "",
+						"navigationStyle": "custom"
+					}
+				},
+
+				{
+					"path": "onlineClass/index",
+					"style": {
+						"navigationBarTitleText": "在线商城"
+					}
+				},
+				{
+					"path": "onlineClass/searchpage",
+					"style": {
+						"navigationBarTitleText": "查找产品"
+					}
+				},
+
+				{
+					"path": "onlineClass/detail",
+					"style": {
+						"navigationBarTitleText": "产品详情"
+					}
+				},
+
+
+				{
+					"path": "forget_password/forget_password",
+					"style": {
+						"navigationBarTitleText": "验证手机号"
+					}
+				}, {
+					"path": "set_password/set_password",
+					"style": {
+						"navigationBarTitleText": "设置密码"
+					}
+				}, {
+					"path": "my-profile/my-profile",
+					"style": {
+						"navigationBarTitleText": "个人中心"
+					}
+
+				}, {
+					"path": "my-register-profile/my-register-profile",
+					"style": {
+						"navigationBarTitleText": "我的认证信息",
+						"enablePullDownRefresh": false
+					}
+
+				}, {
+					"path": "choose_identity/choose_identity",
+					"style": {
+						"navigationBarTitleText": "选择认证类型",
+						"enablePullDownRefresh": false
+					}
+
+				}, {
+					"path": "personal_cert/personal_cert",
+					"style": {
+						"navigationBarTitleText": "个人认证",
+						"enablePullDownRefresh": false
+					}
+
+				}, {
+					"path": "enterprise_cert/enterprise_cert",
+					"style": {
+						"navigationBarTitleText": "企业认证",
+						"enablePullDownRefresh": false
+					}
+
+				}, {
+					"path": "success/success",
+					"style": {
+						"navigationBarTitleText": "",
+						"enablePullDownRefresh": false
+					}
+
+				}, {
+					"path": "icon_source/icon_source",
+					"style": {
+						"navigationBarTitleText": "图标声明",
+						"enablePullDownRefresh": false
+					}
+
+				}, {
+					"path": "test_detail/test_detail",
+					"style": {
+						"navigationBarTitleText": "实验详情",
+						"enablePullDownRefresh": true
+					}
+
+				}, {
+					"path": "sub/sub",
+					"style": {
+						"navigationBarTitleText": "预约实验",
+						"enablePullDownRefresh": false
+					}
+				}, {
+					"path": "sampleInfo/sampleInfo",
+					"style": {
+						"navigationBarTitleText": "添加样品信息",
+						"enablePullDownRefresh": false
+					}
+				}, {
+					"path": "result/result",
+					"style": {
+						"navigationBarTitleText": "",
+						"enablePullDownRefresh": false
+					}
+
+				}, {
+					"path": "search/search",
+					"style": {
+						"navigationBarTitleText": "搜索",
+						"enablePullDownRefresh": false
+					}
+				}, {
+					"path": "auth_phone/auth_phone",
+					"style": {
+						"navigationBarTitleText": "UToo检测",
+						"enablePullDownRefresh": false,
+						"navigationBarBackgroundColor": "#E96302",
+						"navigationBarTextStyle": "white"
+					}
+
+				},
+				{
+					"path": "fill_info/fill_info",
+					"style": {
+						"navigationBarTitleText": "途哲科技",
+						"enablePullDownRefresh": false
+					}
+				},
+				{
+					"path": "judge_user/judge_user",
+					"style": {
+						"navigationBarTitleText": ""
+					}
+				},
+				{
+					"path": "scan/scan",
+					"style": {
+						"navigationBarTitleText": ""
+					}
+				},
+				{
+					"path": "scan2/scan",
+					"style": {
+						"navigationBarTitleText": ""
+					}
+				},
+				{
+					"path": "experimentEdOrAble/experimentEdOrAble",
+					"style": {
+						"navigationBarTitleText": "实验应收"
+					}
+				},
+				{
+					"path": "source_detial/source_detial",
+					"style": {
+						"navigationBarTitleText": "来源订单详情"
+					}
+
+				},
+				{
+					"path": "wait_sub_child_detail/wait_sub_child_detail",
+					"style": {
+						"navigationBarTitleText": "订单详情"
+					}
+				},
+				{
+					"path": "order_detail/order_detail",
+					"style": {
+						"navigationBarTitleText": "订单详情"
+					}
+				}
+			]
+		},
+		{
+
+			// 存放一些只有 普通用户 看见的页面
+			"root": "user",
+			"pages": []
+		}
+	],
+	"globalStyle": {
+		"navigationBarTextStyle": "black",
+		"navigationBarBackgroundColor": "#F8F8F8",
+		"backgroundColor": "#F8F8F8"
+	},
+	"tabBar": {
+		"selectedColor": "#3C8BDB",
+		"backgroundColor": "#FFFFFF",
+		"color": "#A7A7A7",
+		"iconWidth": "24px",
+		"list": [{
+				"pagePath": "pages/test_sub/test_sub",
+				"iconPath": "static/tabbar/home.png",
+				"selectedIconPath": "static/tabbar/selected-home.png",
+				"text": "首页"
+			},
+			{
+				"pagePath": "pages/index/index",
+				"iconPath": "static/tabbar/sub.png",
+				"selectedIconPath": "static/tabbar/selected-sub.png",
+				"text": "测试预约"
+			},
+			{
+				"pagePath": "pages/my/my",
+				"iconPath": "static/tabbar/user.png",
+				"selectedIconPath": "static/tabbar/selected-user.png",
+				"text": "个人中心"
+			}
+		]
+	},
+	"uniIdRouter": {}
+}

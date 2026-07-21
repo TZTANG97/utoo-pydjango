@@ -1,8 +1,9 @@
-# sudo cp qd-auth.service.example /etc/systemd/system/qd-auth.service
-# sudo systemctl daemon-reload && sudo systemctl enable --now qd-auth
+# DEPRECATED — qd_svc_auth 已并回网关 auth_pc，勿再 enable。
+# 若服务器上仍有该 unit：sudo systemctl disable --now qd-auth
+# C 端认证由 qd-gateway 提供；见 docs/服务合并说明.md
 
 [Unit]
-Description=Utoo Auth Microservice
+Description=Utoo Auth Microservice (DEPRECATED — do not enable)
 After=network.target
 Wants=network-online.target
 
@@ -12,15 +13,8 @@ User=deploy
 Group=deploy
 WorkingDirectory=/opt/utoo/qd_svc_auth
 Environment=DJANGO_SETTINGS_MODULE=config.settings
-ExecStart=/opt/utoo/qd_svc_auth/.venv/bin/gunicorn \
-  config.wsgi:application \
-  --bind 127.0.0.1:18081 \
-  --workers 2 \
-  --timeout 120 \
-  --access-logfile - \
-  --error-logfile -
-Restart=on-failure
-RestartSec=5
+ExecStart=/bin/false
+Restart=no
 
 [Install]
 WantedBy=multi-user.target

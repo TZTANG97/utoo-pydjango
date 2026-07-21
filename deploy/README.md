@@ -12,28 +12,26 @@
 1. 推送到 `dev` 或 `prod`
 2. GitLab → **CI/CD → Pipelines**（应看到 **4 个 stages**，不是 2 个）
 3. 手动 Play **`build_frontend_*`**
-4. 手动 Play **`deploy_services_*`**（6 上游）
+4. 手动 Play **`deploy_services_*`**（4 上游：order/payment/asset/platform）
 5. 其后 **`deploy_gateway_*` → `deploy_static_*`** 会自动接着跑
 
 | Stage | Job | 作用 |
 |-------|-----|------|
 | `build` | `build_frontend_*` | 构建双前端 dist |
-| `deploy_services` | `deploy_services_*` | `qd_libs_common` + 6 上游（auth/order/payment/wx/asset/platform） |
-| `deploy_gateway` | `deploy_gateway_*` | 网关 `qd-gateway` |
+| `deploy_services` | `deploy_services_*` | `qd_libs_common` + 4 上游（order/payment/asset/platform） |
+| `deploy_gateway` | `deploy_gateway_*` | 网关 `qd-gateway`（含 C 端认证） |
 | `deploy_static` | `deploy_static_*` | `/var/www/utoo-c`、`/var/www/utoo-admin` |
 
 `deploy_services` 内顺序：
 
-1. `qd_svc_auth` `:18081`
-2. `qd_svc_order` `:18082`
-3. `qd_svc_payment` `:18084`
-4. `qd_svc_wx` `:18087`
-5. `qd_svc_admin_asset` `:18090`
-6. `qd_svc_admin_platform` `:18091`
+1. `qd_svc_order` `:18082`
+2. `qd_svc_payment` `:18084`（含原 `/api/wx/*`）
+3. `qd_svc_admin_asset` `:18090`
+4. `qd_svc_admin_platform` `:18091`
 
 若 Pipeline 显示 **stuck**：没有 tag=`utoo-windows` 的 Runner，先注册 Runner，不是 stages 少了。
 
-不发：`qd_svc_entry` / `qd_svc_invoice`（已废弃）。`qd_worker` 未进流水线（支付异步队列需要时再加）。
+不发：`qd_svc_auth` / `qd_svc_wx` / `qd_svc_entry` / `qd_svc_invoice`（已废弃）。`qd_worker` 未进流水线（支付异步队列需要时再加）。
 
 ## 服务器目录约定
 
@@ -41,19 +39,17 @@
 /opt/utoo/
   qd_libs_common/
   config/shared-database.env     # DB/JWT，只放服务器，CI 不覆盖
-  qd_svc_auth/                   # + .venv + .env
   qd_svc_order/
-  qd_svc_payment/
-  qd_svc_wx/
+  qd_svc_payment/                # 支付 + 微信接口
   qd_svc_admin_asset/
   qd_svc_admin_platform/
-  qd_test_server_django/         # 网关 .env 须含 SVC_*_URL
+  qd_test_server_django/         # 网关 .env 须含 SVC_*_URL（勿设 SVC_AUTH_URL）
 
 /var/www/utoo-c/                 # C 端 dist
 /var/www/utoo-admin/             # 管理后台 dist
 ```
 
-systemd 示例：`deploy/systemd/qd-*.service.example`。
+systemd 示例：`deploy/systemd/qd-*.service.example`（可停用 `qd-auth` / `qd-wx`）。
 
 Nginx 对外只反代网关与静态：
 
@@ -61,21 +57,21 @@ Nginx 对外只反代网关与静态：
 - C 端静态 → `/var/www/utoo-c`
 - 管理后台静态 → `/var/www/utoo-admin`
 
-上游仅本机访问，不必对公网开放 18081–18091。
+上游仅本机访问，不必对公网开放 18082–18091。
 
 ## 网关 SVC_*（服务器必配）
 
 `/opt/utoo/qd_test_server_django/.env` 示例（与本地微服务模式一致；生产请关 `DEBUG_RELOAD`）：
 
 ```env
-SVC_AUTH_URL=http://127.0.0.1:18081
+# 勿设 SVC_AUTH_URL
 SVC_ORDER_URL=http://127.0.0.1:18082
 SVC_PAYMENT_URL=http://127.0.0.1:18084
+SVC_WX_URL=http://127.0.0.1:18084
 SVC_ADMIN_ASSET_URL=http://127.0.0.1:18090
 SVC_ADMIN_PLATFORM_URL=http://127.0.0.1:18091
 SVC_INVOICE_URL=http://127.0.0.1:18091
 SVC_ENTRY_URL=http://127.0.0.1:18091
-SVC_WX_URL=http://127.0.0.1:18087
 DEBUG_RELOAD=false
 ```
 
@@ -110,8 +106,9 @@ Settings → CI/CD → Variables（勿复用 EMKU 项目变量；至少先配 **
 远端用户需对 `/opt/utoo`、静态目录及下列 unit **免密 sudo**：
 
 ```text
-qd-auth qd-order qd-payment qd-wx qd-admin-asset qd-admin-platform qd-gateway
+qd-order qd-payment qd-admin-asset qd-admin-platform qd-gateway
 ```
+
 
 示例 drop-in（路径按你们规范调整，**不要**直接拷贝 EMKU 的 sudoers 文件名混用）：
 
@@ -146,23 +143,22 @@ sudo chown -R deploy:deploy /opt/utoo /var/www/utoo-c /var/www/utoo-admin
 # /opt/utoo/qd_svc_*/.env
 
 cd /path/to/repo/deploy/systemd
-for u in qd-auth qd-order qd-payment qd-wx qd-admin-asset qd-admin-platform qd-gateway; do
+for u in qd-order qd-payment qd-admin-asset qd-admin-platform qd-gateway; do
   sudo cp "${u}.service.example" "/etc/systemd/system/${u}.service"
 done
+# 若曾启用过旧单元，可停用：sudo systemctl disable --now qd-auth qd-wx
 sudo systemctl daemon-reload
-sudo systemctl enable qd-auth qd-order qd-payment qd-wx qd-admin-asset qd-admin-platform qd-gateway
+sudo systemctl enable qd-order qd-payment qd-admin-asset qd-admin-platform qd-gateway
 ```
 
 首次可先手工放齐代码与 `.env`，再：
 
 ```bash
-curl -sf http://127.0.0.1:18081/health && echo auth_ok
 curl -sf http://127.0.0.1:18082/health && echo order_ok
-curl -sf http://127.0.0.1:18084/health && echo payment_ok
-curl -sf http://127.0.0.1:18087/health && echo wx_ok
+curl -sf http://127.0.0.1:18084/health && echo payment_ok   # 含 /api/wx/*
 curl -sf http://127.0.0.1:18090/health && echo asset_ok
 curl -sf http://127.0.0.1:18091/health && echo platform_ok
-curl -sf http://127.0.0.1:18083/health && echo gateway_ok
+curl -sf http://127.0.0.1:18083/health && echo gateway_ok   # 含 C 端认证
 ```
 
 ## 回滚

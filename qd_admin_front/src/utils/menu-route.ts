@@ -15,6 +15,7 @@ const MENU_ROUTE_MAP: Record<string, string> = {
   'sys/dept/load.do': '/system/depts',
   'sys/user/load.do': '/system/users',
   'sys/role/load.do': '/system/roles',
+  'logs/list.htm': '/system/ops-logs',
   'userCompany/usercompany.htm': '/member/enterprise',
   'supplier/supplierList.htm': '/system/companies',
   'member/memberPage.htm': '/member/personal',
@@ -142,6 +143,9 @@ export function mapLegacyMenuUrl(raw: string): string {
   }
   if (normalized.includes('sys/dept') || normalized.includes('dept/load')) {
     return '/system/depts'
+  }
+  if (normalized.includes('logs/list') || normalized.includes('/logs/')) {
+    return '/system/ops-logs'
   }
   if (normalized.includes('sys/user/load')) {
     return '/system/users'

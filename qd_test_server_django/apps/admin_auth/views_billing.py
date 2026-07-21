@@ -210,7 +210,7 @@ def retest_detail(request: Request, user=None):
     apply_id = request.query_params.get("id") or request.data.get("id")
     if not apply_id:
         return Response(ajax_fail("缺少 id"))
-    row = billing_repo.get_retest_application(int(apply_id))
+    row = billing_repo.get_retest_detail(int(apply_id))
     if not row:
         return Response(ajax_fail("复测申请不存在"))
     return Response(ajax_ok(obj=row))

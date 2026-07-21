@@ -493,11 +493,17 @@ def get_sample_attr(row_id: int) -> dict[str, Any] | None:
 
 def save_sample_attr(data: dict[str, Any], *, row_id: int | None = None) -> int:
     if row_id:
+        sets = [
+            "sttribute_name=%(name)s",
+            "parent_id=%(parent_id)s",
+            "special_id=%(special_id)s",
+        ]
+        if "selection" in data:
+            sets.append("selection=%(selection)s")
         execute(
-            """
+            f"""
             UPDATE sample_attribute_manage
-            SET sttribute_name=%(name)s, parent_id=%(parent_id)s,
-                special_id=%(special_id)s, selection=%(selection)s
+            SET {', '.join(sets)}
             WHERE id=%(id)s
             """,
             {**data, "id": row_id},
@@ -510,7 +516,7 @@ def save_sample_attr(data: dict[str, Any], *, row_id: int | None = None) -> int:
         VALUES
             (NOW(), 0, %(name)s, %(type)s, %(parent_id)s, %(special_id)s, %(selection)s)
         """,
-        data,
+        {**data, "selection": data.get("selection")},
     )
 
 

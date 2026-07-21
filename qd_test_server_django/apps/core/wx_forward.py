@@ -1,4 +1,4 @@
-"""网关 → qd_svc_wx 转发（MS-3）"""
+"""网关 → 微信接口转发（现指向 qd_svc_payment:/api/wx，原 qd_svc_wx 已废弃）"""
 from __future__ import annotations
 
 from functools import wraps

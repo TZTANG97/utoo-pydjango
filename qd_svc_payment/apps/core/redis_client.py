@@ -28,6 +28,13 @@ def set_string(key: str, value: str, *, ex: int | None = None) -> None:
         logger.warning("redis set failed: %s", exc)
 
 
+def delete_key(key: str) -> None:
+    try:
+        get_redis().delete(key)
+    except Exception as exc:
+        logger.warning("redis delete failed: %s", exc)
+
+
 def get_string(key: str) -> str | None:
     try:
         return get_redis().get(key)

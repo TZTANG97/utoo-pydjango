@@ -1,47 +1,9 @@
-# qd_svc_auth
+# qd_svc_auth（已废弃）
 
-**认证与用户** 微服务（MS-1）。
+**C 端认证已并回网关 [`qd_test_server_django`](../qd_test_server_django) 进程内 `apps/auth_pc`。**
 
-- **默认 HTTP 端口**：**18081**
-- **职责**：登录、JWT 刷新、`/me`、用户基本信息
-- **共享库**：`../qd_libs_common`（`qd_common.responses`、`password_java`）
+- 后台员工登录本来就在网关 `admin_auth`（`/api/vue/*`）。
+- C 端 `/api/auth/*`、资料相关转发：清空 `SVC_AUTH_URL` 后走网关本地实现。
+- **勿再**配置 `SVC_AUTH_URL`、勿再启动本目录（原 :18081）。
 
-## API
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/health` | 健康检查 |
-| POST | `/api/auth/login` | C 端登录 |
-| POST | `/api/auth/refresh` | 刷新 token |
-| GET | `/api/auth/me` | 当前用户认证信息 |
-| GET | `/api/auth/basic-info` | 用户基本信息（网关映射 `getUserBasicInfo.ajax`） |
-
-## 启动
-
-```powershell
-cd E:\utoo\qd_svc_auth
-python -m venv .venv
-.\.venv\Scripts\pip install -r requirements.txt
-.\.venv\Scripts\pip install -e ..\qd_libs_common
-copy .env.example .env   # 或从网关复制 .env
-.\.venv\Scripts\python.exe run.py
-```
-
-或：`E:\utoo\scripts\start-auth.ps1`
-
-## 网关联调
-
-在 `qd_test_server_django/.env` 或 `.env.local` 增加：
-
-```env
-SVC_AUTH_URL=http://127.0.0.1:18081
-```
-
-网关 `:18083` 将把 `/api/auth/*` 与 `getUserBasicInfo.ajax` 转发到本服务。未配置时仍走网关内置实现（单体模式）。
-
-## 验证
-
-```powershell
-curl http://127.0.0.1:18081/health
-.\.venv\Scripts\pytest
-```
+新功能请改网关 `apps/auth_pc` / `apps/pc_compat`。保留本目录仅作对照。

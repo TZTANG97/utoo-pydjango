@@ -8,4 +8,5 @@ urlpatterns = [
     path("health/", core_views.health),
     path("api/", include("apps.core.urls")),
     path("api/pc/", include("apps.pc_payment.urls")),
+    path("api/wx/", include("apps.wx.urls")),
 ]

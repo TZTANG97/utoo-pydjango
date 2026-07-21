@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "apps.invoices",
     "apps.entry",
     "apps.wx",
+    "apps.wx_mp",
     "apps.admin_core",
     "apps.admin_auth",
     "apps.admin_settings",
@@ -213,6 +214,13 @@ MAX_UPLOAD_SIZE = env.int("MAX_UPLOAD_SIZE", default=10 * 1024 * 1024)
 
 WEIXIN_APPID = env("WEIXIN_APPID", default="")
 WEIXIN_SECRET = env("WEIXIN_SECRET", default="")
+# 愉兔检测小程序 / 途哲小程序（phoneOneLogin）
+WEIXIN_MP_APPID = env("WEIXIN_MP_APPID", default="")
+WEIXIN_MP_SECRET = env("WEIXIN_MP_SECRET", default="")
+WEIXIN_MP_TZ_APPID = env("WEIXIN_MP_TZ_APPID", default="")
+WEIXIN_MP_TZ_SECRET = env("WEIXIN_MP_TZ_SECRET", default="")
+# 开发环境未配小程序密钥时，一键登录可用的固定手机号
+DEV_WX_PHONE = env("DEV_WX_PHONE", default="")
 WEIXIN_GZH_APPID = env("WEIXIN_GZH_APPID", default="")
 WEIXIN_GZH_SECRET = env("WEIXIN_GZH_SECRET", default="")
 WEIXIN_GZH_TOKEN = env("WEIXIN_GZH_TOKEN", default="")
@@ -225,7 +233,8 @@ CORS_HTTPS = env("CORS_HTTPS", default="")
 SMS_ACCESS_KEY_ID = env("SMS_ACCESS_KEY_ID", default="")
 SMS_ACCESS_KEY_SECRET = env("SMS_ACCESS_KEY_SECRET", default="")
 
-# 微服务上游（MS-1+）；设 SVC_AUTH_URL 后网关转发认证域到 qd_svc_auth :18081
+# 微服务上游（MS-1+）。C 端认证已并回网关 auth_pc，请保持 SVC_AUTH_URL 为空。
+# 若仍配置，会转发到已废弃的 qd_svc_auth（仅兼容旧环境）。
 SVC_AUTH_URL = env("SVC_AUTH_URL", default="")
 SVC_ORDER_URL = env("SVC_ORDER_URL", default="")
 SVC_PAYMENT_URL = env("SVC_PAYMENT_URL", default="")

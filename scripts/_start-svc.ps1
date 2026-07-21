@@ -1,5 +1,5 @@
 # Shared bootstrap for qd_svc_* / gateway start-*.ps1
-# Usage: . "$PSScriptRoot\_start-svc.ps1"; Start-QdService -RelPath "qd_svc_wx"
+# Usage: . "$PSScriptRoot\_start-svc.ps1"; Start-QdService -RelPath "qd_svc_payment"
 
 function Start-QdService {
     param(

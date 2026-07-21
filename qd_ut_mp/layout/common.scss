@@ -1,0 +1,82 @@
+.container {
+	overflow: hidden;
+}
+
+view {
+	box-sizing: border-box;
+	font-size: 28rpx;
+}
+
+image,
+text {
+	vertical-align: middle;
+}
+
+
+// 提交，登录之类
+.main-btn {
+	height: 75rpx;
+	border-radius: 50rpx;
+	line-height: 75rpx;
+	text-align: center;
+	background-color: $primary;
+	color: #fff;
+	margin: 45rpx auto 0;
+}
+
+// 缕空
+.empty-btn {
+	background-color: transparent !important;
+	color: $primary;
+	border: 1rpx solid $primary;
+}
+
+.flex {
+	display: flex;
+}
+
+.flex-around ,.flex-between, .flex-center {
+	display: flex;
+	align-items: center;
+}
+
+.flex-between {
+	justify-content: space-between;
+}
+
+.flex-around {
+	justify-content: space-around;
+}
+
+.hidden {
+	display: block;
+	max-width: 300rpx;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+.must {
+	position: relative;
+	&::before {
+		content: '*';
+		display: block;
+		position: absolute;
+		left: -20rpx;
+		top: 0;
+		color: #F00;
+	}
+}
+
+.disable {
+	color: #C2C2C2;
+}
+
+.status-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 100%;
+	z-index: 5;
+	background-color: #fff;
+}

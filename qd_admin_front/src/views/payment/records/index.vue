@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { fetchPayLogList } from '@/api/billing'
 import { PAY_TYPE, PAY_WAY, formatDate, formatMoney } from '@/utils/billing-labels'
 
+const router = useRouter()
 const loading = ref(false)
 const rows = ref<Record<string, unknown>[]>([])
 const total = ref(0)
@@ -46,6 +48,15 @@ function handleReset() {
   filters.pay_type = ''
   filters.pay_way = ''
   handleSearch()
+}
+
+function openOrderDetail(row: Record<string, unknown>) {
+  const id = row.order_id
+  if (id == null || id === '') {
+    ElMessage.warning('未找到关联订单')
+    return
+  }
+  router.push(`/experiment/order-detail/${id}`)
 }
 
 loadData()
@@ -95,7 +106,19 @@ loadData()
         <el-table-column label="支付方式" min-width="100">
           <template #default="{ row }">{{ PAY_WAY[Number(row.pay_way)] || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="order_num" label="关联订单" min-width="140" />
+        <el-table-column label="关联订单" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">
+            <el-button
+              v-if="row.order_num && row.order_id"
+              link
+              type="primary"
+              @click="openOrderDetail(row)"
+            >
+              {{ row.order_num }}
+            </el-button>
+            <span v-else>{{ row.order_num || '-' }}</span>
+          </template>
+        </el-table-column>
         <el-table-column label="支付时间" min-width="160">
           <template #default="{ row }">{{ formatDate(row.payTime || row.addTime) }}</template>
         </el-table-column>

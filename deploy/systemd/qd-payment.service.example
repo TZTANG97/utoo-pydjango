@@ -1,8 +1,10 @@
 # sudo cp qd-payment.service.example /etc/systemd/system/qd-payment.service
 # sudo systemctl daemon-reload && sudo systemctl enable --now qd-payment
+#
+# 本服务同时提供原 /api/wx/*（扫码登录等）。网关 SVC_WX_URL 请指向本进程 :18084。
 
 [Unit]
-Description=Utoo Payment Microservice
+Description=Utoo Payment Microservice (includes /api/wx)
 After=network.target redis.service
 Wants=network-online.target
 

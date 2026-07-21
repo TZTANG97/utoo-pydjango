@@ -24,19 +24,19 @@ git checkout dev
 |------|------|------|
 | **`qd_test_front_v3`** | **9530** | Vue3 C 端前端（Vite，`/api` 代理到网关） |
 | **`qd_admin_front`** | — | Vue3 管理后台（代理到网关） |
-| `qd_test_server_django` | **18083** | API **网关 / BFF**（日常开发主入口；含 `admin_auth`） |
-| `qd_svc_auth` | 18081 | 认证微服务 |
+| `qd_test_server_django` | **18083** | API **网关 / BFF**（含 `admin_auth` + **C 端认证 `auth_pc`**） |
 | `qd_svc_order` | 18082 | 订单 + 后台实验管理 |
-| `qd_svc_payment` | 18084 | 支付 / 资产微服务（C 端） |
+| `qd_svc_payment` | **18084** | 支付 / 资产 + **微信 `/api/wx/*`**（原 wx 已并入） |
 | `qd_svc_admin_asset` | **18090** | 后台：数字化 / 库存 / 资金 |
 | `qd_svc_admin_platform` | **18091** | 后台：会员/运营/系统/服务/设置 + C 端入驻/发票 |
-| `qd_svc_wx` | 18087 | 微信微服务 |
+| ~~`qd_svc_auth`~~ | ~~18081~~ | **已废弃** → C 端认证并回网关 |
+| ~~`qd_svc_wx`~~ | ~~18087~~ | **已废弃** → 并入 `qd_svc_payment` |
 | `qd_svc_invoice` | ~~18085~~ | **已废弃** → 并入 `qd_svc_admin_platform` |
 | `qd_svc_entry` | ~~18086~~ | **已废弃** → 并入 `qd_svc_admin_platform` |
 | `qd_libs_common` | — | 公共包 `qd_common`（响应体、序列化等） |
 | `qd_worker` | — | Celery Worker（异步任务） |
 | `config/` | — | 共用数据库模板 `shared-database.env.example` |
-| `scripts/` | — | `start-ms-dev.ps1`（网关+6 svc）及 `start-gateway` / `auth` / `order` / `payment` / `wx` / `admin-asset` / `admin-platform` |
+| `scripts/` | — | `start-ms-dev.ps1`（网关+4 svc）、`start-order-pilot.ps1` 及 `start-gateway` / `order` / `payment` / `admin-asset` / `admin-platform` |
 
 对照仓库（不在本 monorepo 内）：
 
@@ -72,24 +72,22 @@ graph TB
   Browser[Browser 9530] --> Vite[Vue3]
   AdminFE[qd_admin_front] --> GW
   Vite --> GW[Gateway 18083]
-  GW --> Auth[qd_svc_auth 18081]
   GW --> Order[qd_svc_order 18082]
   GW --> Pay[qd_svc_payment 18084]
   GW --> Asset[qd_svc_admin_asset 18090]
   GW --> Platform[qd_svc_admin_platform 18091]
-  GW --> Wx[qd_svc_wx 18087]
-  Auth --> DB[MySQL qd_pt_new]
-  Order --> DB
+  Order --> DB[MySQL qd_pt_new]
   Pay --> DB
   Asset --> DB
   Platform --> DB
-  Wx --> DB
+  GW --> DB
   Pay --> Worker[qd_worker Celery]
   Worker --> Redis[Redis]
   Worker --> DB
 ```
 
-入驻/发票：`SVC_ENTRY_URL` / `SVC_INVOICE_URL` 请指向 **18091**（与 `SVC_ADMIN_PLATFORM_URL` 相同）。勿再启动已废弃的 `qd_svc_entry` / `qd_svc_invoice`。
+C 端认证在网关内（勿启 `qd_svc_auth`）。`/api/wx/*` 由 `qd_svc_payment` 提供（`SVC_WX_URL` 与 `SVC_PAYMENT_URL` 同指 **18084**）。  
+入驻/发票：`SVC_ENTRY_URL` / `SVC_INVOICE_URL` → **18091**。勿再启已废弃的 `qd_svc_auth` / `qd_svc_wx` / `qd_svc_entry` / `qd_svc_invoice`。
 
 ### 2.3 配置与依赖关系
 
@@ -174,7 +172,7 @@ E:\utoo\scripts\start-front-v3.ps1    # 仅前端
 ### 4.2 启动单个微服务
 
 ```powershell
-cd qd_svc_auth   # 或 order / payment / wx / admin_asset / admin_platform
+cd qd_svc_order   # 或 payment / admin_asset / admin_platform（勿再启 auth / wx）
 python -m venv .venv
 .\.venv\Scripts\activate
 pip install -r requirements.txt
@@ -183,36 +181,39 @@ copy .env.example .env
 python run.py
 ```
 
+
 或使用仓库根脚本：
 
 ```powershell
 .\scripts\start-gateway.ps1
-.\scripts\start-auth.ps1
 .\scripts\start-order.ps1
-.\scripts\start-payment.ps1
-.\scripts\start-wx.ps1
+.\scripts\start-payment.ps1          # 含原 /api/wx/*
 .\scripts\start-admin-asset.ps1
 .\scripts\start-admin-platform.ps1
 
-# 或一键开 7 个终端窗口（网关 + 6 业务服务）
+# 或一键开 5 个终端（网关 + order + payment + asset + platform）
 .\scripts\start-ms-dev.ps1
+
+# 对内中台：仅订单试点（网关 + order，见 docs/中台订单域试点.md）
+.\scripts\start-order-pilot.ps1
 ```
 
-> `qd_svc_entry` / `qd_svc_invoice` 已废弃，请改启 `qd_svc_admin_platform`。
+> `qd_svc_auth` / `qd_svc_wx` / `qd_svc_entry` / `qd_svc_invoice` 已废弃。  
+> 中台推进：[`docs/中台后续流程与复杂度.md`](docs/中台后续流程与复杂度.md)。
 
 ### 4.3 开启微服务转发
 
-在 **网关** `.env` 中填写（模板见 `qd_test_server_django/.env.example`，本地 `.env` 已按此启用时须**同时启动全部上游**）：
+在 **网关** `.env` 中填写（模板见 `qd_test_server_django/.env.example`）：
 
 ```env
-SVC_AUTH_URL=http://127.0.0.1:18081
+# 勿设 SVC_AUTH_URL — C 端认证在网关
 SVC_ORDER_URL=http://127.0.0.1:18082
 SVC_PAYMENT_URL=http://127.0.0.1:18084
+SVC_WX_URL=http://127.0.0.1:18084
 SVC_ADMIN_ASSET_URL=http://127.0.0.1:18090
 SVC_ADMIN_PLATFORM_URL=http://127.0.0.1:18091
 SVC_INVOICE_URL=http://127.0.0.1:18091
 SVC_ENTRY_URL=http://127.0.0.1:18091
-SVC_WX_URL=http://127.0.0.1:18087
 ```
 
 **行为说明：**
@@ -391,6 +392,15 @@ npm run build    # 产出 dist/
 | `qd_test_front_v3/README.md` | 前端细节 |
 | `qd_test_server_django/README.md` | 网关细节 |
 | **`deploy/README.md`** | **GitLab CI/CD 发版（6 微服务 + 网关 + 前端，systemd）** |
+| **`docs/README.md`** | **文档索引（含对内中台系列）** |
+| `docs/服务合并说明.md` | **auth→网关、wx→payment** |
+| `docs/中台后续流程与复杂度.md` | 后续推进顺序与改代码复杂度 |
+| `docs/中台能力清单.md` | 能力 → 服务 → 端 |
+| `docs/中台身份与菜单约定.md` | 登录 / JWT / 菜单 / X-Channel |
+| `docs/中台网关下沉与转发.md` | SVC_* 转发与网关 twin |
+| `docs/中台订单域试点.md` | 订单域统一 API + 联调清单 |
+| `docs/中台域收口方法.md` | 支付→资产→平台收口 |
+| `docs/中台数据与发版治理.md` | 表写归属与发版兼容 |
 | 工作区 `docs/开发启动.md` | 一键启动（若与 `E:\utoo` 一并检出） |
 | `docs/API对照表.md` | C 端接口对照 |
 | `docs/微服务拆分与仓库约定.md` | MS-0~MS-4 约定 |

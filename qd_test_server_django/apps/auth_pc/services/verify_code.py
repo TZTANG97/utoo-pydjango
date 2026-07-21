@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 USER_TYPE_REGISTER = "phone_code_new"
 USER_TYPE_FIND_PW = "find_pw"
+USER_TYPE_CODE_LOGIN = "code_login"
 
 
 def mobile_registered(mobile: str) -> bool:
@@ -80,6 +81,30 @@ def verify_register_code(mobile: str, code: str) -> bool:
 
 def send_find_password_code(telephone: str) -> tuple[bool, str]:
     return _insert_code(telephone, USER_TYPE_FIND_PW)
+
+
+def send_code_login_code(telephone: str) -> tuple[bool, str]:
+    if not telephone:
+        return False, "手机号不能为空！"
+    return _insert_code(telephone, USER_TYPE_CODE_LOGIN)
+
+
+def verify_code_login_code(mobile: str, code: str) -> bool:
+    if _is_dev() and code == _dev_code():
+        return True
+    row = fetch_one(
+        """
+        SELECT code FROM verify_code
+        WHERE addTime = (
+            SELECT MAX(addTime) FROM verify_code
+            WHERE receiver = %(tel)s AND user_type = %(ut)s
+        )
+        AND receiver = %(tel)s AND user_type = %(ut)s
+        LIMIT 1
+        """,
+        {"tel": mobile, "ut": USER_TYPE_CODE_LOGIN},
+    )
+    return bool(row and row.get("code") == code)
 
 
 def verify_find_password_code(mobile: str, code: str) -> bool:

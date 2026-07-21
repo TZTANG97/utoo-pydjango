@@ -15,6 +15,8 @@ const service = axios.create({
 
 service.interceptors.request.use(
   (config) => {
+    // 中台渠道标识：审计/差异配置用，不据此拆服务（见 docs/中台身份与菜单约定.md）
+    config.headers['X-Channel'] = 'pc'
     const token = getToken()
     if (token) {
       config.headers.token = token

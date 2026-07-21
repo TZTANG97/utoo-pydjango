@@ -1,0 +1,21 @@
+	.search-header {
+		display: flex;
+		height: 80rpx;
+		justify-content: space-between;
+		align-items: center;
+		margin-top: 10rpx;
+		input {
+			width: 85%;
+			background-color: #ECECEC;
+			height: 60rpx;
+			box-sizing: border-box;
+			padding-left: 20rpx;
+			border-radius: 30rpx;
+		}
+		.btn {
+			color: #FFF;
+			background-color: #E96302;
+			border-radius: 30rpx;
+			padding: 7rpx 15rpx;
+		}
+	}

@@ -52,7 +52,7 @@ def prove_detail(request: Request, user=None):
     return Response(ajax_ok(obj=detail, res_msg="获取成功"))
 
 
-@api_view(["POST"])
+@api_view(["GET", "POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
 @admin_ajax_view()

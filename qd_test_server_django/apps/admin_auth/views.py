@@ -107,3 +107,28 @@ def welcome(_request: Request, user=None):
             }
         )
     return ajax_response(True, obj=welcome_service.build_welcome_payload(payload_user))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view(require_staff=True)
+def sys_logs(request: Request, user=None):
+    del user
+    from apps.admin_core.datatable import datatable_response, parse_datatable
+
+    params = parse_datatable(request)
+    keyword = str(params.get("userName") or params.get("keyword") or "").strip()
+    add_time = str(params.get("addTime") or "").strip()
+    rows, total = welcome_service.list_sys_logs_page(
+        offset=params["offset"],
+        limit=params["limit"],
+        keyword=keyword,
+        add_time=add_time,
+    )
+    return Response(
+        ajax_ok(
+            obj=datatable_response(draw=params["draw"], total=total, rows=rows),
+            res_msg="ok",
+        )
+    )

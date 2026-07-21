@@ -422,16 +422,18 @@ def sample_attr_save(request: Request, user=None):
     if type_ > 1 and not parent_id:
         return fail("请选择上级属性")
     row_id = to_int(data.get("id"))
-    new_id = master_repo.save_sample_attr(
-        {
-            "name": name,
-            "type": type_,
-            "parent_id": parent_id,
-            "special_id": to_int(data.get("specialId") or data.get("special_id")),
-            "selection": to_int(data.get("selection"), 1) or 1,
-        },
-        row_id=row_id,
-    )
+    payload: dict = {
+        "name": name,
+        "type": type_,
+        "parent_id": parent_id,
+        "special_id": to_int(data.get("specialId") or data.get("special_id")),
+    }
+    # 选择方式仅二级属性使用；三级不传则不覆盖原值
+    if "selection" in data and data.get("selection") not in (None, ""):
+        payload["selection"] = to_int(data.get("selection"), 1) or 1
+    elif type_ == 2:
+        payload["selection"] = to_int(data.get("selection"), 1) or 1
+    new_id = master_repo.save_sample_attr(payload, row_id=row_id)
     return ok({"id": new_id}, res_msg="保存成功")
 
 

@@ -3,8 +3,8 @@
 #   sudo systemctl daemon-reload
 #   sudo systemctl enable --now qd-gateway
 #
-# 微服务模式：先 enable 上游 qd-auth/order/payment/wx/admin-asset/admin-platform，
-# 网关 .env 须配置 SVC_*_URL（见 deploy/README.md）。
+# 微服务模式：先 enable 上游 qd-order / qd-payment / qd-admin-asset / qd-admin-platform。
+# 网关 .env：勿设 SVC_AUTH_URL；SVC_WX_URL 与 SVC_PAYMENT_URL 同指 :18084（见 deploy/README.md）。
 #
 # 目录约定（与 CI 一致）：
 #   /opt/utoo/qd_test_server_django
@@ -14,7 +14,7 @@
 
 [Unit]
 Description=Utoo Django API Gateway
-After=network.target mysql.service redis.service qd-auth.service qd-order.service qd-payment.service qd-wx.service qd-admin-asset.service qd-admin-platform.service
+After=network.target mysql.service redis.service qd-order.service qd-payment.service qd-admin-asset.service qd-admin-platform.service
 Wants=network-online.target
 
 [Service]

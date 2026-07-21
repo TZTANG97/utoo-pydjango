@@ -16,6 +16,7 @@ _FORWARD_HEADERS = (
     "Content-Type",
     "Accept",
     "token",
+    "X-Channel",  # 中台渠道：admin / pc / wx，透传给上游，不据此拆服务
 )
 
 

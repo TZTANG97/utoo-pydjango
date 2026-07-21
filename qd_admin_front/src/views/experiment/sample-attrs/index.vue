@@ -43,10 +43,10 @@
 
     <el-table v-loading="loading" :data="rows" border stripe>
       <el-table-column type="index" width="55" label="#" align="center" />
-      <el-table-column prop="name" label="属性名称" min-width="140" />
+      <el-table-column prop="name" :label="type === 3 ? '分类名称' : '属性名称'" min-width="140" />
       <el-table-column v-if="type >= 2" prop="parentName" label="上级" min-width="120" />
       <el-table-column v-if="type >= 3" prop="firstName" label="一级" min-width="120" />
-      <el-table-column prop="selectionLabel" label="选择方式" width="100" />
+      <el-table-column v-if="type === 2" prop="selectionLabel" label="选择方式" width="100" />
       <el-table-column prop="addTime" label="创建时间" width="170" />
       <el-table-column label="操作" width="140" fixed="right">
         <template #default="{ row }">
@@ -80,10 +80,10 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="属性名称" required>
-          <el-input v-model="form.name" />
+        <el-form-item :label="nameFieldLabel" required>
+          <el-input v-model="form.name" :placeholder="type === 3 ? '请输入分类名称' : '请输入属性名称'" />
         </el-form-item>
-        <el-form-item label="选择方式">
+        <el-form-item v-if="type === 2" label="选择方式">
           <el-select v-model="form.selection" style="width: 100%">
             <el-option :value="1" label="单选" />
             <el-option :value="2" label="多选" />
@@ -122,6 +122,10 @@ const titles: Record<number, string> = {
   3: '样品属性三级',
 }
 const pageTitle = computed(() => titles[type.value] || '样品属性')
+const nameFieldLabel = computed(() => {
+  if (type.value !== 3) return '属性名称'
+  return form.id ? '修改分类名称' : '分类名称'
+})
 
 const filters = reactive({ name: '', parentId: '', firstId: '' })
 const firstOpts = ref<Record<string, unknown>[]>([])
@@ -217,7 +221,7 @@ async function openEdit(row: Record<string, unknown>) {
 
 async function handleSubmit() {
   if (!form.name.trim()) {
-    ElMessage.warning('请输入属性名称')
+    ElMessage.warning(type.value === 3 ? '请输入分类名称' : '请输入属性名称')
     return
   }
   if (type.value >= 2 && !form.parentId) {
@@ -226,13 +230,15 @@ async function handleSubmit() {
   }
   saving.value = true
   try {
-    const res = await saveSampleAttr({
+    const payload: Record<string, unknown> = {
       id: form.id,
       name: form.name.trim(),
       type: type.value,
       parentId: form.parentId,
-      selection: form.selection,
-    })
+    }
+    // 选择方式仅二级属性使用
+    if (type.value === 2) payload.selection = form.selection
+    const res = await saveSampleAttr(payload)
     if (isAjaxOk(res)) {
       ElMessage.success('保存成功')
       dialogVisible.value = false

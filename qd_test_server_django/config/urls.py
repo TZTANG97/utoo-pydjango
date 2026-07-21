@@ -12,6 +12,7 @@ from apps.core.svc_proxy import (
     svc_payment_enabled,
     svc_wx_enabled,
 )
+from apps.wx_mp import views_index as wx_index_views
 
 
 def _invoice_patterns():
@@ -75,19 +76,27 @@ def _order_extra_patterns():
     ]
 
 
+# 仅这 4 个仍可转发到 payment；小程序其余 /api/wx/* 走网关 apps.wx_mp
+_WX_PROXY_EXACT = (
+    "WeChatQRCodeGenerator.ajax",
+    "qrScanStatusCheck.ajax",
+    "reservationDetail.ajax",
+    "addFeedBack.ajax",
+)
+
+
 def _wx_patterns():
+    patterns = []
     if svc_wx_enabled():
         from apps.core.wx_forward import proxy_wx_request
 
-        return [
-            re_path(
-                r"^api/wx/(?P<subpath>.+)$",
-                proxy_wx_request,
-            ),
-        ]
-    return [
-        path("api/wx/", include("apps.wx.urls")),
-    ]
+        for exact in _WX_PROXY_EXACT:
+            patterns.append(path(f"api/wx/{exact}", proxy_wx_request))
+    else:
+        patterns.append(path("api/wx/", include("apps.wx.urls")))
+    # 小程序登录 / 业务别名（始终本地，不被 SVC_WX_URL 整段代理）
+    patterns.append(path("api/wx/", include("apps.wx_mp.urls")))
+    return patterns
 
 
 def _payment_extra_patterns():
@@ -303,12 +312,17 @@ def _experiment_order_patterns():
                 proxy_order_request,
             ),
             re_path(
+                r"^api/experimentSubOrder/(?P<subpath>.+)$",
+                proxy_order_request,
+            ),
+            re_path(
                 r"^api/experimentChildOrder/(?P<subpath>.+)$",
                 proxy_order_request,
             ),
         ]
     return [
         path("api/experimentOrder/", include("apps.orders.urls")),
+        path("api/experimentSubOrder/", include("apps.orders.sub_urls")),
         path("api/experimentChildOrder/", include("apps.orders.child_urls")),
     ]
 
@@ -325,6 +339,8 @@ urlpatterns = [
     path("api/admin/getEncryption.ajax", admin_auth_views.get_encryption),
     path("api/vue/", include("apps.admin_auth.urls_vue")),
     path("api/pc/", include("apps.pc_compat.urls")),
+    # 小程序登录后拉取用户类型/权限 map（原 Java /index/userRoles.ajax）
+    path("api/index/userRoles.ajax", wx_index_views.user_roles),
     *_admin_asset_patterns(),
     *_admin_platform_patterns(),
     *_invoice_patterns(),

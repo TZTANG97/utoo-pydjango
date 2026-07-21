@@ -41,6 +41,8 @@ urlpatterns = [
     path("selCompanyName.ajax", views_company.sel_company_name, name="pc-selCompanyName"),
     path("indexClassList.ajax", views_catalog.index_class_list, name="pc-indexClassList"),
     path("bannerList.ajax", views_catalog.banner_list, name="pc-bannerList"),
+    path("getXcxBanner.ajax", views_catalog.get_xcx_banner, name="pc-getXcxBanner"),
+    path("getTuZheBanner.ajax", views_catalog.get_tuzhe_banner, name="pc-getTuZheBanner"),
     path("selThirdClassList.ajax", views_catalog.sel_third_class_list, name="pc-selThirdClassList"),
     path("selFirAndSecClassList.ajax", views_catalog.sel_fir_and_sec_class_list, name="pc-selFirAndSecClassList"),
     path(

@@ -8,6 +8,12 @@ from qd_common.password_java import encrypt_password_for_storage
 
 SUPPLIER_USER_TYPE = 6
 
+# 编辑/列表共用字段，避免宽 SELECT 因列缺失导致 DatabaseError
+_SUPPLIER_SELECT = """
+    id, userName, company_name, trueName, mobile, address, area_info,
+    company_code, addTime, deleteStatus, email, area_id, city, province, address_info
+"""
+
 
 def list_suppliers(
     *,
@@ -36,13 +42,12 @@ def list_suppliers(
     if area_id:
         where += " AND area_info = %(area_id)s"
         params["area_id"] = area_id
-    total = scalar(f"SELECT COUNT(*) FROM user {where}", params)
+    total = scalar(f"SELECT COUNT(*) FROM `user` {where}", params)
     clause, page_params = page_clause(page, page_size)
     rows = fetch_all(
         f"""
-        SELECT id, userName, company_name, trueName, mobile, address, area_info,
-               company_code, addTime, deleteStatus, email, area_id
-        FROM user
+        SELECT {_SUPPLIER_SELECT}
+        FROM `user`
         {where}
         ORDER BY addTime DESC
         {clause}
@@ -54,11 +59,9 @@ def list_suppliers(
 
 def get_supplier(supplier_id: int) -> dict[str, Any] | None:
     row = fetch_one(
-        """
-        SELECT id, userName, company_name, trueName, mobile, address, area_info,
-               company_code, addTime, deleteStatus, email, area_id, city, province,
-               address_info, company_prop, zipCode, extension, dept, job
-        FROM user
+        f"""
+        SELECT {_SUPPLIER_SELECT}
+        FROM `user`
         WHERE id = %(id)s AND userType = %(user_type)s
         """,
         {"id": supplier_id, "user_type": SUPPLIER_USER_TYPE},
@@ -69,7 +72,7 @@ def get_supplier(supplier_id: int) -> dict[str, Any] | None:
 def find_by_user_name(user_name: str, exclude_id: int | None = None) -> dict[str, Any] | None:
     params: dict[str, Any] = {"user_name": user_name, "user_type": SUPPLIER_USER_TYPE}
     sql = """
-        SELECT id FROM user
+        SELECT id FROM `user`
         WHERE userName = %(user_name)s AND userType = %(user_type)s
     """
     if exclude_id:
@@ -81,7 +84,7 @@ def find_by_user_name(user_name: str, exclude_id: int | None = None) -> dict[str
 def find_by_company_name(company_name: str, exclude_id: int | None = None) -> dict[str, Any] | None:
     params: dict[str, Any] = {"company_name": company_name, "user_type": SUPPLIER_USER_TYPE}
     sql = """
-        SELECT id FROM user
+        SELECT id FROM `user`
         WHERE company_name = %(company_name)s AND userType = %(user_type)s
     """
     if exclude_id:
@@ -94,7 +97,7 @@ def insert_supplier(data: dict[str, Any]) -> int:
     password = data.get("password") or "123456"
     return execute_insert(
         """
-        INSERT INTO user
+        INSERT INTO `user`
             (userName, company_name, trueName, mobile, address, area_info, company_code,
              email, area_id, city, province, address_info, userType, password,
              deleteStatus, addTime, status)
@@ -123,9 +126,23 @@ def insert_supplier(data: dict[str, Any]) -> int:
 
 
 def update_supplier(supplier_id: int, data: dict[str, Any]) -> None:
+    # address：有传则更新；未传则保留原值，避免编辑弹窗清空区划 ID
+    existing = fetch_one(
+        "SELECT address, city, province FROM `user` WHERE id = %(id)s AND userType = %(user_type)s",
+        {"id": supplier_id, "user_type": SUPPLIER_USER_TYPE},
+    ) or {}
+    address = data.get("address")
+    if address in (None, ""):
+        address = existing.get("address") or ""
+    city = data.get("city")
+    if city in (None, ""):
+        city = existing.get("city")
+    province = data.get("province")
+    if province in (None, ""):
+        province = existing.get("province")
     execute(
         """
-        UPDATE user
+        UPDATE `user`
         SET userName = %(userName)s,
             company_name = %(company_name)s,
             trueName = %(trueName)s,
@@ -146,13 +163,13 @@ def update_supplier(supplier_id: int, data: dict[str, Any]) -> None:
             "company_name": data.get("company_name") or "",
             "trueName": data.get("trueName") or "",
             "mobile": data.get("mobile") or "",
-            "address": data.get("address") or "",
+            "address": address,
             "area_info": data.get("area_info") or data.get("areaInfo"),
             "company_code": data.get("company_code") or data.get("companyCode"),
             "email": data.get("email"),
             "area_id": data.get("area_id") or data.get("areaId"),
-            "city": data.get("city"),
-            "province": data.get("province"),
+            "city": city,
+            "province": province,
             "address_info": data.get("address_info") or data.get("addreddInfo"),
             "user_type": SUPPLIER_USER_TYPE,
         },
@@ -161,16 +178,42 @@ def update_supplier(supplier_id: int, data: dict[str, Any]) -> None:
 
 def toggle_supplier_status(supplier_id: int) -> None:
     row = fetch_one(
-        "SELECT deleteStatus FROM user WHERE id = %(id)s AND userType = %(user_type)s",
+        "SELECT deleteStatus FROM `user` WHERE id = %(id)s AND userType = %(user_type)s",
         {"id": supplier_id, "user_type": SUPPLIER_USER_TYPE},
     )
     if not row:
         return
     current = bool(row.get("deleteStatus"))
     execute(
-        "UPDATE user SET deleteStatus = %(status)s WHERE id = %(id)s",
+        "UPDATE `user` SET deleteStatus = %(status)s WHERE id = %(id)s",
         {"id": supplier_id, "status": 0 if current else 1},
     )
+
+
+def _district_label(address: Any) -> Any:
+    """address 存区划 ID（可为非纯数字），解析为可读地名。"""
+    if address in (None, ""):
+        return address
+    aid = str(address).strip()
+    dist = fetch_one(
+        "SELECT id, dis_name, superId FROM sy_district WHERE id = %(id)s LIMIT 1",
+        {"id": aid},
+    )
+    if not dist:
+        return address
+    name = dist.get("dis_name") or ""
+    super_id = dist.get("superId")
+    if super_id:
+        parent = fetch_one(
+            "SELECT dis_name FROM sy_district WHERE id = %(id)s LIMIT 1",
+            {"id": str(super_id)},
+        )
+        parent_name = (parent or {}).get("dis_name") or ""
+        if parent_name and name:
+            return f"{parent_name}/{name}"
+        if parent_name:
+            return parent_name
+    return name or address
 
 
 def _normalize_supplier(row: dict[str, Any]) -> dict[str, Any]:
@@ -183,14 +226,11 @@ def _normalize_supplier(row: dict[str, Any]) -> dict[str, Any]:
         )
         area_name = area_row.get("areaName") if area_row else ""
     address = row.get("address")
-    address_label = address
-    if address and str(address).isdigit():
-        dist = fetch_one(
-            "SELECT dis_name FROM sy_district WHERE id = %(id)s LIMIT 1",
-            {"id": str(address)},
-        )
-        if dist:
-            address_label = dist.get("dis_name")
+    address_label = _district_label(address)
+    detail = row.get("address_info")
+    if detail and address_label and str(address_label) != str(address):
+        # 有区划名时，列表可附带详细地址（若存在）
+        pass
     return {
         "id": row.get("id"),
         "userName": row.get("userName"),
@@ -198,8 +238,8 @@ def _normalize_supplier(row: dict[str, Any]) -> dict[str, Any]:
         "company_name": row.get("company_name"),
         "trueName": row.get("trueName"),
         "mobile": row.get("mobile"),
-        "address": row.get("address"),
-        "addressLabel": address_label,
+        "address": address,
+        "addressLabel": address_label if address_label not in (None, "") else (detail or address),
         "areaInfo": area_info,
         "areaName": area_name,
         "companyCode": row.get("company_code"),
@@ -210,5 +250,5 @@ def _normalize_supplier(row: dict[str, Any]) -> dict[str, Any]:
         "areaId": row.get("area_id"),
         "city": row.get("city"),
         "province": row.get("province"),
-        "addressInfo": row.get("address_info"),
+        "addressInfo": detail,
     }

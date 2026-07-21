@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     "apps.auth_support",
     "apps.payments",
     "apps.pc_payment",
+    "apps.wx",  # 原 qd_svc_wx：扫码登录 / 预约 / 反馈，已并入本进程
 ]
 
 MIDDLEWARE = [
@@ -101,6 +102,9 @@ PAY_USER_LOCK_SECONDS = env.int("PAY_USER_LOCK_SECONDS", default=30)
 PAY_NOTIFY_LOCK_SECONDS = env.int("PAY_NOTIFY_LOCK_SECONDS", default=120)
 
 WEIXIN_APPID = env("WEIXIN_APPID", default="")
+WEIXIN_SECRET = env("WEIXIN_SECRET", default="")
+WEIXIN_GZH_APPID = env("WEIXIN_GZH_APPID", default="")
+WEIXIN_GZH_SECRET = env("WEIXIN_GZH_SECRET", default="")
 WEIXIN_MERCHANT_ID = env("WEIXIN_MERCHANT_ID", default="")
 WEIXIN_MERCHANT_SERIAL_NUMBER = env("WEIXIN_MERCHANT_SERIAL_NUMBER", default="")
 WEIXIN_API_V3_KEY = env("WEIXIN_API_V3_KEY", default="")

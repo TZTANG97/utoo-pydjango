@@ -8,6 +8,7 @@ urlpatterns = [
     path("main.ajax", views.main, name="admin-main"),
     path("usercenter.ajax", views.usercenter, name="admin-usercenter"),
     path("welcome.ajax", views.welcome, name="admin-welcome"),
+    path("sysLogs.ajax", views.sys_logs, name="admin-sys-logs"),
     # 开票收款订单管理
     path("invoice/listPage.ajax", views_billing.invoice_list_page, name="admin-invoice-list"),
     path("invoice/invoiceDetail.ajax", views_billing.invoice_detail, name="admin-invoice-detail"),

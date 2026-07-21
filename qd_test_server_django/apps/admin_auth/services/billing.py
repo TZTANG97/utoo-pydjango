@@ -220,7 +220,7 @@ def agree_retest(*, apply_id: int, staff_user_id: str, mark: str = "") -> tuple[
     if child_id.isdigit():
         child = fetch_one(
             """
-            SELECT id, orderStatus FROM experiment_order_child
+            SELECT id, order_status AS orderStatus FROM experiment_order_child
             WHERE id = %(id)s LIMIT 1
             """,
             {"id": int(child_id)},
@@ -235,7 +235,7 @@ def agree_retest(*, apply_id: int, staff_user_id: str, mark: str = "") -> tuple[
             execute(
                 """
                 UPDATE experiment_order_child
-                SET fcsq = 0, orderStatus = %(status)s
+                SET fcsq = 0, order_status = %(status)s
                 WHERE id = %(id)s
                 """,
                 {"id": int(child_id), "status": new_status},

@@ -70,9 +70,20 @@ def get_proposal_detail(proposal_id: int) -> dict[str, Any] | None:
         """,
         {"id": proposal_id},
     )
+    files = fetch_all(
+        """
+        SELECT id, path, name, info, ext
+        FROM accessory
+        WHERE improve_id = %(id)s
+          AND (deleteStatus = 0 OR deleteStatus IS NULL)
+        ORDER BY id ASC
+        """,
+        {"id": proposal_id},
+    )
     return {
         "obj": normalize_row(row),
         "logs": normalize_rows(logs),
+        "files": normalize_rows(files),
     }
 
 

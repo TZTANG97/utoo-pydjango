@@ -5,7 +5,7 @@ from rest_framework.response import Response
 
 from apps.core.order_forward import forward_order_first
 from apps.core.pc_ajax import pc_ajax_view
-from apps.core.responses import api_fail, api_ok
+from apps.core.responses import ajax_ok, api_fail, api_ok
 from apps.core.services import banner as banner_svc
 from apps.orders.services import catalog as catalog_svc
 from apps.orders.services import experiment as experiment_svc
@@ -115,3 +115,23 @@ def test_class_detail(request: Request):
     if not data:
         return Response(api_fail(404, "实验不存在"))
     return Response(api_ok(data, message="获取成功!"))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def get_xcx_banner(request: Request):
+    """愉兔小程序封面 — 对齐 Java getXcxBanner.ajax（platform_type=2）。"""
+    del request
+    banner = banner_svc.pick_random_cover_banner(platform_type="2")
+    return Response(ajax_ok({"banner": banner}, "查询成功"))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def get_tuzhe_banner(request: Request):
+    """途哲小程序封面 — 对齐 Java getTuZheBanner.ajax（platform_type=3）。"""
+    del request
+    banner = banner_svc.pick_random_cover_banner(platform_type="3")
+    return Response(ajax_ok({"banner": banner}, "查询成功"))

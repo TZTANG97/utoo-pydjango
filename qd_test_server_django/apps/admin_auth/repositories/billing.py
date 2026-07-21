@@ -287,13 +287,107 @@ def get_retest_application(apply_id: int) -> dict[str, Any] | None:
         """
         SELECT
             t.*, u.userName, u.mobile, u.trueName,
-            c.orderStatus AS child_order_status
+            c.order_status AS child_order_status
         FROM retest_application t
         LEFT JOIN exp_user u ON t.userId = u.id
-        LEFT JOIN experiment_order_child c ON c.id = t.orderId
+        LEFT JOIN experiment_order_child c ON CAST(c.id AS CHAR) = CAST(t.orderId AS CHAR)
         WHERE t.id = %(id)s AND t.deleteStatus = 0
         LIMIT 1
         """,
         {"id": apply_id},
     )
     return to_jsonable(row) if row else None
+
+
+def _related_experiment_order(child_order_id: str) -> dict[str, Any] | None:
+    """对齐 Java：经 exp_qd_purchase_order_child 找主单；否则回退子单 order_form_id。"""
+    if not child_order_id:
+        return None
+    row = fetch_one(
+        """
+        SELECT eo.id, eo.order_id, eo.order_status, eo.order_type
+        FROM exp_qd_purchase_order_child poc
+        INNER JOIN experiment_order eo ON eo.id = poc.purchase_order_id
+        WHERE poc.order_child_id = %(cid)s
+          AND IFNULL(eo.order_status, 0) != 0
+        ORDER BY eo.id DESC
+        LIMIT 1
+        """,
+        {"cid": child_order_id},
+    )
+    if row:
+        return to_jsonable(row)
+    row = fetch_one(
+        """
+        SELECT eo.id, eo.order_id, eo.order_status, eo.order_type
+        FROM experiment_order_child c
+        INNER JOIN experiment_order eo ON eo.id = c.order_form_id
+        WHERE CAST(c.id AS CHAR) = CAST(%(cid)s AS CHAR)
+          AND IFNULL(eo.order_status, 0) != 0
+        LIMIT 1
+        """,
+        {"cid": child_order_id},
+    )
+    return to_jsonable(row) if row else None
+
+
+def list_retest_test_files(child_order_id: str) -> list[dict[str, Any]]:
+    """对齐 Java accessoryService.getByExpOfId(orderId)。"""
+    if not child_order_id:
+        return []
+    rows = fetch_all(
+        """
+        SELECT id, path, name, info, ext, type
+        FROM accessory
+        WHERE IFNULL(deleteStatus, 0) = 0
+          AND IFNULL(type, 0) != 5
+          AND (
+            CAST(exp_of_id AS CHAR) = CAST(%(oid)s AS CHAR)
+            OR CAST(child_of_id AS CHAR) = CAST(%(oid)s AS CHAR)
+          )
+        ORDER BY id ASC
+        """,
+        {"oid": child_order_id},
+    )
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        item = to_jsonable(r)
+        path = str(item.get("path") or "").rstrip("/")
+        name = str(item.get("name") or "")
+        item["url"] = f"{path}/{name}" if path and name else (path or name or "")
+        out.append(item)
+    return out
+
+
+def list_retest_logs(apply_id: int) -> list[dict[str, Any]]:
+    rows = fetch_all(
+        """
+        SELECT
+            ral.id,
+            ral.addTime,
+            ral.content,
+            ral.user_id AS userId,
+            IFNULL(su.true_name, IFNULL(eu.trueName, IFNULL(eu.userName, IFNULL(eu.mobile, '')))) AS addusername
+        FROM retest_application_log ral
+        LEFT JOIN sy_users su ON CAST(su.id AS CHAR) = CAST(ral.user_id AS CHAR)
+        LEFT JOIN exp_user eu ON CAST(eu.id AS CHAR) = CAST(ral.user_id AS CHAR)
+        WHERE ral.retest_application_id = %(id)s
+        ORDER BY ral.addTime ASC, ral.id ASC
+        """,
+        {"id": apply_id},
+    )
+    return [to_jsonable(r) for r in rows]
+
+
+def get_retest_detail(apply_id: int) -> dict[str, Any] | None:
+    """对齐 Java retestDetail.htm 返回结构。"""
+    row = get_retest_application(apply_id)
+    if not row:
+        return None
+    child_id = str(row.get("orderId") or "")
+    exp = _related_experiment_order(child_id)
+    row["fc_no"] = row.get("order_id") or row.get("fc_no")
+    row["experimentOrder"] = exp
+    row["testfiles"] = list_retest_test_files(child_id)
+    row["logs"] = list_retest_logs(apply_id)
+    return row

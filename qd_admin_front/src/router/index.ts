@@ -97,6 +97,12 @@ export const constantRoutes: RouteRecordRaw[] = [
         meta: { title: '部门管理' },
       },
       {
+        path: 'system/ops-logs',
+        name: 'SystemOpsLogs',
+        component: () => import('@/views/system/ops-logs/index.vue'),
+        meta: { title: '系统操作日志' },
+      },
+      {
         path: 'system/users',
         name: 'SystemUsers',
         component: () => import('@/views/system/users/index.vue'),

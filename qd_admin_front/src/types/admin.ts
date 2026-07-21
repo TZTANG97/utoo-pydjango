@@ -17,6 +17,18 @@ export interface LoginResult {
   uRoleName?: string
 }
 
+export interface WelcomeLogItem {
+  id?: string | number
+  addTime?: string
+  content?: string
+  userName?: string
+  loginName?: string
+  ip?: string
+  title?: string
+  type?: number
+  userId?: string | number
+}
+
 export interface WelcomeData {
   userName?: string
   loginName?: string
@@ -26,4 +38,7 @@ export interface WelcomeData {
   email?: string
   mobilePhoneNumber?: string
   menuCount?: number
+  xdate?: string[]
+  ydata?: string[]
+  newlogs?: WelcomeLogItem[]
 }

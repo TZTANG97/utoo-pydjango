@@ -4,6 +4,7 @@ import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import 'normalize.css/normalize.css'
 import 'element-plus/dist/index.css'
 import 'nprogress/nprogress.css'
+import '@wangeditor/editor/dist/css/style.css'
 import '@/assets/main.css'
 
 import App from './App.vue'

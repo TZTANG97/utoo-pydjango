@@ -3,8 +3,8 @@
 #
 # Stages（4 段，对应微服务发版步骤）：
 #   build           → 构建双前端
-#   deploy_services → qd_libs_common + 6 上游微服务
-#   deploy_gateway  → 网关（SVC_* 转发）
+#   deploy_services → qd_libs_common + 4 上游（order/payment/asset/platform）
+#   deploy_gateway  → 网关（含 C 端认证；SVC_* 转发）
 #   deploy_static   → C 端 / 管理后台静态
 stages:
   - build
@@ -66,7 +66,7 @@ build_frontend_prod:
       - qd_admin_front/dist/
     expire_in: 2 hours
 
-# --- deploy_services：6 上游 ---
+# --- deploy_services：4 上游（auth/wx 已废弃） ---
 
 deploy_services_dev:
   extends: .utoo_windows_runner

@@ -8,6 +8,7 @@ urlpatterns = [
     path("health/", core_views.health),
     path("api/", include("apps.core.urls")),
     path("api/experimentOrder/", include("apps.orders.urls")),
+    path("api/experimentSubOrder/", include("apps.orders.sub_urls")),
     path("api/experimentChildOrder/", include("apps.orders.child_urls")),
     path("api/ordersampleinfomation/", include("apps.orders.sample_urls")),
     path("api/sampleAttributeManage/", include("apps.orders.sample_attr_urls")),

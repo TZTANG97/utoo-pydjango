@@ -1,8 +1,15 @@
-import request, { type RequestConfig } from '@/utils/request'
+import request, { type AjaxBody, type RequestConfig, isAjaxOk } from '@/utils/request'
 
 export interface LoginPayload {
   loginName: string
   password: string
+}
+
+export interface DataTableResult<T = Record<string, unknown>> {
+  draw?: number
+  recordsTotal?: number
+  recordsFiltered?: number
+  data?: T[]
 }
 
 export function adminLogin(data: LoginPayload, config?: RequestConfig) {
@@ -20,3 +27,19 @@ export function fetchAdminUserCenter(config?: RequestConfig) {
 export function fetchAdminWelcome(config?: RequestConfig) {
   return request.get('/vue/welcome.ajax', config)
 }
+
+export async function fetchSysLogs(
+  params: Record<string, unknown>,
+  config?: RequestConfig
+): Promise<DataTableResult> {
+  const res = (await request.post('/vue/sysLogs.ajax', params, config)) as unknown as AjaxBody
+  const payload = (res.obj || res) as DataTableResult
+  return {
+    draw: payload.draw || 1,
+    recordsTotal: payload.recordsTotal || 0,
+    recordsFiltered: payload.recordsFiltered || 0,
+    data: Array.isArray(payload.data) ? payload.data : [],
+  }
+}
+
+export { isAjaxOk }

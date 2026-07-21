@@ -116,7 +116,7 @@ import {
   saveSupplier,
 } from '@/api/system'
 import { useDataTable } from '@/composables/useDataTable'
-import { isAjaxOk } from '@/utils/request'
+import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
 
 const filters = reactive({
   userName: '',
@@ -134,12 +134,15 @@ const form = reactive({
   userName: '',
   companyName: '',
   areaInfo: '',
+  address: '',
   addressInfo: '',
   trueName: '',
   mobile: '',
   companyCode: '',
   email: '',
   password: '',
+  city: '',
+  province: '',
 })
 
 const dialogTitle = computed(() => (editingId.value ? '编辑所属公司' : '添加所属公司'))
@@ -164,11 +167,30 @@ function resetForm() {
   form.userName = ''
   form.companyName = ''
   form.areaInfo = ''
+  form.address = ''
   form.addressInfo = ''
   form.trueName = ''
   form.mobile = ''
   form.companyCode = ''
   form.email = ''
+  form.password = ''
+  form.city = ''
+  form.province = ''
+}
+
+function fillForm(data: Record<string, unknown>) {
+  editingId.value = Number(data.id)
+  form.userName = String(data.userName || '')
+  form.companyName = String(data.companyName || data.company_name || '')
+  form.areaInfo = data.areaInfo != null && data.areaInfo !== '' ? String(data.areaInfo) : ''
+  form.address = data.address != null && data.address !== '' ? String(data.address) : ''
+  form.addressInfo = String(data.addressInfo || data.address_info || '')
+  form.trueName = String(data.trueName || '')
+  form.mobile = String(data.mobile || '')
+  form.companyCode = String(data.companyCode || data.company_code || '')
+  form.email = String(data.email || '')
+  form.city = data.city != null ? String(data.city) : ''
+  form.province = data.province != null ? String(data.province) : ''
   form.password = ''
 }
 
@@ -178,22 +200,22 @@ function openCreate() {
 }
 
 async function openEdit(row: Record<string, unknown>) {
-  const res = await getSupplierById(String(row.id))
-  if (!isAjaxOk(res) || !res.obj) {
-    ElMessage.error('加载公司信息失败')
-    return
+  try {
+    const res = await getSupplierById(String(row.id))
+    if (isAjaxOk(res) && res.obj) {
+      fillForm(res.obj as Record<string, unknown>)
+      dialogVisible.value = true
+      return
+    }
+    // getById 失败时用列表行回退填表，避免完全卡死
+    ElMessage.warning(ajaxErrorMessage(res, '详情加载失败，已用列表数据打开编辑'))
+    fillForm(row)
+    dialogVisible.value = true
+  } catch (error) {
+    ElMessage.warning(error instanceof Error ? error.message : '详情加载失败，已用列表数据打开编辑')
+    fillForm(row)
+    dialogVisible.value = true
   }
-  const data = res.obj as Record<string, unknown>
-  editingId.value = Number(data.id)
-  form.userName = String(data.userName || '')
-  form.companyName = String(data.companyName || data.company_name || '')
-  form.areaInfo = data.areaInfo ? String(data.areaInfo) : ''
-  form.addressInfo = String(data.addressInfo || data.address_info || '')
-  form.trueName = String(data.trueName || '')
-  form.mobile = String(data.mobile || '')
-  form.companyCode = String(data.companyCode || data.company_code || '')
-  form.email = String(data.email || '')
-  dialogVisible.value = true
 }
 
 async function handleSubmit() {
@@ -217,6 +239,10 @@ async function handleSubmit() {
       company_code: form.companyCode.trim(),
       email: form.email.trim(),
     }
+    // 回传区划 ID，避免 update 清空 address
+    if (form.address) payload.address = form.address
+    if (form.city) payload.city = form.city
+    if (form.province) payload.province = form.province
     if (editingId.value) {
       payload.id = editingId.value
     } else if (form.password.trim()) {
@@ -224,12 +250,12 @@ async function handleSubmit() {
     }
     const res = await saveSupplier(payload)
     if (isAjaxOk(res)) {
-      ElMessage.success('保存成功')
+      ElMessage.success(res.resMsg || '保存成功')
       dialogVisible.value = false
       await reload()
       return
     }
-    ElMessage.error('保存失败，用户名或企业名称可能已存在')
+    ElMessage.error(ajaxErrorMessage(res, '保存失败，用户名或企业名称可能已存在'))
   } finally {
     saving.value = false
   }
@@ -239,10 +265,10 @@ async function handleDelete(row: Record<string, unknown>) {
   await ElMessageBox.confirm('确定删除（禁用）该所属公司吗？', '提示', { type: 'warning' })
   const res = await deleteSupplier(String(row.id))
   if (isAjaxOk(res)) {
-    ElMessage.success('操作成功')
+    ElMessage.success(res.resMsg || '操作成功')
     await reload()
   } else {
-    ElMessage.error('操作失败')
+    ElMessage.error(ajaxErrorMessage(res, '操作失败'))
   }
 }
 </script>

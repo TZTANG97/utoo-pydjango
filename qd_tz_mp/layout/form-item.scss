@@ -1,0 +1,12 @@
+	.form-item:nth-child(n+1) {
+		margin-top: 30rpx;
+	}
+
+	.form-item {
+		input {
+			margin-top: 10rpx;
+			height: 65rpx;
+			line-height: 65rpx;
+			border-bottom: 1rpx solid #F0F0F0;
+		}
+	}

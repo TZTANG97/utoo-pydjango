@@ -1,0 +1,14 @@
+.row {
+	margin: 0 30rpx;
+	padding: 25rpx 0;
+	border-bottom: 1rpx solid #F0F0F0;
+	color: #6C6C6C;
+
+	.content {
+		image {
+			width: 80rpx;
+			height: 80rpx;
+			border-radius: 50%;
+		}
+	}
+}
