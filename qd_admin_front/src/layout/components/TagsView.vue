@@ -204,7 +204,7 @@ onBeforeUnmount(() => {
 }
 
 .tags-title {
-  max-width: 140px;
+  max-width: 260px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

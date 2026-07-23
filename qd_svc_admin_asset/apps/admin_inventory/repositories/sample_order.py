@@ -172,6 +172,44 @@ def list_sample_store_options() -> list[dict[str, Any]]:
     )
 
 
+def list_sample_store_positions(
+    *, store_id: int | str, free_only: bool = True
+) -> list[dict[str, Any]]:
+    """对齐 Java samplestoreHouse/queryListByStoreId.ajax；type=0 仅空闲仓位。"""
+    try:
+        sid = int(store_id)
+    except (TypeError, ValueError):
+        return []
+    if sid <= 0:
+        return []
+    where = """
+        WHERE IFNULL(t.deleteStatus, 0) = 0
+          AND t.sample_store_id = %(sid)s
+    """
+    if free_only:
+        where += " AND (t.goods_brand_id IS NULL OR t.goods_brand_id = 0)"
+    rows = fetch_all(
+        f"""
+        SELECT
+            t.id AS value,
+            CONCAT(IFNULL(b.block, ''), '-', IFNULL(t.number, '')) AS label,
+            t.id, t.number, b.block AS blockName,
+            t.sample_block_id AS blockId,
+            t.position_status AS positionStatus
+        FROM sample_goods_store_position t
+        LEFT JOIN sample_goods_store_block b ON t.sample_block_id = b.id
+        {where}
+        ORDER BY b.block ASC, CONVERT(t.number, SIGNED) ASC, t.id ASC
+        LIMIT 2000
+        """,
+        {"sid": sid},
+    )
+    for r in rows:
+        label = str(r.get("label") or "").strip("-")
+        r["label"] = label or str(r.get("number") or r.get("value") or "")
+    return rows
+
+
 def list_sample_export_rows(
     *,
     store_id: str = "",

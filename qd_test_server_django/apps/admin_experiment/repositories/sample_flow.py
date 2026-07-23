@@ -3,8 +3,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.core.db_utils import execute, fetch_all, fetch_one, scalar
+from apps.core.db_utils import execute, execute_insert, fetch_all, fetch_one, scalar
 from django.db import transaction
+from datetime import datetime
 
 # child line statuses (jy.main.js childOrderStatus / ChildOrderStatusEnum)
 ST_PROCESSED = 2
@@ -200,8 +201,32 @@ def attach_sample_action_flags(row: dict[str, Any]) -> None:
     row["cswcShow"] = ST_TESTING in statuses
     row["ypghShow"] = ST_TEST_DONE in statuses
     has41 = ST_RETURN in statuses
-    row["ypjhShow"] = has41 and reverso == 1
-    row["yplcShow"] = has41 and reverso != 1
+
+    # Java：线上订单寄回/留存需至少一行 status=41 且 is_sure=1
+    def _online_ok() -> bool:
+        if is_online != 1:
+            return True
+        n = int(
+            scalar(
+                """
+                SELECT COUNT(*)
+                FROM exp_qd_purchase_order_child poc
+                JOIN experiment_order_child c ON poc.order_child_id = c.id
+                WHERE poc.purchase_order_id = %(oid)s
+                  AND IFNULL(c.delete_status, 2) <> 1
+                  AND c.order_status = %(st)s
+                  AND IFNULL(c.is_sure, 0) = 1
+                """,
+                {"oid": int(row["id"]), "st": ST_RETURN},
+                0,
+            )
+            or 0
+        )
+        return n > 0
+
+    ship_retain_ok = has41 and _online_ok()
+    row["ypjhShow"] = ship_retain_ok and reverso == 1
+    row["yplcShow"] = ship_retain_ok and reverso != 1
 
     # 确认完成仅 type=10
     qrwc = False
@@ -217,6 +242,7 @@ def attach_sample_action_flags(row: dict[str, Any]) -> None:
                 break
     row["qrwcShow"] = qrwc
     row["canConfirmDone"] = qrwc
+    # Java：ypfcShow && qrwcShow 才显示复测（type=10）
     row["ypfcShow"] = (
         is_online == 0
         and any(s in (ST_TEST_DONE, ST_RETURN) for s in statuses)
@@ -328,31 +354,225 @@ def _set_children_status(
 
 
 @transaction.atomic
-def sample_arrive(*, order_id: int, child_ids: Any, store_position_id: str = "") -> tuple[bool, str]:
+def sample_arrive(
+    *,
+    order_id: int,
+    child_ids: Any,
+    store_id: str = "",
+    store_position_id: str = "",
+) -> tuple[bool, str]:
+    """
+    对齐 Java inTreasury/saveInTreasury type=1：
+    - 不选仓库/仓位：仅推进子行状态到样品到货
+    - 同时选仓库+仓位：写入样品管理单，并把样品信息落到对应仓位
+    """
     ids = _parse_ids(child_ids)
-    # 仓位写入尽量不阻塞：有列则记
+    if not ids:
+        return False, "请选择子单行"
+    sid = str(store_id or "").strip()
+    spos = str(store_position_id or "").strip()
+    if (sid and not spos) or (spos and not sid):
+        return False, "请同时选择仓库名称和仓库位置，或不选"
+    log_suffix = "样品到货"
     extra = ""
     extra_params: dict[str, Any] = {}
-    if store_position_id:
-        extra = ", remark = CONCAT(IFNULL(remark,''), %(npos)s)"
-        extra_params["npos"] = f"[仓位:{store_position_id}]"
+
+    if sid and spos:
+        if len(ids) != 1:
+            return False, "选择仓库位置时请只勾选一行"
+        try:
+            store_i = int(sid)
+            pos_i = int(spos)
+        except (TypeError, ValueError):
+            return False, "仓库或仓位参数错误"
+        store = fetch_one(
+            """
+            SELECT id, sample_store_name AS storeName
+            FROM sample_goods_storehouse
+            WHERE id = %(id)s AND IFNULL(deleteStatus, 0) = 0
+            LIMIT 1
+            """,
+            {"id": store_i},
+        )
+        if not store:
+            return False, "仓库不存在"
+        pos = fetch_one(
+            """
+            SELECT
+                t.id, t.goods_brand_id AS goodsBrandId, t.number,
+                b.block AS blockName
+            FROM sample_goods_store_position t
+            LEFT JOIN sample_goods_store_block b ON t.sample_block_id = b.id
+            WHERE t.id = %(id)s
+              AND t.sample_store_id = %(sid)s
+              AND IFNULL(t.deleteStatus, 0) = 0
+            LIMIT 1
+            """,
+            {"id": pos_i, "sid": store_i},
+        )
+        if not pos:
+            return False, "仓库位置不存在"
+        try:
+            occupied = int(pos.get("goodsBrandId") or 0)
+        except (TypeError, ValueError):
+            occupied = 0
+        if occupied:
+            return False, "请确认样本仓库位置为空闲!"
+        child = fetch_one(
+            """
+            SELECT
+                id, order_id AS childOrderId, order_status AS orderStatus,
+                goods_id AS goodsId, goods_name AS goodsName,
+                goods_brand_id AS goodsBrandId, goods_brand_name AS goodsBrandName,
+                goods_spec AS goodsSpec
+            FROM experiment_order_child
+            WHERE id = %(id)s AND IFNULL(delete_status, 2) <> 1
+            LIMIT 1
+            """,
+            {"id": ids[0]},
+        )
+        if not child:
+            return False, "子单行不存在"
+        slot = f"{pos.get('blockName') or ''}-{pos.get('number') or ''}".strip("-")
+        store_name = str(store.get("storeName") or "")
+        log_suffix = f"样品到货,仓库位置{store_name}; {slot}"
+        extra = ", in_status = 1"
+        # 占用仓位
+        execute(
+            """
+            UPDATE sample_goods_store_position
+            SET goods_brand_id = %(brand_id)s,
+                goods_brand_name = %(brand_name)s,
+                goods_spec = %(spec)s,
+                goods_id = %(goods_id)s,
+                position_status = 1,
+                sample_name = %(sample_name)s
+            WHERE id = %(id)s
+            """,
+            {
+                "id": pos_i,
+                "brand_id": child.get("goodsBrandId") or 0,
+                "brand_name": str(child.get("goodsBrandName") or "")[:100],
+                "spec": str(child.get("goodsSpec") or "")[:200],
+                "goods_id": child.get("goodsId") or 0,
+                "sample_name": str(child.get("goodsName") or "")[:200],
+            },
+        )
+        # 样品管理单
+        out_num = f"YP{datetime.now().strftime('%Y%m%d%H%M%S')}{ids[0]}"
+        out_id = execute_insert(
+            """
+            INSERT INTO exp_goods_out_treasury
+                (addTime, deleteStatus, out_num, order_id, store_id, status,
+                 in_out_type, ftype, inTreasury_user, sj_out_time)
+            VALUES
+                (NOW(), 0, %(out_num)s, %(oid)s, %(store_id)s, 1,
+                 1, 1, NULL, NOW())
+            """,
+            {"out_num": out_num, "oid": order_id, "store_id": store_i},
+        )
+        execute_insert(
+            """
+            INSERT INTO exp_goods_out_treasury_child
+                (addTime, deleteStatus, out_id, order_child_id, goods_id, goods_name,
+                 goods_brand_id, goods_brand_name, goods_spec, store_id,
+                 store_position_id, got_status)
+            VALUES
+                (NOW(), 0, %(out_id)s, %(cid)s, %(goods_id)s, %(goods_name)s,
+                 %(brand_id)s, %(brand_name)s, %(spec)s, %(store_id)s,
+                 %(pos_id)s, 1)
+            """,
+            {
+                "out_id": out_id,
+                "cid": ids[0],
+                "goods_id": child.get("goodsId") or 0,
+                "goods_name": str(child.get("goodsName") or "")[:200],
+                "brand_id": child.get("goodsBrandId") or 0,
+                "brand_name": str(child.get("goodsBrandName") or "")[:100],
+                "spec": str(child.get("goodsSpec") or "")[:200],
+                "store_id": store_i,
+                "pos_id": pos_i,
+            },
+        )
+        try:
+            execute(
+                """
+                INSERT INTO exp_outin_depot_log
+                    (addTime, deleteStatus, of_id, log_info, store_id, store_position_id)
+                VALUES
+                    (NOW(), 0, %(of_id)s, %(info)s, %(store_id)s, %(pos_id)s)
+                """,
+                {
+                    "of_id": out_id,
+                    "info": log_suffix[:500],
+                    "store_id": store_i,
+                    "pos_id": pos_i,
+                },
+            )
+        except Exception:
+            pass
+    else:
+        # 无仓位：对齐 Java isPosition=0，标记 in_status
+        extra = ", in_status = 1"
+
     ok, msg = _set_children_status(
         order_id=order_id,
         child_ids=ids,
         expect_from={ST_PROCESSED},
         to_status=ST_ARRIVE,
-        log_suffix="样品到货",
+        log_suffix=log_suffix,
         extra_sql=extra,
         extra_params=extra_params or None,
     )
+    if ok and sid and spos:
+        return True, "样品入库成功！"
     return ok, msg
 
 
 @transaction.atomic
 def sample_pick(*, order_id: int, child_ids: Any) -> tuple[bool, str]:
+    """对齐 Java：若订单开启云视频，领用前须已预约会议。"""
+    ids = _parse_ids(child_ids)
+    if not ids:
+        return False, "请选择子单行"
+    order = _load_order(order_id)
+    if not order:
+        return False, "订单不存在"
+    is_video = 0
+    try:
+        is_video = int(order.get("isVideo") or 0)
+    except (TypeError, ValueError):
+        is_video = 0
+    if not is_video and order.get("parentId"):
+        parent = fetch_one(
+            "SELECT is_video AS isVideo FROM experiment_order WHERE id = %(id)s LIMIT 1",
+            {"id": order["parentId"]},
+        )
+        if parent:
+            try:
+                is_video = int(parent.get("isVideo") or 0)
+            except (TypeError, ValueError):
+                is_video = 0
+    if is_video == 1:
+        for cid in ids:
+            child = fetch_one(
+                """
+                SELECT id, is_meeting AS isMeeting, order_id AS childOrderId
+                FROM experiment_order_child WHERE id = %(id)s LIMIT 1
+                """,
+                {"id": cid},
+            )
+            if not child:
+                continue
+            try:
+                meet = int(child.get("isMeeting") or 0)
+            except (TypeError, ValueError):
+                meet = 0
+            if meet != 1:
+                return False, f"子单 {child.get('childOrderId') or cid} 请先预约云视频"
     return _set_children_status(
         order_id=order_id,
-        child_ids=_parse_ids(child_ids),
+        child_ids=ids,
         expect_from={ST_ARRIVE},
         to_status=ST_PICK,
         log_suffix="样品领用",
@@ -454,6 +674,9 @@ def confirm_children(*, order_id: int, child_ids: Any, mark: str = "") -> tuple[
     ids = _parse_ids(child_ids)
     if not ids:
         return False, "请选择要确认的子单行"
+    # 对齐 Java confirm.ajax：备注必填
+    if not str(mark or "").strip():
+        return False, "请填写确认备注"
     ok_n = 0
     for cid in ids:
         child = fetch_one(

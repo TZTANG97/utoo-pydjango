@@ -741,7 +741,19 @@ def order_share_ratio(request: Request, user=None):
         return fail("参数错误")
     ok_flag, msg = order_repo.update_share_ratio(
         order_id=order_id,
-        scale_info=str(data.get("scaleInfo") or data.get("userScaleInfo") or data.get("info") or ""),
+        user_scale_info=str(
+            data.get("user_scale_info")
+            or data.get("userScaleInfo")
+            or data.get("scaleInfo")
+            or data.get("info")
+            or ""
+        ),
+        salecb_user_scale_info=str(
+            data.get("salecb_user_scale_info")
+            or data.get("salecbUserScaleInfo")
+            or data.get("salecbScaleInfo")
+            or ""
+        ),
     )
     if not ok_flag:
         return fail(msg)
@@ -761,9 +773,33 @@ def order_add_related(request: Request, user=None):
     ok_flag, msg = order_repo.add_related_order(
         order_id=order_id,
         related_order_no=str(
-            data.get("relatedOrderId") or data.get("relatedOrderNo") or data.get("orderId") or ""
+            data.get("rOrderId")
+            or data.get("relatedOrderId")
+            or data.get("relatedOrderNo")
+            or data.get("orderId")
+            or ""
         ),
+        r_select=str(data.get("rSelect") or data.get("relatedType") or data.get("type") or ""),
     )
+    if not ok_flag:
+        return fail(msg)
+    return ok(res_msg=msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_del_related(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    of_id = str(data.get("ofId") or data.get("of_id") or data.get("orderId") or "").strip()
+    related_no = str(
+        data.get("order_id") or data.get("relatedOrderNo") or data.get("relatedOrderId") or ""
+    ).strip()
+    if not of_id or not related_no:
+        return fail("参数错误")
+    ok_flag, msg = order_repo.del_related_order(of_order_no=of_id, related_order_no=related_no)
     if not ok_flag:
         return fail(msg)
     return ok(res_msg=msg)
@@ -889,7 +925,13 @@ def order_sample_arrive(request: Request, user=None):
     ok_flag, msg = sample_flow_repo.sample_arrive(
         order_id=oid,
         child_ids=_child_ids_from(data),
-        store_position_id=str(data.get("storePositionId") or data.get("store_position_id") or ""),
+        store_id=str(data.get("storeId") or data.get("store_id") or ""),
+        store_position_id=str(
+            data.get("storePosId")
+            or data.get("storePositionId")
+            or data.get("store_position_id")
+            or ""
+        ),
     )
     return ok(res_msg=msg) if ok_flag else fail(msg)
 
@@ -1150,6 +1192,7 @@ def order_create_sub(request: Request, user=None):
     ok_flag, msg, new_id = order_repo.create_sub_order_from_parent(
         parent_id=pid,
         child_line_ids=data.get("childIds") or data.get("childids") or data.get("ids"),
+        form=data,
     )
     if not ok_flag:
         return fail(msg)
@@ -1227,4 +1270,63 @@ def order_upload_sub_invoice(request: Request, user=None):
         staff_user_id=staff,
         log_info=str(data.get("logInfo") or data.get("remark") or "上传发票信息"),
     )
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_upload_file(request: Request, user=None):
+    """对齐 Java experimentOrder/uploadChildData.ajax（订单资料 type=3）。"""
+    del user
+    from apps.orders.services import accessory_upload as accessory_upload_svc
+
+    uploaded = request.FILES.get("orderdata") or request.FILES.get("file")
+    if not uploaded:
+        return fail("文件为空")
+    data = merge_payload(request)
+    oid = _order_id_from(data)
+    if not oid:
+        return fail("参数错误")
+    type_raw = str(data.get("type") or request.POST.get("type") or "3")
+    acc_type = int(type_raw) if type_raw.isdigit() else 3
+    ok_flag, msg, obj = accessory_upload_svc.save_order_attachment(
+        data=uploaded.read(),
+        orig_name=uploaded.name or "upload",
+        content_type=uploaded.content_type or "application/octet-stream",
+        acc_type=acc_type,
+        exp_of_id=oid,
+    )
+    return ok(obj, res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_delete_file(request: Request, user=None):
+    """对齐 Java experimentSubOrder/deleteFile.ajax。"""
+    del user
+    data = merge_payload(request)
+    aid = to_int(data.get("id") or data.get("accessoryId"))
+    if not aid:
+        return fail("参数错误")
+    ok_flag, msg = order_repo.delete_order_file(accessory_id=aid)
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_update_msg(request: Request, user=None):
+    """对齐 Java msgBlur：保存订单备注。"""
+    del user
+    data = merge_payload(request)
+    oid = _order_id_from(data)
+    if not oid:
+        return fail("参数错误")
+    msg_text = str(data.get("msg") or data.get("mark") or "")
+    ok_flag, msg = order_repo.update_order_msg(order_id=oid, msg=msg_text)
     return ok(res_msg=msg) if ok_flag else fail(msg)

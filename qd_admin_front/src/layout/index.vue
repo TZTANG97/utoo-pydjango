@@ -96,7 +96,7 @@ import {
   Menu,
 } from '@element-plus/icons-vue'
 import TagsView from '@/layout/components/TagsView.vue'
-import { useTagsViewStore } from '@/stores/tags-view'
+import { resolveRouteTitle, useTagsViewStore } from '@/stores/tags-view'
 import { useUserStore } from '@/stores/user'
 import { isMenuReady, resolveMenuPath } from '@/utils/menu-route'
 
@@ -118,7 +118,9 @@ const currentTitle = computed(() => {
     const menuId = String(route.params.menuId || '')
     return userStore.pendingMenus[menuId]?.title || '功能迁移中'
   }
-  return String(route.meta.title || '欢迎页')
+  const tag = tagsViewStore.visitedViews.find((v) => v.path === route.path)
+  if (tag?.title) return tag.title
+  return resolveRouteTitle(route) || String(route.meta.title || '欢迎页')
 })
 
 async function handleLogout() {

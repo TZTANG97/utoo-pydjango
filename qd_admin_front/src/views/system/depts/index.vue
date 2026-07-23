@@ -1,50 +1,93 @@
 <template>
-  <admin-page-card title="部门管理">
-    <template #actions>
-      <el-button type="primary" @click="openCreate('0')">添加根部门</el-button>
-    </template>
+  <div class="page-wrap">
+    <section class="table-panel">
+      <div class="table-toolbar">
+        <div class="toolbar-title">
+          <span class="title-text">部门管理</span>
+          <span class="title-meta">共 {{ nodeCount }} 个部门</span>
+        </div>
+        <el-button type="primary" @click="openCreate('0')">添加根部门</el-button>
+      </div>
 
-    <el-table
-      v-loading="loading"
-      :data="rows"
-      row-key="id"
-      border
-      stripe
-      default-expand-all
-      :tree-props="{ children: 'children' }"
+      <el-table
+        v-loading="loading"
+        :data="rows"
+        row-key="id"
+        class="data-table"
+        stripe
+        default-expand-all
+        :tree-props="{ children: 'children' }"
+        :header-cell-style="{
+          background: '#f3f6fb',
+          color: '#3a4660',
+          fontWeight: 600,
+          borderBottom: '1px solid #e4ebf5',
+        }"
+      >
+        <el-table-column label="部门名称" min-width="220">
+          <template #default="{ row }">
+            <span class="dept-name">{{ row.deptName || '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="排序" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" effect="plain" round class="sort-tag">
+              {{ row.deptSort ?? 0 }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="电话" min-width="130">
+          <template #default="{ row }">
+            <span class="cell-muted">{{ row.deptPhone || '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="地址" min-width="200" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="cell-muted">{{ row.deptAddress || '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="260" fixed="right" align="center">
+          <template #default="{ row }">
+            <div class="op-group">
+              <el-button link type="primary" @click="openCreate(String(row.id))">
+                添加子部门
+              </el-button>
+              <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+              <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+            </div>
+          </template>
+        </el-table-column>
+      </el-table>
+    </section>
+
+    <el-dialog
+      v-model="dialogVisible"
+      :title="dialogTitle"
+      width="540px"
+      destroy-on-close
+      class="dept-dialog"
     >
-      <el-table-column prop="deptName" label="部门名称" min-width="200" />
-      <el-table-column prop="deptSort" label="排序" width="80" />
-      <el-table-column prop="deptPhone" label="电话" min-width="120" />
-      <el-table-column prop="deptAddress" label="地址" min-width="180" show-overflow-tooltip />
-      <el-table-column label="操作" width="240" fixed="right">
-        <template #default="{ row }">
-          <el-button link type="primary" @click="openCreate(String(row.id))">添加子部门</el-button>
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
-
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="520px">
-      <el-form label-width="90px">
-        <el-form-item label="部门名称">
-          <el-input v-model="form.deptName" />
+      <div class="dialog-tip">
+        {{ editingId ? '修改当前部门信息' : parentId === '0' ? '将创建一级根部门' : '将在所选部门下新增子部门' }}
+      </div>
+      <el-form label-width="90px" class="dept-form">
+        <el-form-item label="部门名称" required>
+          <el-input v-model="form.deptName" placeholder="请输入部门名称" maxlength="50" />
         </el-form-item>
         <el-form-item label="排序">
-          <el-input-number v-model="form.deptSort" :min="0" />
+          <el-input-number v-model="form.deptSort" :min="0" controls-position="right" />
         </el-form-item>
         <el-form-item label="电话">
-          <el-input v-model="form.deptPhone" />
+          <el-input v-model="form.deptPhone" placeholder="选填" />
         </el-form-item>
         <el-form-item label="传真">
-          <el-input v-model="form.deptFax" />
+          <el-input v-model="form.deptFax" placeholder="选填" />
         </el-form-item>
         <el-form-item label="地址">
-          <el-input v-model="form.deptAddress" />
+          <el-input v-model="form.deptAddress" placeholder="选填" />
         </el-form-item>
         <el-form-item label="备注">
-          <el-input v-model="form.deptDesc" type="textarea" :rows="2" />
+          <el-input v-model="form.deptDesc" type="textarea" :rows="2" placeholder="选填" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -52,13 +95,12 @@
         <el-button type="primary" :loading="saving" @click="handleSubmit">保存</el-button>
       </template>
     </el-dialog>
-  </admin-page-card>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import AdminPageCard from '@/components/AdminPageCard.vue'
 import { addDept, deleteDept, fetchDeptTree, updateDept } from '@/api/system'
 import { isAjaxOk } from '@/utils/request'
 
@@ -78,6 +120,20 @@ const form = reactive({
 })
 
 const dialogTitle = computed(() => (editingId.value ? '编辑部门' : '添加部门'))
+
+function countNodes(list: Record<string, unknown>[]): number {
+  let n = 0
+  for (const item of list) {
+    n += 1
+    const children = item.children
+    if (Array.isArray(children) && children.length) {
+      n += countNodes(children as Record<string, unknown>[])
+    }
+  }
+  return n
+}
+
+const nodeCount = computed(() => countNodes(rows.value))
 
 async function load() {
   loading.value = true
@@ -152,3 +208,110 @@ async function handleDelete(row: Record<string, unknown>) {
   }
 }
 </script>
+
+<style scoped lang="scss">
+.page-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.table-panel {
+  background: #fff;
+  border: 1px solid #e8eef6;
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(31, 45, 61, 0.04);
+  padding: 14px 16px 16px;
+}
+
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #eef2f8;
+}
+
+.toolbar-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.title-text {
+  font-size: 15px;
+  font-weight: 600;
+  color: #24324a;
+}
+
+.title-meta {
+  font-size: 12px;
+  color: #8a95a8;
+}
+
+.data-table {
+  --el-table-border-color: #eef2f8;
+  --el-table-row-hover-bg-color: #f5f9ff;
+
+  :deep(.el-table__inner-wrapper::before) {
+    display: none;
+  }
+
+  :deep(.el-table__expand-icon) {
+    color: #5b7cba;
+  }
+
+  :deep(.el-table__indent) {
+    padding-left: 14px;
+  }
+}
+
+.dept-name {
+  color: #24324a;
+  font-weight: 600;
+}
+
+.cell-muted {
+  color: #6b768a;
+  font-size: 13px;
+}
+
+.sort-tag {
+  --el-tag-bg-color: #f0f4fa;
+  --el-tag-border-color: #dce5f2;
+  --el-tag-text-color: #4d5d78;
+  min-width: 36px;
+  justify-content: center;
+}
+
+.op-group {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.dialog-tip {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: linear-gradient(120deg, #f4f8ff 0%, #fff8ef 100%);
+  border: 1px solid #e8eef6;
+  color: #5b6780;
+  font-size: 13px;
+}
+
+.dept-form {
+  :deep(.el-form-item__label) {
+    color: #5b6780;
+    font-weight: 500;
+  }
+
+  :deep(.el-input-number) {
+    width: 160px;
+  }
+}
+</style>

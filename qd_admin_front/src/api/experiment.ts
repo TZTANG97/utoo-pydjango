@@ -133,6 +133,8 @@ export const updateExpOrderShareRatio = (data: Record<string, unknown>) =>
   postAjax(`${BASE}/order/shareRatio.ajax`, data)
 export const addExpOrderRelated = (data: Record<string, unknown>) =>
   postAjax(`${BASE}/order/addRelated.ajax`, data)
+export const delExpOrderRelated = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/delRelated.ajax`, data)
 export const saveExpOrderFinish = (data: Record<string, unknown>) =>
   postAjax(`${BASE}/order/saveFinish.ajax`, data)
 export const fetchExpOrderMoreInfo = (id: string | number) =>
@@ -187,6 +189,17 @@ export const uploadSubPayExpOrder = (data: Record<string, unknown>) =>
   postAjax(`${BASE}/order/uploadSubPay.ajax`, data)
 export const uploadSubInvoiceExpOrder = (data: Record<string, unknown>) =>
   postAjax(`${BASE}/order/uploadSubInvoice.ajax`, data)
+
+export const uploadExpOrderFile = (formData: FormData) =>
+  request.post(`${BASE}/order/uploadFile.ajax`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }) as unknown as Promise<AjaxBody>
+
+export const deleteExpOrderFile = (id: string | number) =>
+  postAjax(`${BASE}/order/deleteFile.ajax`, { id })
+
+export const updateExpOrderMsg = (id: string | number, msg: string) =>
+  postAjax(`${BASE}/order/updateMsg.ajax`, { id, msg })
 
 export const fetchGrabOrderList = (p: Record<string, unknown>) =>
   fetchDatatable(`${BASE}/grab/list.ajax`, p)

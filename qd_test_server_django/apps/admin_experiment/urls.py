@@ -45,6 +45,7 @@ urlpatterns = [
     path("adminExperiment/order/saveReceiveBill.ajax", views.order_save_receive_bill),
     path("adminExperiment/order/shareRatio.ajax", views.order_share_ratio),
     path("adminExperiment/order/addRelated.ajax", views.order_add_related),
+    path("adminExperiment/order/delRelated.ajax", views.order_del_related),
     path("adminExperiment/order/saveFinish.ajax", views.order_save_finish),
     path("adminExperiment/order/moreInfo.ajax", views.order_more_info),
     path("adminExperiment/order/export.ajax", views.order_export),
@@ -70,6 +71,9 @@ urlpatterns = [
     path("adminExperiment/order/subPay.ajax", views.order_sub_pay),
     path("adminExperiment/order/uploadSubPay.ajax", views.order_upload_sub_pay),
     path("adminExperiment/order/uploadSubInvoice.ajax", views.order_upload_sub_invoice),
+    path("adminExperiment/order/uploadFile.ajax", views.order_upload_file),
+    path("adminExperiment/order/deleteFile.ajax", views.order_delete_file),
+    path("adminExperiment/order/updateMsg.ajax", views.order_update_msg),
     path("adminExperiment/grab/list.ajax", views.grab_list),
     path("adminExperiment/grab/competition.ajax", views.grab_order),
 ]

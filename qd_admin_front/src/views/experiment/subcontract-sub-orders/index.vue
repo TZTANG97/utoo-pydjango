@@ -1,186 +1,172 @@
 <template>
-  <admin-page-card title="实验分包子订单">
-    <template #actions>
-      <el-button type="warning" :loading="exportingFinished" @click="handleExportFinished">
-        导出测试完成项目EXCEL
-      </el-button>
-      <el-button type="warning" :loading="exporting" @click="handleExport">导出EXCEL</el-button>
-    </template>
+  <div class="page-wrap">
+    <section class="filter-panel">
+      <div class="action-bar">
+        <el-button type="warning" :loading="exportingFinished" @click="handleExportFinished">
+          导出测试完成项目EXCEL
+        </el-button>
+        <el-button type="warning" :loading="exporting" @click="handleExport">导出EXCEL</el-button>
+      </div>
 
-    <el-form :inline="true" class="filter-form" @submit.prevent>
-      <el-form-item>
-        <el-input
-          v-model="filters.customerName"
-          clearable
-          placeholder="客户名称"
-          style="width: 150px"
-        />
-      </el-form-item>
-      <el-form-item>
-        <el-input
-          v-model="filters.parentOrderId"
-          clearable
-          placeholder="来源订单"
-          style="width: 150px"
-        />
-      </el-form-item>
-      <el-form-item>
-        <el-input v-model="filters.orderId" clearable placeholder="订单编号" style="width: 150px" />
-      </el-form-item>
-      <el-form-item>
-        <el-date-picker
-          v-model="filters.finishStart"
-          type="date"
-          value-format="YYYY-MM-DD"
-          placeholder="测试完成开始时间"
-          clearable
-          style="width: 160px"
-        />
-      </el-form-item>
-      <el-form-item>
-        <el-date-picker
-          v-model="filters.finishEnd"
-          type="date"
-          value-format="YYYY-MM-DD"
-          placeholder="测试完成结束时间"
-          clearable
-          style="width: 160px"
-        />
-      </el-form-item>
-      <el-form-item>
-        <el-select
-          v-model="filters.saleManager"
-          clearable
-          filterable
-          placeholder="全部销售主管"
-          style="width: 140px"
-        >
-          <el-option
-            v-for="o in managerOpts"
-            :key="String(o.value)"
-            :label="String(o.label)"
-            :value="String(o.value)"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item>
-        <el-select
-          v-model="filters.saleUser"
-          clearable
-          filterable
-          placeholder="全部采购人员"
-          style="width: 140px"
-        >
-          <el-option
-            v-for="o in purchaseOpts"
-            :key="String(o.value)"
-            :label="String(o.label)"
-            :value="String(o.value)"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item>
-        <el-select
-          v-model="filters.orderStatus"
-          clearable
-          placeholder="全部订单状态"
-          style="width: 150px"
-        >
-          <el-option
-            v-for="o in statusOpts"
-            :key="String(o.value)"
-            :label="String(o.label)"
-            :value="String(o.value)"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item>
-        <el-select
-          v-model="filters.payStatus"
-          clearable
-          placeholder="全部付款状态"
-          style="width: 140px"
-        >
-          <el-option
-            v-for="o in payStatusOpts"
-            :key="String(o.value)"
-            :label="String(o.label)"
-            :value="String(o.value)"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item>
-        <el-select
-          v-model="filters.testUserId"
-          clearable
-          filterable
-          placeholder="全部测试人员"
-          style="width: 140px"
-        >
-          <el-option
-            v-for="o in testUserOpts"
-            :key="String(o.value)"
-            :label="String(o.label)"
-            :value="String(o.value)"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item>
-        <el-button type="primary" @click="reload">查询</el-button>
-      </el-form-item>
-    </el-form>
+      <el-form :inline="true" class="filter-form" @submit.prevent>
+        <el-form-item>
+          <el-input v-model="filters.customerName" clearable placeholder="客户名称" style="width: 150px" />
+        </el-form-item>
+        <el-form-item>
+          <el-input v-model="filters.parentOrderId" clearable placeholder="来源订单" style="width: 150px" />
+        </el-form-item>
+        <el-form-item>
+          <el-input v-model="filters.orderId" clearable placeholder="订单编号" style="width: 150px" />
+        </el-form-item>
+        <el-form-item>
+          <div class="date-range">
+            <el-date-picker
+              v-model="filters.finishStart"
+              type="date"
+              value-format="YYYY-MM-DD"
+              placeholder="完成开始"
+              clearable
+              style="width: 140px"
+            />
+            <span class="range-sep">至</span>
+            <el-date-picker
+              v-model="filters.finishEnd"
+              type="date"
+              value-format="YYYY-MM-DD"
+              placeholder="完成结束"
+              clearable
+              style="width: 140px"
+            />
+          </div>
+        </el-form-item>
+        <el-form-item>
+          <el-select v-model="filters.saleManager" clearable filterable placeholder="全部销售主管" style="width: 140px">
+            <el-option v-for="o in managerOpts" :key="String(o.value)" :label="String(o.label)" :value="String(o.value)" />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <el-select v-model="filters.saleUser" clearable filterable placeholder="全部采购人员" style="width: 140px">
+            <el-option v-for="o in purchaseOpts" :key="String(o.value)" :label="String(o.label)" :value="String(o.value)" />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <el-select v-model="filters.orderStatus" clearable placeholder="全部订单状态" style="width: 150px">
+            <el-option v-for="o in statusOpts" :key="String(o.value)" :label="String(o.label)" :value="String(o.value)">
+              <el-tag :type="statusTagType(String(o.label))" size="small" effect="light" round>{{ o.label }}</el-tag>
+            </el-option>
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <el-select v-model="filters.payStatus" clearable placeholder="全部付款状态" style="width: 140px">
+            <el-option v-for="o in payStatusOpts" :key="String(o.value)" :label="String(o.label)" :value="String(o.value)">
+              <el-tag :type="payTagType(String(o.label))" size="small" effect="light" round>{{ o.label }}</el-tag>
+            </el-option>
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <el-select v-model="filters.testUserId" clearable filterable placeholder="全部测试人员" style="width: 140px">
+            <el-option v-for="o in testUserOpts" :key="String(o.value)" :label="String(o.label)" :value="String(o.value)" />
+          </el-select>
+        </el-form-item>
+        <el-form-item class="filter-actions">
+          <el-button type="primary" @click="reload">查询</el-button>
+          <el-button type="danger" class="btn-reset" @click="resetFilters">重置</el-button>
+        </el-form-item>
+      </el-form>
+    </section>
 
-    <el-table v-loading="loading" :data="rows" border stripe>
-      <el-table-column type="index" width="50" label="#" align="center" />
-      <el-table-column prop="orderId" label="订单编号" min-width="180" show-overflow-tooltip>
-        <template #default="{ row }">
-          <el-button link type="primary" @click="openDetail(row)">{{ row.orderId }}</el-button>
-        </template>
-      </el-table-column>
-      <el-table-column prop="parentOrderId" label="来源订单" min-width="160" show-overflow-tooltip />
-      <el-table-column prop="companyName" label="进货公司名称" min-width="150" show-overflow-tooltip>
-        <template #default="{ row }">
-          {{ row.stockCompanyName || row.companyName || row.customerName || '' }}
-        </template>
-      </el-table-column>
-      <el-table-column prop="saleManager" label="销售主管" width="100" show-overflow-tooltip />
-      <el-table-column prop="saleUser" label="采购人员" width="100" show-overflow-tooltip />
-      <el-table-column prop="testName" label="测试人员" width="100" show-overflow-tooltip />
-      <el-table-column prop="totalPrice" label="订单总价" width="100" align="right" />
-      <el-table-column prop="orderTime" label="下单时间" width="110" />
-      <el-table-column
-        prop="orderStatusLabel"
-        label="订单状态"
-        width="120"
-        show-overflow-tooltip
-      />
-      <el-table-column prop="payStatusLabel" label="付款状态" width="100" show-overflow-tooltip />
-      <el-table-column label="操作" width="90" fixed="right">
-        <template #default="{ row }">
-          <el-button link type="primary" @click="openDetail(row)">查看</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+    <section class="table-panel">
+      <div class="table-toolbar">
+        <div class="toolbar-title">
+          <span class="title-text">实验分包子订单</span>
+          <span class="title-meta">共 {{ total }} 条</span>
+        </div>
+      </div>
 
-    <div class="pager">
-      <el-pagination
-        v-model:current-page="pagination.page"
-        v-model:page-size="pagination.pageSize"
-        :page-sizes="[10, 20, 50]"
-        layout="sizes, total, prev, pager, next"
-        :total="total"
-        @size-change="reload"
-        @current-change="() => load(listParams())"
-      />
-    </div>
-  </admin-page-card>
+      <el-table
+        v-loading="loading"
+        :data="rows"
+        class="data-table"
+        stripe
+        :header-cell-style="headerCellStyle"
+        :row-class-name="rowClassName"
+      >
+        <el-table-column type="index" width="52" label="#" align="center" />
+        <el-table-column prop="orderId" label="订单编号" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">
+            <el-button link type="primary" class="order-link" @click="openDetail(row)">{{ row.orderId }}</el-button>
+          </template>
+        </el-table-column>
+        <el-table-column prop="parentOrderId" label="来源订单" min-width="160" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="cell-code">{{ row.parentOrderId || '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="companyName" label="进货公司名称" min-width="150" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="cell-strong">
+              {{ row.stockCompanyName || row.companyName || row.customerName || '-' }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="saleManager" label="销售主管" width="100" show-overflow-tooltip>
+          <template #default="{ row }"><span class="cell-muted">{{ row.saleManager || '-' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="saleUser" label="采购人员" width="100" show-overflow-tooltip>
+          <template #default="{ row }"><span class="cell-muted">{{ row.saleUser || '-' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="testName" label="测试人员" width="100" show-overflow-tooltip>
+          <template #default="{ row }"><span class="cell-muted">{{ row.testName || '-' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="totalPrice" label="订单总价" width="110" align="right">
+          <template #default="{ row }">
+            <span class="money">¥ {{ formatMoney(row.totalPrice) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="orderTime" label="下单时间" width="110">
+          <template #default="{ row }"><span class="cell-muted">{{ row.orderTime || '-' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="orderStatusLabel" label="订单状态" width="120" align="center">
+          <template #default="{ row }">
+            <el-tag :type="statusTagType(row.orderStatusLabel)" size="small" effect="light" round class="status-tag">
+              {{ row.orderStatusLabel || '-' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="payStatusLabel" label="付款状态" width="110" align="center">
+          <template #default="{ row }">
+            <el-tag :type="payTagType(row.payStatusLabel)" size="small" effect="plain" round>
+              {{ row.payStatusLabel || '-' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="90" fixed="right" align="center">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openDetail(row)">查看</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div class="pager">
+        <el-pagination
+          v-model:current-page="pagination.page"
+          v-model:page-size="pagination.pageSize"
+          :page-sizes="[10, 20, 50]"
+          background
+          layout="sizes, total, prev, pager, next"
+          :total="total"
+          @size-change="reload"
+          @current-change="() => load(listParams())"
+        />
+      </div>
+    </section>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import AdminPageCard from '@/components/AdminPageCard.vue'
 import {
   exportExpOrders,
   fetchExpOrderList,
@@ -191,6 +177,13 @@ import { useDataTable } from '@/composables/useDataTable'
 import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
 
 const router = useRouter()
+
+const headerCellStyle = {
+  background: '#f3f6fb',
+  color: '#3a4660',
+  fontWeight: 600,
+  borderBottom: '1px solid #e4ebf5',
+}
 
 const filters = reactive({
   customerName: '',
@@ -212,6 +205,36 @@ const purchaseOpts = ref<Record<string, unknown>[]>([])
 const testUserOpts = ref<Record<string, unknown>[]>([])
 const exporting = ref(false)
 const exportingFinished = ref(false)
+
+function formatMoney(value: unknown) {
+  const num = Number(value ?? 0)
+  return Number.isFinite(num) ? num.toFixed(2) : '0.00'
+}
+
+function statusTagType(label: unknown): 'success' | 'warning' | 'danger' | 'info' | 'primary' {
+  const text = String(label || '')
+  if (/待审核|待确认|待处理|审核中/.test(text)) return 'warning'
+  if (/已付款|已完成|已结清|完成|通过/.test(text)) return 'success'
+  if (/拒绝|驳回|取消|关闭|作废/.test(text)) return 'danger'
+  if (/未发起|草稿|新建|未申请/.test(text)) return 'info'
+  if (/进行中|测试|实验|发货|收款/.test(text)) return 'primary'
+  return 'info'
+}
+
+function payTagType(label: unknown): 'success' | 'warning' | 'danger' | 'info' | 'primary' {
+  const text = String(label || '')
+  if (/待审核/.test(text)) return 'warning'
+  if (/已审核|已付款|已完成/.test(text)) return 'success'
+  if (/已驳回|拒绝/.test(text)) return 'danger'
+  if (/未申请/.test(text)) return 'info'
+  return 'primary'
+}
+
+function rowClassName({ row }: { row: Record<string, unknown> }) {
+  return /待审核|待确认|待处理/.test(String(row.orderStatusLabel || row.payStatusLabel || ''))
+    ? 'row-pending'
+    : ''
+}
 
 function listParams() {
   const p: Record<string, unknown> = { orderType: '9' }
@@ -237,6 +260,22 @@ function reload() {
   return load(listParams())
 }
 
+function resetFilters() {
+  Object.assign(filters, {
+    customerName: '',
+    parentOrderId: '',
+    orderId: '',
+    finishStart: '',
+    finishEnd: '',
+    saleManager: '',
+    saleUser: '',
+    orderStatus: '',
+    payStatus: '',
+    testUserId: '',
+  })
+  reload()
+}
+
 function mapUserRows(data: Record<string, unknown>[]) {
   return data
     .map((u) => ({
@@ -255,7 +294,6 @@ async function loadOptions() {
   if (isAjaxOk(payRes) && Array.isArray(payRes.obj)) {
     payStatusOpts.value = payRes.obj as Record<string, unknown>[]
   } else {
-    // 与 Java purchasePayStatus 一致的兜底
     payStatusOpts.value = [
       { value: '0', label: '未申请' },
       { value: '33', label: '已驳回' },
@@ -288,10 +326,14 @@ async function loadOptions() {
 }
 
 function openDetail(row: Record<string, unknown>) {
+  const orderNo = String(row.orderId || '').trim()
   router.push({
     name: 'ExperimentOrderDetail',
     params: { id: String(row.id) },
-    query: { from: 'subcontract-sub-orders' },
+    query: {
+      from: 'subcontract-sub-orders',
+      ...(orderNo ? { orderNo } : {}),
+    },
   })
 }
 
@@ -357,7 +399,6 @@ async function handleExport() {
 async function handleExportFinished() {
   exportingFinished.value = true
   try {
-    // 对齐 Java bjexport：按测试完成时间筛选导出
     await doExport('experiment_subcontract_sub_orders_finished.csv')
   } catch {
     ElMessage.error('导出失败')
@@ -373,9 +414,142 @@ onMounted(async () => {
 </script>
 
 <style scoped lang="scss">
-.filter-form {
-  margin-bottom: 12px;
+.page-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
+
+.filter-panel,
+.table-panel {
+  background: #fff;
+  border: 1px solid #e8eef6;
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(31, 45, 61, 0.04);
+}
+
+.filter-panel {
+  padding: 14px 18px 2px;
+  background: linear-gradient(180deg, #fbfcfe 0%, #ffffff 55%);
+}
+
+.action-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #eef2f8;
+  flex-wrap: wrap;
+}
+
+.filter-form {
+  :deep(.el-form-item) {
+    margin-right: 12px;
+    margin-bottom: 14px;
+  }
+}
+
+.date-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.range-sep {
+  color: #94a0b4;
+  font-size: 13px;
+}
+
+.filter-actions {
+  :deep(.el-form-item__content) {
+    gap: 8px;
+  }
+}
+
+.btn-reset {
+  color: #fff !important;
+  background-color: #f56c6c !important;
+  border-color: #f56c6c !important;
+}
+
+.table-panel {
+  padding: 14px 16px 16px;
+}
+
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #eef2f8;
+}
+
+.toolbar-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.title-text {
+  font-size: 15px;
+  font-weight: 600;
+  color: #24324a;
+}
+
+.title-meta {
+  font-size: 12px;
+  color: #8a95a8;
+}
+
+.data-table {
+  --el-table-border-color: #eef2f8;
+  --el-table-row-hover-bg-color: #f5f9ff;
+
+  :deep(.el-table__inner-wrapper::before) {
+    display: none;
+  }
+
+  :deep(.el-table__row.row-pending > td.el-table__cell) {
+    background: #fffaf2;
+  }
+
+  :deep(.el-table__row.row-pending:hover > td.el-table__cell) {
+    background: #fff4e5 !important;
+  }
+}
+
+.order-link {
+  font-weight: 600;
+}
+
+.cell-code {
+  color: #2f6fed;
+  font-weight: 550;
+}
+
+.cell-strong {
+  color: #24324a;
+  font-weight: 550;
+}
+
+.cell-muted {
+  color: #6b768a;
+  font-size: 13px;
+}
+
+.money {
+  color: #e6a23c;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.status-tag {
+  min-width: 72px;
+  justify-content: center;
+}
+
 .pager {
   display: flex;
   justify-content: flex-end;

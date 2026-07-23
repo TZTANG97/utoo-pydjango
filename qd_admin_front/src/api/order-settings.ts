@@ -123,6 +123,18 @@ export function normalizeTaxInput(value: string | number) {
   return num > 1 ? (num / 100).toFixed(4) : String(num)
 }
 
+export function fetchTaxAll() {
+  return getAjax('/taxesConfig/getAllConfigs.ajax')
+}
+
+export function fetchPaytypeAll() {
+  return fetchPaytypeList({ start: 0, length: 500, draw: 1 })
+}
+
+export function fetchBillTypeAll(billType: number) {
+  return fetchBillTypeList({ type: billType, start: 0, length: 500, draw: 1 })
+}
+
 export function formatTaxDisplay(value?: number | null) {
   if (value == null) return '-'
   return `${(value * 100).toFixed(2)}%`

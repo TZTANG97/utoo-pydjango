@@ -43,6 +43,8 @@ urlpatterns = [
     # 样品管理单
     path("inTreasury/list.ajax", inv.sample_order_list),
     path("inTreasury/options.ajax", inv.sample_order_options),
+    path("samplestoreHouse/queryStore.ajax", inv.sample_order_options),
+    path("samplestoreHouse/queryListByStoreId.ajax", inv.sample_store_positions),
     path("inTreasury/detail.ajax", inv.sample_order_detail),
     path("inTreasury/export.ajax", inv.sample_order_export),
     # 设备预约

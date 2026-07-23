@@ -157,10 +157,14 @@ function openDetail(row: Record<string, unknown>) {
     '10': 'sub-orders',
     '6': 'orders',
   }
+  const orderNo = String(row.orderId || '').trim()
   router.push({
     name: 'ExperimentOrderDetail',
     params: { id: String(row.id) },
-    query: { from: fromMap[ot] || 'orders' },
+    query: {
+      from: fromMap[ot] || 'orders',
+      ...(orderNo ? { orderNo } : {}),
+    },
   })
 }
 

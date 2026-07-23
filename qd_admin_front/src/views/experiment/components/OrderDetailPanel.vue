@@ -20,7 +20,13 @@
                 v-if="detail.parentPkId"
                 link
                 type="primary"
-                @click="goDetail(Number(detail.parentPkId))"
+                @click="
+                  goDetail(
+                    Number(detail.parentPkId),
+                    orderType === '9' ? '8' : '6',
+                    detail.parentOrderId
+                  )
+                "
               >
                 {{ detail.parentOrderId }}
               </el-button>
@@ -47,6 +53,14 @@
         </el-button>
         <el-button v-if="detail.canEdit" plain @click="onEditOrder">编辑订单</el-button>
         <el-button
+          v-if="detail.canWithdrawAudit"
+          plain
+          :loading="acting"
+          @click="onWithdrawAudit"
+        >
+          取消审核申请
+        </el-button>
+        <el-button
           v-if="detail.canSubmitAudit"
           type="warning"
           :loading="acting"
@@ -54,13 +68,13 @@
         >
           提交审核
         </el-button>
+        <!-- Java 主单：创建子单在审核通过/驳回之前 -->
         <el-button
-          v-if="detail.canWithdrawAudit"
-          plain
-          :loading="acting"
-          @click="onWithdrawAudit"
+          v-if="detail.canCreateChild"
+          class="btn-accent"
+          @click="onCreateChild"
         >
-          取消审核申请
+          {{ orderType === '8' ? '创建实验分包子订单' : '创建实验子订单' }}
         </el-button>
         <el-button
           v-if="detail.canAudit"
@@ -77,6 +91,10 @@
           @click="doAudit(false)"
         >
           驳回
+        </el-button>
+        <!-- Java 子订单：保存在样品流转按钮之前 -->
+        <el-button v-if="detail.canSaveFinish" type="primary" :loading="acting" @click="onSaveFinish">
+          保存
         </el-button>
         <el-button
           v-if="detail.canConfirmOrdered"
@@ -134,28 +152,7 @@
         >
           上传发票信息
         </el-button>
-        <el-button
-          v-if="detail.canCreateChild"
-          class="btn-accent"
-          @click="onCreateChild"
-        >
-          {{ orderType === '8' ? '创建实验分包子订单' : '创建实验子订单' }}
-        </el-button>
-        <el-button
-          v-if="detail.canShareRatio"
-          class="btn-accent"
-          @click="shareVisible = true"
-        >
-          调整分成比例
-        </el-button>
-        <el-button
-          v-if="detail.canCostSettle"
-          class="btn-accent"
-          :loading="acting"
-          @click="onCostSettle"
-        >
-          所有成本已结清
-        </el-button>
+        <!-- Java 主单：开票 → 收款 → 确认付款 → 沟通确认 → 分成 → 结清 → 关联 -->
         <el-button
           v-if="detail.canInvoice"
           type="warning"
@@ -189,12 +186,19 @@
           已和客户沟通确认
         </el-button>
         <el-button
-          v-if="detail.canGenerateAppointment"
+          v-if="detail.canShareRatio"
+          class="btn-accent"
+          @click="openShareDialog"
+        >
+          调整分成比例
+        </el-button>
+        <el-button
+          v-if="detail.canCostSettle"
           class="btn-accent"
           :loading="acting"
-          @click="onGenerateAppointment"
+          @click="onCostSettle"
         >
-          生成预约单
+          所有成本已结清
         </el-button>
         <el-button
           v-if="detail.canAddRelated"
@@ -202,6 +206,15 @@
           @click="relatedVisible = true"
         >
           增加关联订单
+        </el-button>
+        <el-button v-if="detail.canMoreInfo" @click="onMoreInfo">更多信息</el-button>
+        <el-button
+          v-if="detail.canGenerateAppointment"
+          class="btn-accent"
+          :loading="acting"
+          @click="onGenerateAppointment"
+        >
+          生成预约单
         </el-button>
         <!-- type=9/10 样品流转 -->
         <el-button
@@ -269,14 +282,6 @@
           样品留存
         </el-button>
         <el-button
-          v-if="detail.yplcShow"
-          type="danger"
-          :loading="acting"
-          @click="openSampleAction('scrap')"
-        >
-          样品报废
-        </el-button>
-        <el-button
           v-if="detail.ypfcShow"
           plain
           :loading="acting"
@@ -292,15 +297,108 @@
         >
           确认完成
         </el-button>
-        <el-button v-if="detail.canSaveFinish" type="primary" :loading="acting" @click="onSaveFinish">
-          保存
-        </el-button>
-        <el-button @click="onMoreInfo">更多信息</el-button>
       </section>
 
       <section class="card">
         <h3 class="card-title">基本信息</h3>
-        <el-descriptions :column="3" border class="soft-desc">
+        <!-- 实验分包子订单：对齐 Java purchase_order_detail 字段 -->
+        <el-descriptions
+          v-if="orderType === '9'"
+          :column="3"
+          border
+          class="soft-desc"
+        >
+          <el-descriptions-item label="订单状态">
+            {{ detail.orderStatusLabel || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="订单编号">
+            <span class="mono">{{ detail.orderId || '-' }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="来源单号">
+            <el-button
+              v-if="detail.parentPkId"
+              link
+              type="primary"
+              @click="
+                goDetail(Number(detail.parentPkId), '8', detail.parentOrderId)
+              "
+            >
+              {{ detail.parentOrderId || '-' }}
+            </el-button>
+            <span v-else>{{ detail.parentOrderId || '-' }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="销售主管">{{ detail.saleManager || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="制单人员">{{ detail.addUser || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="实验室测试主管">
+            {{ detail.testManager || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="实验分包公司名称">
+            {{ detail.stockCompanyName || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="实验分包总价">
+            {{ detail.totalPrice ?? '-' }}
+            <template v-if="detail.currencyLabel === '人民币'"> 元</template>
+          </el-descriptions-item>
+          <el-descriptions-item label="下单时间">{{ detail.orderTime || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="预计完成时间">
+            {{ detail.deliveryTime || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="订单币种">{{ detail.currencyLabel || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="付款方式">{{ detail.payWayName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="付款状态">{{ detail.payStatusLabel || '-' }}</el-descriptions-item>
+          <template v-if="expectPayRows.length">
+            <template v-for="(ep, idx) in expectPayRows" :key="'ep-' + idx">
+              <el-descriptions-item label="预计付款时间">{{ ep.time || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="预计付款金额" :span="2">
+                {{ ep.price || '-' }}
+              </el-descriptions-item>
+            </template>
+          </template>
+          <el-descriptions-item label="是否开票">{{ detail.invoiceLabel || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="联系电话">{{ detail.contactPhone || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="样品是否回收">
+            {{ detail.reversoLabel || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="是否云视频">{{ detail.isVideoLabel || '-' }}</el-descriptions-item>
+        </el-descriptions>
+        <!-- type=9：订单资料 + 订单备注（对齐 Java） -->
+        <div v-if="orderType === '9'" class="order-files-block">
+          <div class="files-row">
+            <span class="files-label">订单资料</span>
+            <div class="files-list">
+              <div v-for="f in orderFiles" :key="String(f.id)" class="file-item">
+                <a
+                  class="file-name"
+                  :href="fileUrl(f)"
+                  target="_blank"
+                  rel="noopener"
+                >{{ fileLabel(f) }}</a>
+                <el-button type="success" size="small" @click="onDownloadFile(f)">下载</el-button>
+                <el-button type="danger" size="small" :loading="acting" @click="onDeleteFile(f)">
+                  删除
+                </el-button>
+              </div>
+              <el-upload
+                :show-file-list="false"
+                :http-request="onUploadOrderFile"
+                accept="*/*"
+              >
+                <el-button type="primary">上传文件</el-button>
+              </el-upload>
+            </div>
+          </div>
+          <div class="remark-row">
+            <span class="files-label">订单备注</span>
+            <el-input
+              v-model="orderMsg"
+              type="textarea"
+              :rows="3"
+              placeholder="请输入备注"
+              @blur="onSaveOrderMsg"
+            />
+          </div>
+        </div>
+        <el-descriptions v-else :column="3" border class="soft-desc">
           <el-descriptions-item label="订单类型">
             {{ detail.testClassName || orderTypeLabel }}
           </el-descriptions-item>
@@ -361,20 +459,58 @@
           />
           <el-table-column prop="testUserName" label="测试员" width="100" />
           <el-table-column v-if="isChildKind" prop="confirmLabel" label="确认" width="80" align="center" />
-          <el-table-column v-if="isChildKind" label="完成时间" width="170">
+          <el-table-column v-if="isChildKind && orderType === '10'" label="预计完成时间" width="170">
             <template #default="{ row }">
               <el-date-picker
                 v-if="detail.canSaveFinish"
                 v-model="row.finishTime"
                 type="datetime"
                 value-format="YYYY-MM-DD HH:mm:ss"
-                placeholder="完成时间"
+                placeholder="预计完成时间"
                 style="width: 158px"
               />
               <span v-else>{{ row.finishTime || '-' }}</span>
             </template>
           </el-table-column>
+          <el-table-column
+            v-else-if="isChildKind"
+            prop="finishTime"
+            label="完成时间"
+            width="170"
+          />
           <el-table-column prop="orderStatusLabel" label="状态" width="100" />
+        </el-table>
+      </section>
+
+      <section v-if="relatedOrders.length" class="card">
+        <h3 class="card-title">关联订单</h3>
+        <el-table :data="relatedOrders" border stripe class="detail-table">
+          <el-table-column type="index" width="50" label="#" align="center" />
+          <el-table-column prop="orderId" label="订单编号" min-width="160" show-overflow-tooltip>
+            <template #default="{ row }">
+              <el-button
+                link
+                type="primary"
+                @click="goDetail(Number(row.id), row.orderType, row.orderId)"
+              >
+                {{ row.orderId }}
+              </el-button>
+            </template>
+          </el-table-column>
+          <el-table-column prop="companyName" label="客户" min-width="120" show-overflow-tooltip />
+          <el-table-column prop="supplierName" label="供应商" min-width="120" show-overflow-tooltip />
+          <el-table-column prop="saleManager" label="销售主管" width="100" />
+          <el-table-column prop="saleUser" label="销售" width="100" />
+          <el-table-column prop="totalPrice" label="金额" width="90" align="right" />
+          <el-table-column prop="orderTime" label="时间" width="160" />
+          <el-table-column prop="orderStatusLabel" label="状态" width="100" />
+          <el-table-column label="操作" width="90" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="danger" :loading="acting" @click="onDelRelated(row)">
+                删除
+              </el-button>
+            </template>
+          </el-table-column>
         </el-table>
       </section>
 
@@ -384,7 +520,11 @@
           <el-table-column type="index" width="50" label="#" align="center" />
           <el-table-column prop="orderId" label="订单编号" min-width="160" show-overflow-tooltip>
             <template #default="{ row }">
-              <el-button link type="primary" @click="goDetail(Number(row.id))">
+              <el-button
+                link
+                type="primary"
+                @click="goDetail(Number(row.id), row.orderType, row.orderId)"
+              >
                 {{ row.orderId }}
               </el-button>
             </template>
@@ -397,7 +537,13 @@
           <el-table-column prop="totalPrice" label="金额" width="90" align="right" />
           <el-table-column label="操作" width="80">
             <template #default="{ row }">
-              <el-button link type="primary" @click="goDetail(Number(row.id))">查看</el-button>
+              <el-button
+                link
+                type="primary"
+                @click="goDetail(Number(row.id), row.orderType, row.orderId)"
+              >
+                查看
+              </el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -414,28 +560,80 @@
     </template>
     <el-empty v-else-if="!loading" description="订单不存在或加载失败" />
 
-    <el-dialog v-model="shareVisible" title="调整分成比例" width="480px">
-      <el-input
-        v-model="shareText"
-        type="textarea"
-        :rows="5"
-        placeholder="填写分成说明，例如：毛利分成 A 30%；成本分成 B 100"
-      />
+    <el-dialog v-model="shareVisible" title="调整分成比例" width="720px" destroy-on-close>
+      <div class="share-block">
+        <div class="share-block-head">
+          <strong>毛利分成</strong>
+          <span class="share-hint">比例合计须为 100%</span>
+          <el-button link type="primary" @click="addShareRow(profitRows)">添加一行</el-button>
+        </div>
+        <div v-for="(row, idx) in profitRows" :key="`p-${idx}`" class="share-row">
+          <el-select
+            v-model="row.userId"
+            filterable
+            clearable
+            placeholder="分成人员"
+            style="width: 220px"
+          >
+            <el-option
+              v-for="u in shareUsers"
+              :key="String(u.id)"
+              :label="shareUserLabel(u)"
+              :value="String(u.id)"
+            />
+          </el-select>
+          <el-input v-model="row.value" placeholder="比例" style="width: 120px">
+            <template #append>%</template>
+          </el-input>
+          <el-button link type="danger" @click="profitRows.splice(idx, 1)">删除</el-button>
+        </div>
+      </div>
+      <div v-if="orderType === '6'" class="share-block" style="margin-top: 16px">
+        <div class="share-block-head">
+          <strong>成本分成</strong>
+          <span class="share-hint">按固定金额</span>
+          <el-button link type="primary" @click="addShareRow(costRows)">添加一行</el-button>
+        </div>
+        <div v-for="(row, idx) in costRows" :key="`c-${idx}`" class="share-row">
+          <el-select
+            v-model="row.userId"
+            filterable
+            clearable
+            placeholder="分成人员"
+            style="width: 220px"
+          >
+            <el-option
+              v-for="u in shareUsers"
+              :key="String(u.id)"
+              :label="shareUserLabel(u)"
+              :value="String(u.id)"
+            />
+          </el-select>
+          <el-input v-model="row.value" placeholder="金额" style="width: 140px" />
+          <el-button link type="danger" @click="costRows.splice(idx, 1)">删除</el-button>
+        </div>
+      </div>
       <template #footer>
         <el-button @click="shareVisible = false">取消</el-button>
-        <el-button type="primary" :loading="acting" @click="onShareSave">提交</el-button>
+        <el-button type="primary" :loading="acting" @click="onShareSave">保存</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="relatedVisible" title="增加关联订单" width="420px">
-      <el-form label-width="100px">
-        <el-form-item label="订单编号">
-          <el-input v-model="relatedOrderNo" placeholder="输入要关联的订单编号" />
+    <el-dialog v-model="relatedVisible" title="增加关联订单" width="460px">
+      <el-form label-width="110px">
+        <el-form-item label="选择订单类型" required>
+          <el-select v-model="relatedType" placeholder="请选择" style="width: 100%">
+            <el-option label="实验订单" value="5" />
+            <el-option label="实验分包订单" value="6" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="订单号" required>
+          <el-input v-model="relatedOrderNo" placeholder="请输入订单号" clearable />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="relatedVisible = false">取消</el-button>
-        <el-button type="primary" :loading="acting" @click="onAddRelated">确定</el-button>
+        <el-button type="primary" :loading="acting" @click="onAddRelated">添加</el-button>
       </template>
     </el-dialog>
 
@@ -522,8 +720,39 @@
         :title="sampleExtraHint"
       />
       <el-form v-if="sampleNeedExtra" label-width="90px" class="sample-extra">
-        <el-form-item v-if="sampleAction === 'arrive'" label="仓位">
-          <el-input v-model="sampleStorePos" placeholder="仓位编号（可选）" clearable />
+        <el-form-item v-if="sampleAction === 'arrive'" label="仓库名称">
+          <el-select
+            v-model="sampleStoreId"
+            filterable
+            clearable
+            placeholder="请选择（可不填）"
+            style="width: 100%"
+            @change="onSampleStoreChange"
+          >
+            <el-option
+              v-for="s in sampleStoreOptions"
+              :key="String(s.value)"
+              :label="String(s.label || '')"
+              :value="String(s.value)"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="sampleAction === 'arrive'" label="仓库位置">
+          <el-select
+            v-model="sampleStorePosId"
+            filterable
+            clearable
+            placeholder="请选择（可不填）"
+            style="width: 100%"
+            :disabled="!sampleStoreId"
+          >
+            <el-option
+              v-for="p in samplePosOptions"
+              :key="String(p.value)"
+              :label="String(p.label || '')"
+              :value="String(p.value)"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item v-if="sampleAction === 'ship'" label="快递单号">
           <el-input v-model="sampleExpress" placeholder="快递单号（可选）" clearable />
@@ -531,8 +760,20 @@
         <el-form-item v-if="sampleAction === 'video'" label="会议号" required>
           <el-input v-model="sampleMeeting" placeholder="请输入云视频会议号" clearable />
         </el-form-item>
-        <el-form-item v-if="sampleAction === 'confirmDone'" label="备注">
-          <el-input v-model="sampleConfirmMark" placeholder="可选" clearable />
+        <el-form-item v-if="sampleAction === 'retain'" label="处理方式" required>
+          <el-radio-group v-model="sampleRetainMode">
+            <el-radio value="retain">样品留存</el-radio>
+            <el-radio value="scrap">样品报废</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="sampleAction === 'confirmDone'" label="备注" required>
+          <el-input
+            v-model="sampleConfirmMark"
+            type="textarea"
+            :rows="2"
+            placeholder="必填，请填写确认备注"
+            clearable
+          />
         </el-form-item>
       </el-form>
       <el-table
@@ -575,11 +816,17 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  detailFromByOrderType,
+  detailTitleByOrderType,
+  useTagsViewStore,
+} from '@/stores/tags-view'
 import type { ElTable } from 'element-plus'
 import {
   addExpOrderRelated,
+  delExpOrderRelated,
   addVideoExpOrder,
   auditExpOrder,
   cancelExpOrder,
@@ -607,8 +854,12 @@ import {
   updateExpOrderShareRatio,
   uploadSubInvoiceExpOrder,
   uploadSubPayExpOrder,
+  uploadExpOrderFile,
+  deleteExpOrderFile,
+  updateExpOrderMsg,
   withdrawExpOrderAudit,
 } from '@/api/experiment'
+import { fetchIncomeUsers, fetchSampleOrderOptions, fetchSampleStorePositions } from '@/api/inventory'
 import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
 
 type SampleAction =
@@ -627,14 +878,37 @@ type SampleAction =
 const props = defineProps<{ orderId: string | number }>()
 const emit = defineEmits<{ back: []; refreshed: [] }>()
 
+const route = useRoute()
 const router = useRouter()
+const tagsViewStore = useTagsViewStore()
+
+function syncDetailTagTitle(ot: string, orderNo?: string) {
+  const from = String(route.query.from || '') || detailFromByOrderType(ot)
+  tagsViewStore.ensureSourceListTag(from)
+  const title = detailTitleByOrderType(ot, orderNo)
+  tagsViewStore.updateViewTitle(route.path, title)
+  // 同步 query.orderNo，便于标签/刷新后仍带单号
+  const no = String(orderNo || '').trim()
+  if (no && String(route.query.orderNo || '') !== no) {
+    router.replace({
+      path: route.path,
+      query: { ...route.query, from, orderNo: no },
+    })
+  }
+}
 const loading = ref(false)
 const acting = ref(false)
 const detail = ref<Record<string, unknown> | null>(null)
 const editChildren = ref<Record<string, unknown>[]>([])
+const orderFiles = ref<Record<string, unknown>[]>([])
+const orderMsg = ref('')
 const shareVisible = ref(false)
-const shareText = ref('')
+const shareUsers = ref<Record<string, unknown>[]>([])
+type ShareRow = { userId: string; value: string }
+const profitRows = ref<ShareRow[]>([{ userId: '', value: '' }])
+const costRows = ref<ShareRow[]>([{ userId: '', value: '' }])
 const relatedVisible = ref(false)
+const relatedType = ref('')
 const relatedOrderNo = ref('')
 const receiveVisible = ref(false)
 const receiveMoney = ref('')
@@ -656,17 +930,29 @@ const sampleVisible = ref(false)
 const sampleAction = ref<SampleAction>('arrive')
 const sampleTableRef = ref<InstanceType<typeof ElTable>>()
 const sampleSelected = ref<Record<string, unknown>[]>([])
-const sampleStorePos = ref('')
+const sampleStoreId = ref('')
+const sampleStorePosId = ref('')
+const sampleStoreOptions = ref<Record<string, unknown>[]>([])
+const samplePosOptions = ref<Record<string, unknown>[]>([])
 const sampleExpress = ref('')
 const sampleMeeting = ref('')
 const sampleConfirmMark = ref('')
+const sampleRetainMode = ref<'retain' | 'scrap'>('retain')
 
 const logs = computed(() => (detail.value?.logs as Record<string, unknown>[]) || [])
 const linkedOrders = computed(
   () => (detail.value?.linkedOrders as Record<string, unknown>[]) || []
 )
+const relatedOrders = computed(
+  () => (detail.value?.relatedOrders as Record<string, unknown>[]) || []
+)
 const orderType = computed(() => String(detail.value?.orderType || ''))
 const isChildKind = computed(() => ['9', '10'].includes(orderType.value))
+
+const expectPayRows = computed(() => {
+  const list = detail.value?.expectPayList
+  return Array.isArray(list) ? (list as { time?: string; price?: string }[]) : []
+})
 
 const orderTypeLabel = computed(() => {
   const map: Record<string, string> = {
@@ -707,12 +993,15 @@ const SAMPLE_TITLES: Record<SampleAction, string> = {
 
 const sampleDialogTitle = computed(() => SAMPLE_TITLES[sampleAction.value] || '选择子单行')
 const sampleNeedExtra = computed(() =>
-  ['arrive', 'ship', 'video', 'confirmDone'].includes(sampleAction.value)
+  ['arrive', 'ship', 'video', 'confirmDone', 'retain'].includes(sampleAction.value)
 )
 const sampleExtraHint = computed(() => {
-  if (sampleAction.value === 'arrive') return '请勾选已处理(状态2)的子行，可填仓位'
+  if (sampleAction.value === 'arrive')
+    return '请勾选已处理(状态2)的子行；仓库名称/位置可不填，填了则入库到对应仓位（选仓位时请只勾选一行）'
   if (sampleAction.value === 'ship') return '请勾选已归还(状态41)的子行'
   if (sampleAction.value === 'video') return '请勾选尚未预约会议的子行'
+  if (sampleAction.value === 'retain') return '请勾选已归还(状态41)的子行，并选择留存或报废'
+  if (sampleAction.value === 'confirmDone') return '请勾选测试完成且未确认的子行，备注必填'
   return ''
 })
 
@@ -750,21 +1039,113 @@ async function load() {
     if (!isAjaxOk(res) || !res.obj) {
       detail.value = null
       editChildren.value = []
+      orderFiles.value = []
+      orderMsg.value = ''
       ElMessage.error(ajaxErrorMessage(res, '加载详情失败'))
       return
     }
     detail.value = res.obj as Record<string, unknown>
     const kids = (detail.value.children as Record<string, unknown>[]) || []
     editChildren.value = kids.map((c) => ({ ...c }))
-    shareText.value = String(detail.value.userScaleInfo || detail.value.scaleInfo || '')
+    orderFiles.value = Array.isArray(detail.value.files)
+      ? (detail.value.files as Record<string, unknown>[])
+      : []
+    orderMsg.value = String(detail.value.msg || detail.value.mark || '')
+    const ot = String(detail.value.orderType || '')
+    const orderNo = String(detail.value.orderId || '')
+    syncDetailTagTitle(ot, orderNo)
   } finally {
     loading.value = false
   }
 }
 
-function goDetail(id: number) {
+function fileLabel(f: Record<string, unknown>) {
+  return String(f.info || f.name || '附件')
+}
+
+function fileUrl(f: Record<string, unknown>) {
+  const u = String(f.url || '')
+  if (u) return u
+  const path = String(f.path || '').replace(/\/$/, '')
+  const name = String(f.name || '')
+  if (path && name) return `${path}/${name}`
+  return path || name || '#'
+}
+
+function onDownloadFile(f: Record<string, unknown>) {
+  const url = fileUrl(f)
+  if (!url || url === '#') {
+    ElMessage.warning('文件地址无效')
+    return
+  }
+  window.open(url, '_blank')
+}
+
+async function onDeleteFile(f: Record<string, unknown>) {
+  const id = Number(f.id)
   if (!id) return
-  router.push({ name: 'ExperimentOrderDetail', params: { id: String(id) } })
+  await ElMessageBox.confirm('确定删除此文件？', '删除附件', { type: 'warning' })
+  await runAction(async () => {
+    const res = await deleteExpOrderFile(id)
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '删除失败'))
+      return
+    }
+    ElMessage.success(String(res.resMsg || '已删除'))
+    await load()
+  })
+}
+
+async function onUploadOrderFile(options: { file: File }) {
+  if (!props.orderId) return
+  const fd = new FormData()
+  fd.append('orderdata', options.file)
+  fd.append('id', String(props.orderId))
+  fd.append('type', '3')
+  await runAction(async () => {
+    const res = await uploadExpOrderFile(fd)
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '上传失败'))
+      return
+    }
+    ElMessage.success(String(res.resMsg || '上传成功'))
+    await load()
+  })
+}
+
+async function onSaveOrderMsg() {
+  if (!props.orderId || !detail.value) return
+  const prev = String(detail.value.msg || detail.value.mark || '')
+  if (orderMsg.value === prev) return
+  const res = await updateExpOrderMsg(props.orderId, orderMsg.value)
+  if (!isAjaxOk(res)) {
+    ElMessage.error(ajaxErrorMessage(res, '备注保存失败'))
+    return
+  }
+  detail.value.msg = orderMsg.value
+  detail.value.mark = orderMsg.value
+}
+
+function goDetail(
+  id: number,
+  linkedOrderType?: string | number,
+  orderNo?: string | number
+) {
+  if (!id) return
+  // 优先用目标单 orderType；未传时默认按「主单 → 关联子单」
+  let ot = linkedOrderType != null && String(linkedOrderType) !== '' ? String(linkedOrderType) : ''
+  if (!ot) {
+    ot = orderType.value === '8' ? '9' : '10'
+  }
+  const no = String(orderNo || '').trim()
+  router.push({
+    name: 'ExperimentOrderDetail',
+    params: { id: String(id) },
+    query: {
+      from: detailFromByOrderType(ot),
+      ...(no ? { orderNo: no } : {}),
+    },
+  })
 }
 
 async function runAction(fn: () => Promise<void>) {
@@ -793,20 +1174,155 @@ async function doAudit(pass: boolean) {
 }
 
 async function onCancel() {
-  const { value } = await ElMessageBox.prompt('确认取消订单？可填写原因', '取消订单', {
-    confirmButtonText: '确定取消',
-    cancelButtonText: '返回',
-    inputPlaceholder: '取消原因（可选）',
+  await ElMessageBox.confirm('是否取消此订单?', '取消订单', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
     type: 'warning',
-  }).catch(() => ({ value: null as string | null }))
-  if (value === null) return
+  })
   await runAction(async () => {
-    const res = await cancelExpOrder({ id: props.orderId, remark: value || '' })
+    const res = await cancelExpOrder({ id: props.orderId })
     if (!isAjaxOk(res)) {
       ElMessage.error(ajaxErrorMessage(res, '取消失败'))
       return
     }
-    ElMessage.success('订单已取消')
+    ElMessage.success(String(res.resMsg || '订单已取消'))
+    await load()
+    emit('refreshed')
+  })
+}
+
+function parseScalePairs(raw: unknown): ShareRow[] {
+  const text = String(raw || '').trim()
+  if (!text) return [{ userId: '', value: '' }]
+  const rows = text
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => {
+      const [userId = '', value = ''] = p.split('_')
+      return { userId: userId.trim(), value: value.trim().replace('%', '') }
+    })
+    .filter((r) => r.userId || r.value)
+  return rows.length ? rows : [{ userId: '', value: '' }]
+}
+
+function shareUserLabel(u: Record<string, unknown>) {
+  const name = String(u.trueName || u.userName || '')
+  const uname = String(u.userName || '')
+  return name && uname && name !== uname ? `${name}（${uname}）` : name || uname || String(u.id)
+}
+
+function addShareRow(rows: ShareRow[]) {
+  rows.push({ userId: '', value: '' })
+}
+
+async function openShareDialog() {
+  profitRows.value = parseScalePairs(detail.value?.userScaleInfo || detail.value?.scaleInfo)
+  costRows.value = parseScalePairs(detail.value?.salecbUserScaleInfo)
+  shareVisible.value = true
+  try {
+    const res = await fetchIncomeUsers('')
+    if (isAjaxOk(res) && Array.isArray(res.obj)) {
+      shareUsers.value = res.obj as Record<string, unknown>[]
+    }
+  } catch {
+    shareUsers.value = []
+  }
+}
+
+function buildScaleInfo(rows: ShareRow[]): string {
+  return rows
+    .filter((r) => r.userId && String(r.value).trim() !== '')
+    .map((r) => `${r.userId}_${String(r.value).trim()}`)
+    .join(',')
+}
+
+async function onShareSave() {
+  const profitInfo = buildScaleInfo(profitRows.value)
+  if (!profitInfo) {
+    ElMessage.warning('请填写分成比例!')
+    return
+  }
+  let total = 0
+  for (const r of profitRows.value) {
+    if (!r.userId && !String(r.value).trim()) continue
+    if (!r.userId) {
+      ElMessage.warning('请选择毛利分成人员!')
+      return
+    }
+    const n = Number(r.value)
+    if (!Number.isFinite(n) || n < 0) {
+      ElMessage.warning('请填写正确的分成比例!')
+      return
+    }
+    total += n
+  }
+  if (Math.abs(total - 100) > 0.01) {
+    ElMessage.warning('总的分成比例不是100，请重新输入')
+    return
+  }
+  const costInfo = orderType.value === '6' ? buildScaleInfo(costRows.value) : ''
+  await runAction(async () => {
+    const res = await updateExpOrderShareRatio({
+      id: props.orderId,
+      user_scale_info: profitInfo,
+      salecb_user_scale_info: costInfo,
+    })
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '保存失败'))
+      return
+    }
+    ElMessage.success(String(res.resMsg || '操作成功'))
+    shareVisible.value = false
+    await load()
+    emit('refreshed')
+  })
+}
+
+async function onAddRelated() {
+  if (!relatedType.value) {
+    ElMessage.warning('请选择订单类型')
+    return
+  }
+  if (!relatedOrderNo.value.trim()) {
+    ElMessage.warning('请输入订单号')
+    return
+  }
+  await runAction(async () => {
+    const res = await addExpOrderRelated({
+      id: props.orderId,
+      rSelect: relatedType.value,
+      rOrderId: relatedOrderNo.value.trim(),
+    })
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '关联失败'))
+      return
+    }
+    ElMessage.success(String(res.resMsg || '关联成功'))
+    relatedVisible.value = false
+    relatedType.value = ''
+    relatedOrderNo.value = ''
+    await load()
+    emit('refreshed')
+  })
+}
+
+async function onDelRelated(row: Record<string, unknown>) {
+  const relatedNo = String(row.orderId || '').trim()
+  const ofId = String(detail.value?.orderId || '').trim()
+  if (!relatedNo || !ofId) return
+  await ElMessageBox.confirm(
+    `确定要删除订单号为：${relatedNo}的关联订单吗？`,
+    '删除关联订单',
+    { type: 'warning', confirmButtonText: '确定', cancelButtonText: '取消' }
+  )
+  await runAction(async () => {
+    const res = await delExpOrderRelated({ ofId, order_id: relatedNo })
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '删除失败'))
+      return
+    }
+    ElMessage.success(String(res.resMsg || '删除成功'))
     await load()
     emit('refreshed')
   })
@@ -880,41 +1396,6 @@ async function onSaveReceive() {
     receiveMoney.value = ''
     receiveDate.value = ''
     receiveRemark.value = ''
-    await load()
-    emit('refreshed')
-  })
-}
-
-async function onShareSave() {
-  await runAction(async () => {
-    const res = await updateExpOrderShareRatio({
-      id: props.orderId,
-      scaleInfo: shareText.value,
-    })
-    if (!isAjaxOk(res)) {
-      ElMessage.error(ajaxErrorMessage(res, '保存失败'))
-      return
-    }
-    ElMessage.success('分成比例已更新')
-    shareVisible.value = false
-    await load()
-    emit('refreshed')
-  })
-}
-
-async function onAddRelated() {
-  await runAction(async () => {
-    const res = await addExpOrderRelated({
-      id: props.orderId,
-      relatedOrderNo: relatedOrderNo.value.trim(),
-    })
-    if (!isAjaxOk(res)) {
-      ElMessage.error(ajaxErrorMessage(res, '关联失败'))
-      return
-    }
-    ElMessage.success('关联成功')
-    relatedVisible.value = false
-    relatedOrderNo.value = ''
     await load()
     emit('refreshed')
   })
@@ -1123,14 +1604,47 @@ function onSampleSelectionChange(rows: Record<string, unknown>[]) {
   sampleSelected.value = rows
 }
 
+async function loadSampleStoreOptions() {
+  try {
+    const res = await fetchSampleOrderOptions()
+    if (isAjaxOk(res) && res.obj) {
+      const obj = res.obj as Record<string, unknown>
+      const stores = (obj.stores || res.obj) as Record<string, unknown>[]
+      sampleStoreOptions.value = Array.isArray(stores) ? stores : []
+    }
+  } catch {
+    sampleStoreOptions.value = []
+  }
+}
+
+async function onSampleStoreChange(storeId: string) {
+  sampleStorePosId.value = ''
+  samplePosOptions.value = []
+  if (!storeId) return
+  try {
+    const res = await fetchSampleStorePositions(storeId, 0)
+    if (isAjaxOk(res) && Array.isArray(res.obj)) {
+      samplePosOptions.value = res.obj as Record<string, unknown>[]
+    }
+  } catch {
+    samplePosOptions.value = []
+  }
+}
+
 async function openSampleAction(act: SampleAction) {
   sampleAction.value = act
   sampleSelected.value = []
-  sampleStorePos.value = ''
+  sampleStoreId.value = ''
+  sampleStorePosId.value = ''
+  samplePosOptions.value = []
   sampleExpress.value = ''
   sampleMeeting.value = ''
   sampleConfirmMark.value = ''
+  sampleRetainMode.value = 'retain'
   sampleVisible.value = true
+  if (act === 'arrive') {
+    await loadSampleStoreOptions()
+  }
   await nextTick()
   sampleTableRef.value?.clearSelection()
 }
@@ -1145,12 +1659,32 @@ async function onSubmitSampleAction() {
     ElMessage.warning('请填写会议号')
     return
   }
+  if (sampleAction.value === 'confirmDone' && !sampleConfirmMark.value.trim()) {
+    ElMessage.warning('请填写确认备注')
+    return
+  }
+  if (sampleAction.value === 'arrive') {
+    const hasStore = !!sampleStoreId.value
+    const hasPos = !!sampleStorePosId.value
+    if (hasStore !== hasPos) {
+      ElMessage.warning(hasStore ? '请选择仓库位置!' : '请选择仓库!')
+      return
+    }
+    if (hasStore && hasPos && ids.length > 1) {
+      ElMessage.warning('选择仓库位置时请只勾选一行')
+      return
+    }
+  }
   const act = sampleAction.value
   await runAction(async () => {
     let res
     const base = { id: props.orderId, childIds: ids }
     if (act === 'arrive') {
-      res = await sampleArriveExpOrder({ ...base, storePositionId: sampleStorePos.value })
+      res = await sampleArriveExpOrder({
+        ...base,
+        storeId: sampleStoreId.value || '',
+        storePosId: sampleStorePosId.value || '',
+      })
     } else if (act === 'pick') {
       res = await samplePickExpOrder(base)
     } else if (act === 'testStart') {
@@ -1161,16 +1695,17 @@ async function onSubmitSampleAction() {
       res = await sampleReturnExpOrder(base)
     } else if (act === 'ship') {
       res = await sampleShipExpOrder({ ...base, expressNo: sampleExpress.value })
-    } else if (act === 'retain') {
-      res = await sampleRetainExpOrder({ ...base, scrap: false })
-    } else if (act === 'scrap') {
-      res = await sampleRetainExpOrder({ ...base, scrap: true })
+    } else if (act === 'retain' || act === 'scrap') {
+      res = await sampleRetainExpOrder({
+        ...base,
+        scrap: act === 'scrap' || sampleRetainMode.value === 'scrap',
+      })
     } else if (act === 'retest') {
       res = await retestExpOrder(base)
     } else if (act === 'video') {
       res = await addVideoExpOrder({ ...base, meetingNum: sampleMeeting.value.trim() })
     } else {
-      res = await confirmDoneExpOrder({ ...base, mark: sampleConfirmMark.value })
+      res = await confirmDoneExpOrder({ ...base, mark: sampleConfirmMark.value.trim() })
     }
     if (!isAjaxOk(res)) {
       ElMessage.error(ajaxErrorMessage(res, '操作失败'))
@@ -1342,6 +1877,54 @@ defineExpose({ reload: load })
   white-space: pre-wrap;
   line-height: 1.5;
 }
+.order-files-block {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.files-row,
+.remark-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.files-label {
+  flex: 0 0 88px;
+  padding-top: 6px;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: right;
+}
+.files-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+.file-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 2px 0;
+}
+.file-name {
+  max-width: 420px;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sea);
+  text-decoration: none;
+}
+.file-name:hover {
+  text-decoration: underline;
+}
+.remark-row :deep(.el-textarea) {
+  flex: 1;
+}
 .receive-hint {
   margin: 0;
   padding-left: 100px;
@@ -1374,5 +1957,30 @@ defineExpose({ reload: load })
   .hero-meta {
     min-width: 0;
   }
+}
+
+.share-block {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fafcfb;
+}
+.share-block-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.share-hint {
+  color: var(--muted);
+  font-size: 12px;
+  flex: 1;
+}
+.share-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
 }
 </style>

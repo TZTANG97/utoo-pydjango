@@ -282,6 +282,25 @@ def sample_order_options(request: Request, user=None):
 @authentication_classes([])
 @permission_classes([AllowAny])
 @admin_ajax_view()
+def sample_store_positions(request: Request, user=None):
+    """对齐 Java samplestoreHouse/queryListByStoreId.ajax。"""
+    del user
+    data = merge_payload(request)
+    store_id = data.get("store_id") or data.get("storeId") or ""
+    type_raw = data.get("type")
+    # type=0 空闲；type=1 占用；缺省空闲
+    free_only = True
+    if type_raw is not None and str(type_raw) != "":
+        free_only = str(type_raw) == "0"
+    return Response(
+        ajax_ok(obj=sample_repo.list_sample_store_positions(store_id=store_id, free_only=free_only))
+    )
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
 def sample_order_detail(request: Request, user=None):
     del user
     data = merge_payload(request)

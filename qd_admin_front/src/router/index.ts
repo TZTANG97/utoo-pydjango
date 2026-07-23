@@ -6,7 +6,7 @@ export const constantRoutes: RouteRecordRaw[] = [
     path: '/login',
     name: 'Login',
     component: () => import('@/views/login/index.vue'),
-    meta: { title: '登录', hidden: true },
+    meta: { title: '登录', hidden: true, noTagsView: true },
   },
   {
     path: '/redirect',
@@ -506,6 +506,7 @@ export const constantRoutes: RouteRecordRaw[] = [
         path: 'experiment/order-detail/:id',
         name: 'ExperimentOrderDetail',
         component: () => import('@/views/experiment/order-detail/index.vue'),
+        // hidden：不进侧栏；仍进顶部标签（见 tags-view）
         meta: { title: '订单详情', hidden: true },
       },
       {
@@ -624,7 +625,7 @@ export const constantRoutes: RouteRecordRaw[] = [
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
     component: () => import('@/views/error/404.vue'),
-    meta: { hidden: true, title: '404' },
+    meta: { hidden: true, title: '404', noTagsView: true },
   },
 ]
 

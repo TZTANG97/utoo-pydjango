@@ -112,6 +112,8 @@ export const deleteLab = (id: string | number) => postAjax('/lab/del.ajax', { id
 export const fetchSampleOrderList = (p: Record<string, unknown>) =>
   fetchDatatable('/inTreasury/list.ajax', p)
 export const fetchSampleOrderOptions = () => postAjax('/inTreasury/options.ajax')
+export const fetchSampleStorePositions = (storeId: string | number, type: 0 | 1 = 0) =>
+  postAjax('/samplestoreHouse/queryListByStoreId.ajax', { store_id: storeId, type })
 export const getSampleOrderDetail = (id: string | number) =>
   postAjax('/inTreasury/detail.ajax', { id })
 export const exportSampleOrders = (p: Record<string, unknown>) =>

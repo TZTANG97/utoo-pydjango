@@ -14,3 +14,15 @@ declare module '*.vue' {
   const component: DefineComponent<object, object, unknown>
   export default component
 }
+
+import 'vue-router'
+
+declare module 'vue-router' {
+  interface RouteMeta {
+    title?: string
+    hidden?: boolean
+    affix?: boolean
+    /** 不进入顶部 TagsView（登录/404 等） */
+    noTagsView?: boolean
+  }
+}

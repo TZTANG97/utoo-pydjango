@@ -1,6 +1,6 @@
 from typing import Any
 
-from apps.core.db_utils import execute_insert, fetch_one, scalar
+from apps.core.db_utils import execute, execute_insert, fetch_one, scalar
 
 
 def get_order_type(order_id: int) -> dict[str, Any] | None:
@@ -40,6 +40,20 @@ def get_order_num(order_id: int) -> dict[str, Any] | None:
         "SELECT order_id FROM experiment_order WHERE id = %(oid)s LIMIT 1",
         {"oid": order_id},
     )
+
+
+def soft_delete_accessory(accessory_id: int) -> bool:
+    row = fetch_one(
+        "SELECT id FROM accessory WHERE id = %(id)s AND IFNULL(deleteStatus, 0) = 0 LIMIT 1",
+        {"id": accessory_id},
+    )
+    if not row:
+        return False
+    execute(
+        "UPDATE accessory SET deleteStatus = 1 WHERE id = %(id)s",
+        {"id": accessory_id},
+    )
+    return True
 
 
 def insert_accessory(
