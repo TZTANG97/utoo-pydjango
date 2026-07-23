@@ -48,6 +48,30 @@ export function fetchStatsOverview(params: Record<string, unknown>) {
   return postAjax('/testUserStats/overview.ajax', params)
 }
 
+/** 对齐 Java selDateOverviewByYear.ajax */
+export function fetchStatsDashboard(params: Record<string, unknown>) {
+  return postAjax('/testUserStats/selDateOverviewByYear.ajax', params)
+}
+
+/** 对齐 Java board1.ajax：本月最佳 / 人数 */
+export function fetchStatsBoard1(params: Record<string, unknown>) {
+  return postAjax('/testUserStats/board1.ajax', params)
+}
+
+/** 对齐 Java selOrderManage.ajax */
+export function fetchStatsOrderManage(params: Record<string, unknown>) {
+  return postAjax('/testUserStats/selOrderManage.ajax', params)
+}
+
+/** 对齐 Java board.ajax：人员年度月度完成量 */
+export function fetchStatsBoardAnnual(params: Record<string, unknown>) {
+  return postAjax('/testUserStats/board.ajax', params)
+}
+
+export function fetchStatsUsersByDept(deptId: string | number = '') {
+  return postAjax('/testUserStats/queryUsersByDeptId.ajax', { deptId: String(deptId || '') })
+}
+
 export function fetchTestPlanUsers(params: Record<string, unknown>) {
   return fetchDatatable('/testUserPerformance/queryUsers.ajax', params)
 }

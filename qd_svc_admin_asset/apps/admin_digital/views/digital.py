@@ -259,10 +259,11 @@ def lab_sale_perf(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def stats_overview(request: Request, user=None):
+    """兼容旧接口；新看板请用 selDateOverviewByYear / board1。"""
     del user
     data = merge_payload(request)
     year = str(data.get("year") or datetime.now().year)
-    dept_id = str(data.get("deptId") or data.get("dept_id") or "")
+    dept_id = str(data.get("deptId") or data.get("dept_id") or data.get("test_lab") or "")
     overview = stats_repo.overview(dept_id=dept_id, year=year)
     trend = stats_repo.monthly_finish_trend(dept_id=dept_id, year=year)
     workload = stats_repo.tester_workload(dept_id=dept_id, year=year)
@@ -278,3 +279,111 @@ def stats_overview(request: Request, user=None):
             }
         )
     )
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def stats_date_overview(request: Request, user=None):
+    """对齐 Java testUserStats/selDateOverviewByYear.ajax。"""
+    del user
+    data = merge_payload(request)
+    now = datetime.now()
+    year = str(data.get("year") or now.year)
+    month = str(data.get("month") or now.month).zfill(2)
+    period_type = str(data.get("type") or "2")
+    test_lab = str(data.get("test_lab") or data.get("deptId") or data.get("dept_id") or "")
+    user_id = str(data.get("userId") or data.get("user_id") or "")
+    week = str(data.get("week") or "")
+    quarter = str(data.get("quarter") or "")
+    start_date = str(data.get("startdate") or data.get("startDate") or "")
+    end_date = str(data.get("enddate") or data.get("endDate") or "")
+    obj = stats_repo.dashboard_overview(
+        test_lab=test_lab,
+        user_id=user_id,
+        period_type=period_type,
+        year=year,
+        week=week,
+        month=month,
+        quarter=quarter,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    return Response(ajax_ok(obj=obj))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def stats_board1(request: Request, user=None):
+    """对齐 Java testUserStats/board1.ajax。"""
+    del user
+    data = merge_payload(request)
+    now = datetime.now()
+    year = str(data.get("year") or now.year)
+    month = str(data.get("month") or now.month).zfill(2)
+    dept_id = str(data.get("dept_id") or data.get("deptId") or data.get("test_lab") or "")
+    obj = stats_repo.board1_monthly(year=year, month=month, dept_id=dept_id)
+    return Response(ajax_ok(obj=obj))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def stats_order_manage(request: Request, user=None):
+    """对齐 Java testUserStats/selOrderManage.ajax。"""
+    del user
+    data = merge_payload(request)
+    now = datetime.now()
+    year = str(data.get("year") or now.year)
+    month = str(data.get("month") or now.month).zfill(2)
+    period_type = str(data.get("type") or "2")
+    test_lab = str(data.get("test_lab") or data.get("deptId") or data.get("dept_id") or "")
+    user_id = str(data.get("userId") or data.get("user_id") or "")
+    week = str(data.get("week") or "")
+    quarter = str(data.get("quarter") or "")
+    start_date = str(data.get("startdate") or data.get("startDate") or "")
+    end_date = str(data.get("enddate") or data.get("endDate") or "")
+    obj = stats_repo.order_manage(
+        test_lab=test_lab,
+        user_id=user_id,
+        period_type=period_type,
+        year=year,
+        week=week,
+        month=month,
+        quarter=quarter,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    return Response(ajax_ok(obj=obj))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def stats_board(request: Request, user=None):
+    """对齐 Java testUserStats/board.ajax：人员年度月度完成量。"""
+    del user
+    data = merge_payload(request)
+    now = datetime.now()
+    year = str(data.get("year") or now.year)
+    dept_id = str(data.get("dept_id") or data.get("deptId") or data.get("test_lab") or "")
+    rows = stats_repo.annual_tester_monthly(year=year, dept_id=dept_id)
+    return Response(ajax_ok(obj=rows))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def stats_users_by_dept(request: Request, user=None):
+    """筛选栏：按部门拉测试人员。"""
+    del user
+    data = merge_payload(request)
+    dept_id = str(data.get("deptId") or data.get("dept_id") or "")
+    rows = stats_repo.list_users_by_dept(dept_id=dept_id)
+    return Response(ajax_ok(obj=rows))

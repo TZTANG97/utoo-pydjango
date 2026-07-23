@@ -7,7 +7,13 @@ urlpatterns = [
     path("digital/deptOptions.ajax", views.dept_options),
     # 统计看板
     path("testUserStats/overview.ajax", views.stats_overview),
+    path("testUserStats/selDateOverviewByYear.ajax", views.stats_date_overview),
+    path("testUserStats/selOrderManage.ajax", views.stats_order_manage),
+    path("testUserStats/board1.ajax", views.stats_board1),
+    path("testUserStats/board.ajax", views.stats_board),
     path("testUserStats/queryAllDept.ajax", views.dept_options),
+    path("testUserStats/queryUsersByDeptId.ajax", views.stats_users_by_dept),
+    path("sys/user/queryUsersByDeptId.ajax", views.stats_users_by_dept),
     # 实验室人员产出计划
     path("testUserPerformance/queryUsers.ajax", views.test_user_list),
     path("testUserPerformance/selAmountByYear.ajax", views.test_target_get),
