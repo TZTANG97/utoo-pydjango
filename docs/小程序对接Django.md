@@ -41,14 +41,19 @@ DEV_SMS_CODE=111111
 
 ## 明确 stub（返回「接口暂未实现」）
 
-`getAuditOrderList` / `getAuditOrderList1` / `getLog` / `getOrderCount` / `isFlag` / `scanCodeOperate` / `selBankList` / `selSecondClassList` / `signInIntegral` / `ticketIsExist` / `userInfoAdd`
+`getAuditOrderList` / `getAuditOrderList1` / `getLog` / `isFlag` / `scanCodeOperate` / `selBankList` / `selSecondClassList` / `signInIntegral` / `ticketIsExist` / `userInfoAdd`
+
+已实现：`getOrderCount`（员工「我的实验」订单角标统计）
 
 扫码绑定：`bindaccount` / `bindaccountTZ` / `securebind` / `getUserInfo`（扫码 ticket 流）— 暂提示用账号/验证码/一键登录。
 
 ## 非 `/wx` 路径
 
 改 baseUrl 后，`/experimentOrder/*`、`/consult/*`、`/pc/*`、`/redeem/*` 等走网关已有前缀。  
-尚未下沉的如 `digitalManage/*`、`funds/*xcx` 等需另排期。
+已实现小程序账户统计：`funds/assetAccxcx.ajax`、`funds/assetAccountxcx.ajax`、`yesterdayIncomexcx.ajax`、`selExpSumByYearxcx.ajax`。  
+已实现可用余额 / 转账用户：`funds/account_userId.htm`、`account_User.ajax`。  
+已实现实验详情：`pc/xcxtestClassDetail.ajax`（Ajax 封装，对齐 `testClassDetail`）。  
+尚未下沉的如 `digitalManage/*xcx` 等需另排期。
 
 ## 冒烟清单
 

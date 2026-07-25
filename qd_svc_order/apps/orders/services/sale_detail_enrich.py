@@ -297,14 +297,11 @@ def load_company_account_default() -> str:
 def load_sy_user_brief(user_id: Any) -> dict[str, Any] | None:
     if user_id is None or str(user_id).strip() == "":
         return None
-    try:
-        uid = int(user_id)
-    except (TypeError, ValueError):
-        return None
+    uid = str(user_id).strip()
     try:
         row = fetch_one(
             """
-            SELECT id, user_name, true_name, mobile
+            SELECT id, user_name, true_name, mobile_phone_number
             FROM sy_users
             WHERE id = %(uid)s
             LIMIT 1
@@ -319,7 +316,7 @@ def load_sy_user_brief(user_id: Any) -> dict[str, Any] | None:
         "id": row.get("id"),
         "userName": row.get("user_name") or "",
         "trueName": row.get("true_name") or row.get("user_name") or "",
-        "mobile": row.get("mobile") or "",
+        "mobile": row.get("mobile_phone_number") or "",
     }
 
 
@@ -402,6 +399,7 @@ def enrich_pc_order_detail(of: dict[str, Any], *, order_id: int) -> tuple[str, s
         ("sale_manager", "saleManagerUser"),
         ("sale_user", "saleUser"),
         ("test_user_id", "testUser"),
+        ("test_manager", "testManagerUser"),
     ):
         brief = load_sy_user_brief(of.get(field))
         if brief:

@@ -980,6 +980,21 @@ export function scanOperateApi(data) {
 	})
 }
 
+export function confirmsave(data) {
+	return r({
+		url: '/experimentChildOrder/confirmsave.ajax',
+		data,
+		method: 'get',
+	})
+}
+
+export function isFlag(data) {
+	return r({
+		url: '/wx/isFlag.ajax',
+		data
+	})
+}
+
 // 获取banner
 export function getBannerApi() {
 	return r({

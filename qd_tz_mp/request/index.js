@@ -114,28 +114,19 @@ const excFunction = function(resolve, reject, params) {
 								url: '/pages/my/my'
 							})
 						}, 1000)
+						break
 					case 404:
 						uni.showToast({
 							title: '找不到资源',
 							icon: 'none'
 						})
-						uni.removeStorageSync('userInfo')
-						uni.removeStorageSync('token')
-						uni.removeStorageSync('userList')
-						uni.removeStorageSync('uType')
-						// uType: 0普通用户  1内部用户
-						uni.removeStorageSync('is_identify')
-						uni.removeStorageSync('defaultAccount')
-						setTimeout(() => {
-							uni.reLaunch({
-								url: '/pages/my/my'
-							})
-						}, 1000)
+						break
 					case 500:
 						uni.showToast({
 							title: '请求失败，请重试！',
 							icon: 'none'
 						})
+						break
 				}
 				reject()
 			}

@@ -1,40 +1,57 @@
 <template>
-	<view class="container">
-		<!-- <image class="cover" src="@/static/start.webp" mode=""></image> -->
-		<view class="header">
-			<navigator style="position: relative; flex-grow: 1;" url="/staffB/search/search" hover-class="none">
-				<input :disabled="true" class="search-input" type="text" placeholder="搜索实验">
-				<image class="search-icon" src="@/static/search.png" mode=""></image>
+	<view class="book">
+		<view class="book-search">
+			<navigator class="book-search__box" url="/staffB/search/search" hover-class="none">
+				<image class="book-search__icon" src="@/static/search.png" mode="aspectFit"></image>
+				<input :disabled="true" class="book-search__input" type="text" placeholder="搜索实验 / 设备名称">
 			</navigator>
 		</view>
-		<view class="main">
-			<view class="cate-list" :style="{ 'height': usable_heihgt + 'px' }">
-				<view class="cate-1-list">
-					<view :class="{ 'cate-1-item-active': idx === cateIndex }" class="cate-1-item"
-						v-for="(item, idx) in cateList" :key="idx" @click="changeCate(idx)">
-						<view class="cate-2-name">
-							{{ item['name'] }}
-						</view>
-					</view>
+
+		<view class="book-body" :style="{ height: usable_heihgt + 'px' }">
+			<scroll-view class="book-side" scroll-y :style="{ height: usable_heihgt + 'px' }">
+				<view
+					v-for="(item, idx) in cateList"
+					:key="idx"
+					class="book-side__item"
+					:class="{ 'is-active': idx === cateIndex }"
+					@click="changeCate(idx)"
+				>
+					<text class="book-side__name">{{ item['name'] }}</text>
 				</view>
-				<view class="cate-2-list">
-					<template v-if="cateList && cateList[cateIndex] && cateList[cateIndex]['childList'].length">
-						<view class="cate-2-item" v-for="(item2, idx2) in cateList[cateIndex]['childList']" :key="idx2">
-							<view class="cate-2-title">{{ item2['name'] }}</view>
-							<view class="cate-3-list">
-								<view class="cate-3-item" v-for="(item3, idx3) in item2['childList']" :key="idx3"
-									@click="knowMore(item3.id)">
-									<image :src="item3.main_photo" mode=""></image>
-									<view class="cate-3-name">{{ item3.name }}</view>
+			</scroll-view>
+
+			<scroll-view class="book-main" scroll-y :style="{ height: usable_heihgt + 'px' }">
+				<template v-if="cateList && cateList[cateIndex] && cateList[cateIndex]['childList'].length">
+					<view
+						class="book-section"
+						v-for="(item2, idx2) in cateList[cateIndex]['childList']"
+						:key="idx2"
+					>
+						<view class="book-section__head">
+							<view class="book-section__bar"></view>
+							<text class="book-section__title">{{ item2['name'] }}</text>
+						</view>
+						<view class="book-grid">
+							<view
+								class="book-card"
+								v-for="(item3, idx3) in item2['childList']"
+								:key="idx3"
+								@click="knowMore(item3.id)"
+							>
+								<view class="book-card__media">
+									<image :src="item3.main_photo" mode="aspectFill"></image>
 								</view>
+								<text class="book-card__name">{{ item3.name }}</text>
 							</view>
 						</view>
-					</template>
-					<view class="none-test" v-else>
-						暂无实验
 					</view>
+				</template>
+				<view class="book-empty" v-else>
+					<view class="book-empty__dot"></view>
+					<text class="book-empty__text">暂无实验</text>
+					<text class="book-empty__hint">换个分类试试</text>
 				</view>
-			</view>
+			</scroll-view>
 		</view>
 	</view>
 </template>
@@ -61,29 +78,24 @@
 			const that = this
 			uni.getSystemInfo({
 				success(res) {
-					// 计算实际header高度
-					that.usable_heihgt = res.windowHeight - (res.screenWidth  / 750) * 100
+					// header 约 112rpx（搜索区）
+					that.usable_heihgt = res.windowHeight - (res.screenWidth / 750) * 112
 				}
 			})
-			// 获取分类列表
 			fetchCateListApi().then(res => {
 				if (res.res) {
 					this.cateList = res.obj
-					// 遍历所有一级，拿到所有二级
 					this.cateList.forEach(item2 => {
 						this.testList = [...this.testList, ...item2.childList]
 					})
-
 				}
 			})
 		},
 		methods: {
-			// 更换分类
 			changeCate(idx) {
 				if (this.cateIndex === idx) return
 				this.cateIndex = idx
 			},
-			// 了解更多
 			knowMore(id) {
 				uni.navigateTo({
 					url: `/staffB/test_detail/test_detail?id=${id}`
@@ -93,172 +105,230 @@
 	}
 </script>
 
-
 <style lang="scss" scoped>
-	.cover {
-		position: fixed;
-		z-index: 2;
-		height: 100%;
-		width: 100%;
+	.book {
+		min-height: 100%;
+		background: $ut-bg;
+		display: flex;
+		flex-direction: column;
 	}
-	
-	.none-test {
-		text-align: center;
-		color: #B9B9B9;
-		margin-top: 30rpx;
-	}
-	
-	.cate-1-item-active {
-		position: relative;
-		background-color: #fff !important;
 
-		&::before {
-			display: block;
+	.book-search {
+		padding: $ut-space-2 $ut-space-3 $ut-space-3;
+		background: linear-gradient(180deg, #FFF7F0 0%, $ut-bg 100%);
+
+		&__box {
+			position: relative;
+			display: flex;
+			align-items: center;
+			height: 72rpx;
+			padding: 0 $ut-space-3 0 72rpx;
+			background: $ut-card;
+			border-radius: 999rpx;
+			border: 1rpx solid rgba(233, 99, 2, 0.12);
+			box-shadow: 0 8rpx 20rpx rgba(233, 99, 2, 0.08);
+		}
+
+		&__icon {
 			position: absolute;
-			left: 0;
+			left: 28rpx;
 			top: 50%;
-			margin-top: -20rpx;
-			content: "";
-			width: 7rpx;
-			height: 40rpx;
-			background-color: $primary;
+			transform: translateY(-50%);
+			width: 32rpx;
+			height: 32rpx;
+			opacity: 0.55;
+		}
+
+		&__input {
+			flex: 1;
+			height: 72rpx;
+			font-size: 26rpx;
+			color: $ut-text;
+			background: transparent;
 		}
 	}
 
-	.cate-list {
+	.book-body {
 		display: flex;
+		flex: 1;
+		min-height: 0;
+		background: $ut-card;
+		border-radius: $ut-radius-lg $ut-radius-lg 0 0;
+		overflow: hidden;
+		box-shadow: 0 -6rpx 20rpx rgba(31, 35, 41, 0.04);
 	}
 
-	.cate-1-list,
-	.cate-2-list {
-		overflow: scroll;
-	}
+	.book-side {
+		width: 200rpx;
+		flex-shrink: 0;
+		background: $ut-bg;
 
-	.cate-1-list {
-		background-color: #F8F8F8;
-		width: 28%;
-	}
+		&__item {
+			position: relative;
+			min-height: 112rpx;
+			padding: $ut-space-3 16rpx;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			box-sizing: border-box;
 
-	.cate-2-list {
-		width: 72%;
-
-		.cate-2-item {
-			text-align: center;
-
-			.cate-2-title {
-				display: inline-block;
-				position: relative;
-				margin: 20rpx 0;
-
-				&::before,
-				&::after {
-					display: block;
-					content: '';
-					width: 40rpx;
-					height: 3rpx;
-					background-color: #C7C7C7;
-					top: 50%;
-					margin-top: -1.5rpx;
-				}
+			&.is-active {
+				background: $ut-card;
 
 				&::before {
+					content: '';
 					position: absolute;
-					left: -50rpx;
+					left: 0;
+					top: 50%;
+					transform: translateY(-50%);
+					width: 6rpx;
+					height: 44rpx;
+					border-radius: 0 6rpx 6rpx 0;
+					background: $ut-primary;
 				}
 
-				&::after {
-					position: absolute;
-					right: -50rpx;
+				.book-side__name {
+					color: $ut-primary;
+					font-weight: 700;
 				}
+			}
+
+			&:active:not(.is-active) {
+				background: rgba(233, 99, 2, 0.06);
 			}
 		}
 
-		.cate-3-list {
-			display: flex;
-			flex-wrap: wrap;
-
-			image {
-				width: 80rpx;
-				height: 80rpx;
-				border-radius: 10%;
-			}
-		}
-
-		.cate-3-item {
-			width: 50%;
+		&__name {
+			font-size: 24rpx;
+			line-height: 1.4;
 			text-align: center;
-
-			.cate-3-name {
-				width: 180rpx;
-				margin: 10px auto;
-				overflow: hidden;
-				text-overflow: ellipsis;
-				display: -webkit-box;
-				-webkit-box-orient: vertical;
-				-webkit-line-clamp: 2;
-				
-			}
-
-			&:nth-child(n+3) {
-				margin-top: 20rpx;
-			}
+			color: $ut-text-secondary;
 		}
 	}
 
-	.cate-1-item {
-		display: flex;
-		height: 120rpx;
-		background-color: #F5F5F9;
-		padding: 0 10rpx;
-		align-items: center;
+	.book-main {
+		flex: 1;
+		min-width: 0;
+		background: $ut-card;
+		padding: $ut-space-3 $ut-space-3 40rpx;
+		box-sizing: border-box;
+	}
 
-		.cate-2-name {
+	.book-section {
+		margin-bottom: $ut-space-4;
+
+		&__head {
+			display: flex;
+			align-items: center;
+			margin-bottom: $ut-space-3;
+		}
+
+		&__bar {
+			width: 8rpx;
+			height: 28rpx;
+			border-radius: 8rpx;
+			background: linear-gradient(180deg, #FF8A3D 0%, $ut-primary 100%);
+			margin-right: 12rpx;
+			flex-shrink: 0;
+		}
+
+		&__title {
+			font-size: 28rpx;
+			font-weight: 700;
+			color: $ut-text;
+		}
+	}
+
+	.book-grid {
+		display: flex;
+		flex-wrap: wrap;
+		margin: 0 -8rpx;
+	}
+
+	.book-card {
+		width: 50%;
+		padding: 0 8rpx;
+		margin-bottom: $ut-space-3;
+		box-sizing: border-box;
+
+		&:active {
+			opacity: 0.88;
+		}
+
+		&__media {
+			width: 100%;
+			height: 160rpx;
+			border-radius: $ut-radius-md;
+			overflow: hidden;
+			background: $ut-bg;
+			border: 1rpx solid $ut-border;
+			box-shadow: 0 4rpx 12rpx rgba(31, 35, 41, 0.04);
+
+			image {
+				width: 100%;
+				height: 100%;
+				display: block;
+			}
+		}
+
+		&__name {
+			margin-top: 12rpx;
+			padding: 0 4rpx;
+			font-size: 24rpx;
+			line-height: 1.35;
+			color: $ut-text;
 			overflow: hidden;
 			text-overflow: ellipsis;
 			display: -webkit-box;
 			-webkit-box-orient: vertical;
 			-webkit-line-clamp: 2;
+			text-align: center;
 		}
 	}
 
-
-	.cate-list {
-		background-color: #fff;
-	}
-
-	.header {
+	.book-empty {
+		padding: 120rpx 0;
 		display: flex;
+		flex-direction: column;
 		align-items: center;
-		height: 100rpx;
-		border-bottom: 1rpx solid #F3F3F3;
-		padding: 0 30rpx;
 
-		.search-icon {
-			position: absolute;
-			left: 20rpx;
-			top: 15rpx;
-			width: 30rpx;
-			height: 30rpx;
+		&__dot {
+			width: 72rpx;
+			height: 72rpx;
+			border-radius: 50%;
+			background: $ut-primary-soft;
+			margin-bottom: $ut-space-3;
+			position: relative;
+
+			&::after {
+				content: '';
+				position: absolute;
+				left: 50%;
+				top: 50%;
+				width: 28rpx;
+				height: 4rpx;
+				border-radius: 4rpx;
+				background: $ut-primary;
+				transform: translate(-50%, -50%);
+			}
 		}
 
-		.cate {
-			width: 40rpx;
-			height: 40rpx;
-			margin-left: 10px;
+		&__text {
+			font-size: 28rpx;
+			color: $ut-text;
+			font-weight: 600;
 		}
 
-		.search-input {
-			box-sizing: border-box;
-			height: 60rpx;
-			padding: 0 70rpx;
-			background-color: #fff;
-			border-radius: 3rpx;
+		&__hint {
+			margin-top: 8rpx;
+			font-size: 22rpx;
+			color: $ut-text-secondary;
 		}
 	}
-
 </style>
-<style>
+
+<style lang="scss">
 	page {
-		background-color: #EFF6FF;
+		background-color: $ut-bg;
 	}
 </style>

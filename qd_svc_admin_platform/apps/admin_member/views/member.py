@@ -196,3 +196,65 @@ def valid_mobile(request: Request, user=None):
         return Response(ajax_fail("请填写手机号"))
     exists = member_repo.mobile_exists(mobile, exclude_id=exclude_id)
     return Response(ajax_ok(obj={"valid": not exists}))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view(require_staff=False)
+def load_customer_names(request: Request, user=None):
+    """小程序客户名称下拉 — /member/loadCustomerNames.ajax（type=1 企业）。"""
+    del user, request
+    from apps.core.db_utils import fetch_all
+
+    rows = fetch_all(
+        """
+        SELECT id, name
+        FROM qd_user_company
+        WHERE delete_status = 0 AND type = 1
+        ORDER BY id DESC
+        LIMIT 5000
+        """
+    )
+    return Response(ajax_ok(obj=rows or [], res_msg="获取成功!"))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view(require_staff=False)
+def query_all_company_kh(request: Request, user=None):
+    """小程序客户账号下拉 — /member/queryAllCompanykh.ajax（返回 id/mobile）。"""
+    del user
+    data = merge_payload(request)
+    parent_id = str(
+        data.get("parentId") or data.get("parent_id") or data.get("comId") or ""
+    ).strip()
+    from apps.core.db_utils import fetch_all
+
+    if parent_id.isdigit():
+        rows = fetch_all(
+            """
+            SELECT id, mobile
+            FROM exp_user
+            WHERE IFNULL(deleteStatus, 0) = 0
+              AND parent_id = %(pid)s
+              AND IFNULL(mobile, '') <> ''
+            ORDER BY id DESC
+            LIMIT 5000
+            """,
+            {"pid": int(parent_id)},
+        )
+    else:
+        # parentId 为空：列出有手机号的客户账号（创建子订单页用法）
+        rows = fetch_all(
+            """
+            SELECT id, mobile
+            FROM exp_user
+            WHERE IFNULL(deleteStatus, 0) = 0
+              AND IFNULL(mobile, '') <> ''
+            ORDER BY id DESC
+            LIMIT 5000
+            """
+        )
+    return Response(ajax_ok(obj=rows or [], res_msg="获取成功!"))

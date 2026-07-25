@@ -1,18 +1,26 @@
 <template>
-	<view class="container" v-if="showData">
-		<swiper class="swiper" :indicator-dots="true">
-			<swiper-item v-for="(item, idx) in showData['manage_photos']" :key="idx">
-				<image :src="item" mode="widthFix"></image>
-			</swiper-item>
-		</swiper>
-		<view class="main-btn" @click="sub">
-			预约实验
+	<view class="detail" v-if="showData">
+		<view class="detail-hero">
+			<swiper class="detail-hero__swiper" :indicator-dots="true" indicator-active-color="#E96302" indicator-color="rgba(0,0,0,0.15)">
+				<swiper-item v-for="(item, idx) in showData['manage_photos']" :key="idx">
+					<image :src="item" mode="aspectFill"></image>
+				</swiper-item>
+			</swiper>
 		</view>
-		<view class="title flex-center">
-			实验介绍
-		</view>
-		<view class="test-decs">
-			<rich-text :nodes="showData['app_project_details']"></rich-text>
+
+		<view class="detail-body">
+			<view class="detail-name" v-if="showData.name">{{ showData.name }}</view>
+			<view class="detail-cta" @click="sub">预约实验</view>
+
+			<view class="detail-section">
+				<view class="detail-section__head">
+					<view class="detail-section__bar"></view>
+					<text class="detail-section__title">实验介绍</text>
+				</view>
+				<view class="detail-section__content">
+					<rich-text :nodes="showData['app_project_details']"></rich-text>
+				</view>
+			</view>
 		</view>
 	</view>
 </template>
@@ -96,64 +104,98 @@
 </script>
 
 <style lang="scss" scoped>
-	.title {
-		margin-top: 30rpx;
-		color: #838487;
-		justify-content: center;
-		font-size: 32rpx;
-
-		&::before,
-		&::after {
-			display: block;
-			content: '';
-			width: 70rpx;
-			height: 3rpx;
-			background-color: #838487;
-		}
-
-		&::before {
-			margin-right: 20rpx;
-		}
-
-		&::after {
-			margin-left: 20rpx;
-		}
+	.detail {
+		min-height: 100vh;
+		background: $ut-bg;
+		padding-bottom: calc(40rpx + env(safe-area-inset-bottom));
+		box-sizing: border-box;
 	}
 
-	.main-btn {
-		margin-bottom: 40rpx;
-	}
+	.detail-hero {
+		padding: $ut-space-3 $ut-space-3 0;
 
-	.test-decs {
-		margin-top: 15rpx;
-		color: #A1A3A6;
-		font-size: 26rpx;
-	}
+		&__swiper {
+			width: 100%;
+			height: 520rpx;
+			border-radius: $ut-radius-lg;
+			overflow: hidden;
+			background: $ut-card;
+			box-shadow: 0 8rpx 24rpx rgba(31, 35, 41, 0.08);
 
-	.container {
-		padding: 0 56rpx;
-	}
-
-
-
-	.swiper {
-		width: 100%;
-		height: 747rpx;
-		margin-top: 20rpx;
-		swiper-item {
-			position: relative;
-		}
-
-		image {
-			position: absolute;
-			left: 50%;
-			top: 50%;
-			transform: translate(-50%, -50%);
+			image {
+				width: 100%;
+				height: 100%;
+				display: block;
+			}
 		}
 	}
 
+	.detail-body {
+		margin: $ut-space-3;
+		padding: $ut-space-4;
+		border-radius: $ut-radius-lg;
+		background: $ut-card;
+		box-shadow: 0 8rpx 24rpx rgba(31, 35, 41, 0.06);
+	}
 
-	.container {
-		overflow: hidden;
+	.detail-name {
+		font-size: 34rpx;
+		font-weight: 700;
+		color: $ut-text;
+		line-height: 1.4;
+		margin-bottom: $ut-space-3;
+	}
+
+	.detail-cta {
+		text-align: center;
+		padding: 26rpx 0;
+		border-radius: 999rpx;
+		background: linear-gradient(135deg, #FF8A3D 0%, $ut-primary 100%);
+		color: #fff;
+		font-size: 30rpx;
+		font-weight: 600;
+		box-shadow: 0 10rpx 24rpx rgba(233, 99, 2, 0.35);
+
+		&:active {
+			opacity: 0.92;
+			transform: scale(0.99);
+		}
+	}
+
+	.detail-section {
+		margin-top: $ut-space-4;
+
+		&__head {
+			display: flex;
+			align-items: center;
+			margin-bottom: $ut-space-3;
+		}
+
+		&__bar {
+			width: 8rpx;
+			height: 28rpx;
+			border-radius: 8rpx;
+			background: linear-gradient(180deg, #FF8A3D 0%, $ut-primary 100%);
+			margin-right: 12rpx;
+		}
+
+		&__title {
+			font-size: 28rpx;
+			font-weight: 700;
+			color: $ut-text;
+		}
+
+		&__content {
+			font-size: 26rpx;
+			line-height: 1.7;
+			color: $ut-text-secondary;
+			word-break: break-word;
+		}
+	}
+</style>
+
+<style lang="scss">
+	page {
+		background-color: $ut-bg;
 	}
 </style>

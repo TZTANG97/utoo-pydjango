@@ -66,6 +66,18 @@ def _order_extra_patterns():
                 r"^api/adminExperiment/(?P<subpath>.+)$",
                 proxy_order_request,
             ),
+            re_path(
+                r"^api/experimentManage/(?P<subpath>.+)$",
+                proxy_order_request,
+            ),
+            re_path(
+                r"^api/experimentProject/(?P<subpath>.+)$",
+                proxy_order_request,
+            ),
+            re_path(
+                r"^api/experimentGoods/(?P<subpath>.+)$",
+                proxy_order_request,
+            ),
         ]
     return [
         path("api/ordersampleinfomation/", include("apps.orders.sample_urls")),
@@ -73,6 +85,7 @@ def _order_extra_patterns():
         path("api/retestapplication/", include("apps.orders.retest_urls")),
         # 本地孪生：未配置 SVC_ORDER_URL 时由网关直连 DB 服务实验管理
         path("api/", include("apps.admin_experiment.urls")),
+        path("api/", include("apps.admin_experiment.mp_catalog_urls")),
     ]
 
 
@@ -172,6 +185,10 @@ _ADMIN_ASSET_PREFIXES = (
     "getLog.ajax",
     "getAccountLog.ajax",
     "selExpSumByYear.ajax",
+    "selExpSumByYearxcx.ajax",
+    "yesterdayIncome.ajax",
+    "yesterdayIncomexcx.ajax",
+    "account_User.ajax",
     "pass.ajax",
     "supplier/queryAllPay.ajax",
 )
@@ -319,11 +336,31 @@ def _experiment_order_patterns():
                 r"^api/experimentChildOrder/(?P<subpath>.+)$",
                 proxy_order_request,
             ),
+            re_path(
+                r"^api/expSubPurchaseOrder/(?P<subpath>.+)$",
+                proxy_order_request,
+            ),
+            re_path(
+                r"^api/saleOrder/(?P<subpath>.+)$",
+                proxy_order_request,
+            ),
+            re_path(
+                r"^api/bill/(?P<subpath>.+)$",
+                proxy_order_request,
+            ),
+            re_path(
+                r"^api/eveluateCompany/(?P<subpath>.+)$",
+                proxy_order_request,
+            ),
         ]
     return [
         path("api/experimentOrder/", include("apps.orders.urls")),
         path("api/experimentSubOrder/", include("apps.orders.sub_urls")),
         path("api/experimentChildOrder/", include("apps.orders.child_urls")),
+        path("api/expSubPurchaseOrder/", include("apps.orders.child_urls")),
+        path("api/saleOrder/", include("apps.orders.sale_urls")),
+        path("api/bill/", include("apps.orders.bill_urls")),
+        path("api/eveluateCompany/", include("apps.orders.eveluate_urls")),
     ]
 
 

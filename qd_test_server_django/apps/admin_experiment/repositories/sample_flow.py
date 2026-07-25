@@ -365,12 +365,29 @@ def sample_arrive(
     对齐 Java inTreasury/saveInTreasury type=1：
     - 不选仓库/仓位：仅推进子行状态到样品到货
     - 同时选仓库+仓位：写入样品管理单，并把样品信息落到对应仓位
+    - 仅传仓位 id：反查 sample_store_id
     """
     ids = _parse_ids(child_ids)
     if not ids:
         return False, "请选择子单行"
     sid = str(store_id or "").strip()
     spos = str(store_position_id or "").strip()
+    if "_" in spos:
+        spos = spos.split("_", 1)[-1].strip()
+    if ";" in spos:
+        spos = spos.split(";", 1)[0].strip()
+    if spos and not sid:
+        pos_row = fetch_one(
+            """
+            SELECT id, sample_store_id AS storeId
+            FROM sample_goods_store_position
+            WHERE id = %(id)s AND IFNULL(deleteStatus, 0) = 0
+            LIMIT 1
+            """,
+            {"id": int(spos) if spos.isdigit() else 0},
+        )
+        if pos_row and pos_row.get("storeId") is not None:
+            sid = str(pos_row.get("storeId"))
     if (sid and not spos) or (spos and not sid):
         return False, "请同时选择仓库名称和仓库位置，或不选"
     log_suffix = "样品到货"
@@ -518,7 +535,7 @@ def sample_arrive(
     ok, msg = _set_children_status(
         order_id=order_id,
         child_ids=ids,
-        expect_from={ST_PROCESSED},
+        expect_from={0, 1, ST_PROCESSED},
         to_status=ST_ARRIVE,
         log_suffix=log_suffix,
         extra_sql=extra,
@@ -581,12 +598,22 @@ def sample_pick(*, order_id: int, child_ids: Any) -> tuple[bool, str]:
 
 @transaction.atomic
 def test_start(*, order_id: int, child_ids: Any, line_id: str = "") -> tuple[bool, str]:
+    lid = str(line_id or "").strip()
+    if "_" in lid:
+        lid = lid.split("_", 1)[-1].strip()
+    extra = ""
+    params: dict[str, Any] = {}
+    if lid:
+        extra = ", line_id = %(line_id)s"
+        params["line_id"] = lid[:64]
     return _set_children_status(
         order_id=order_id,
         child_ids=_parse_ids(child_ids),
         expect_from={ST_PICK},
         to_status=ST_TESTING,
         log_suffix="开始测试",
+        extra_sql=extra,
+        extra_params=params or None,
     )
 
 
@@ -613,12 +640,21 @@ def sample_return(*, order_id: int, child_ids: Any) -> tuple[bool, str]:
 
 
 @transaction.atomic
-def sample_ship_back(*, order_id: int, child_ids: Any, express_no: str = "") -> tuple[bool, str]:
+def sample_ship_back(
+    *,
+    order_id: int,
+    child_ids: Any,
+    express_no: str = "",
+    express_name: str = "",
+) -> tuple[bool, str]:
     extra = ""
-    params = {}
-    if express_no:
+    params: dict[str, Any] = {}
+    no = (express_no or "").strip()
+    name = (express_name or "").strip()
+    if no or name:
+        tag = f"[快递:{name} {no}]".strip()
         extra = ", mark = CONCAT(IFNULL(mark,''), %(ex)s)"
-        params["ex"] = f"[快递:{express_no}]"
+        params["ex"] = tag
     return _set_children_status(
         order_id=order_id,
         child_ids=_parse_ids(child_ids),

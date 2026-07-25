@@ -92,28 +92,40 @@
 
     <div v-show="activeTab === 'overview'">
     <section class="ops-kpi" v-loading="loading">
-      <button type="button" class="kpi-card kpi-card--cyan" @click="drawerDone = true">
+      <button
+        type="button"
+        class="kpi-card kpi-card--cyan"
+        @mouseenter="openHoverDrawer('done')"
+      >
         <div class="kpi-card__icon">✓</div>
         <div class="kpi-card__body">
           <span class="kpi-card__label">完成测试订单</span>
           <span class="kpi-card__value">{{ anim.ywc }}</span>
-          <span class="kpi-card__hint">点击查看明细</span>
+          <span class="kpi-card__hint">悬停打开明细</span>
         </div>
       </button>
-      <div class="kpi-card kpi-card--amber">
+      <button
+        type="button"
+        class="kpi-card kpi-card--amber"
+        @mouseenter="openHoverDrawer('nostart')"
+      >
         <div class="kpi-card__icon">◌</div>
         <div class="kpi-card__body">
           <span class="kpi-card__label">未开始订单</span>
           <span class="kpi-card__value">{{ anim.nostart }}</span>
-          <span class="kpi-card__hint">待分配 / 待启动</span>
+          <span class="kpi-card__hint">悬停打开明细</span>
         </div>
-      </div>
-      <button type="button" class="kpi-card kpi-card--teal" @click="drawerStaff = true">
+      </button>
+      <button
+        type="button"
+        class="kpi-card kpi-card--teal"
+        @mouseenter="openHoverDrawer('staff')"
+      >
         <div class="kpi-card__icon">◎</div>
         <div class="kpi-card__body">
           <span class="kpi-card__label">测试人员总数</span>
           <span class="kpi-card__value">{{ anim.staff }}</span>
-          <span class="kpi-card__hint">{{ deptLabel }}</span>
+          <span class="kpi-card__hint">{{ deptLabel }} · 悬停打开</span>
         </div>
       </button>
       <div class="kpi-card kpi-card--gold kpi-card--best">
@@ -318,16 +330,72 @@
     </div>
     </div>
 
-    <el-drawer v-model="drawerDone" title="完成测试明细" size="420px" class="ops-drawer">
+    <el-drawer
+      :model-value="hoverDrawer === 'done'"
+      title="完成测试明细"
+      size="640px"
+      class="ops-drawer"
+      modal-class="ops-drawer-modal"
+      :modal="false"
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+      :append-to="selectAppendTo"
+      @update:model-value="(v) => !v && closeHoverDrawer('done')"
+    >
+      <div class="drawer-row drawer-row--head">
+        <span>订单号</span>
+        <span>测试人员</span>
+        <span>完成时间</span>
+      </div>
       <div v-for="(row, i) in ywcList" :key="`d-${i}`" class="drawer-row">
-        <strong>{{ row.orderNum }}</strong>
-        <span>{{ row.user_name }}</span>
-        <span>{{ row.end_time || row.finish_time }}</span>
+        <strong>{{ row.orderNum || '—' }}</strong>
+        <span>{{ row.user_name || '—' }}</span>
+        <span>{{ row.end_time || row.finish_time || '—' }}</span>
       </div>
       <el-empty v-if="!ywcList.length" description="暂无数据" />
     </el-drawer>
 
-    <el-drawer v-model="drawerStaff" title="测试人员明细" size="480px" class="ops-drawer">
+    <el-drawer
+      :model-value="hoverDrawer === 'nostart'"
+      title="未开始订单明细"
+      size="860px"
+      class="ops-drawer"
+      modal-class="ops-drawer-modal"
+      :modal="false"
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+      :append-to="selectAppendTo"
+      @update:model-value="(v) => !v && closeHoverDrawer('nostart')"
+    >
+      <div class="drawer-row drawer-row--head drawer-row--5">
+        <span>订单号</span>
+        <span>测试人员</span>
+        <span>预计完成</span>
+        <span>测试分类</span>
+        <span>实验线</span>
+      </div>
+      <div v-for="(row, i) in nostartList" :key="`n-${i}`" class="drawer-row drawer-row--5">
+        <strong>{{ row.orderNum || '—' }}</strong>
+        <span>{{ row.user_name || '—' }}</span>
+        <span>{{ row.expect_finishtime || '—' }}</span>
+        <span>{{ row.experiment_class_name || row.project_name || '—' }}</span>
+        <span>{{ row.line_num || '—' }}</span>
+      </div>
+      <el-empty v-if="!nostartList.length" description="暂无数据" />
+    </el-drawer>
+
+    <el-drawer
+      :model-value="hoverDrawer === 'staff'"
+      title="测试人员明细"
+      size="480px"
+      class="ops-drawer"
+      modal-class="ops-drawer-modal"
+      :modal="false"
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+      :append-to="selectAppendTo"
+      @update:model-value="(v) => !v && closeHoverDrawer('staff')"
+    >
       <el-table :data="testUserList" size="small" stripe>
         <el-table-column prop="userName" label="账号" min-width="100" />
         <el-table-column prop="trueName" label="姓名" min-width="90" />
@@ -345,7 +413,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import type { ECharts } from 'echarts'
@@ -357,10 +425,12 @@ import {
   fetchStatsOrderManage,
   fetchStatsUsersByDept,
 } from '@/api/digital'
+import { useUserStore } from '@/stores/user'
 import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
 
 type Row = Record<string, unknown>
 
+const userStore = useUserStore()
 const rootRef = ref<HTMLElement>()
 /** 全屏时下拉必须挂到全屏根节点，挂 body 会不可见 */
 const selectAppendTo = computed(() => rootRef.value || 'body')
@@ -381,8 +451,31 @@ const activeTab = ref<'overview' | 'orders'>('overview')
 const loading = ref(false)
 const ordersLoading = ref(false)
 const isFullscreen = ref(false)
-const drawerDone = ref(false)
-const drawerStaff = ref(false)
+type HoverDrawer = 'done' | 'nostart' | 'staff'
+const hoverDrawer = ref<HoverDrawer | null>(null)
+
+/** 悬停打开/切换明细；点关闭按钮或页面空白处关闭 */
+function openHoverDrawer(kind: HoverDrawer) {
+  hoverDrawer.value = kind
+}
+
+function closeHoverDrawer(kind: HoverDrawer) {
+  if (hoverDrawer.value === kind) hoverDrawer.value = null
+}
+
+function closeAllHoverDrawers() {
+  hoverDrawer.value = null
+}
+
+function onPageClickCloseDrawer(e: MouseEvent) {
+  if (!hoverDrawer.value || e.button !== 0) return
+  const el = e.target as HTMLElement | null
+  if (!el?.closest) return
+  // 点在抽屉内或三个可悬停 KPI 上：不关（KPI 用于切换明细）
+  if (el.closest('.el-drawer.ops-drawer')) return
+  if (el.closest('.kpi-card--cyan, .kpi-card--amber, .kpi-card--teal')) return
+  hoverDrawer.value = null
+}
 
 const now = new Date()
 const periodType = ref('2')
@@ -469,6 +562,7 @@ function onPeriodChange() {
 }
 
 async function switchTab(tab: 'overview' | 'orders') {
+  closeAllHoverDrawers()
   activeTab.value = tab
   await reload()
   await nextTick()
@@ -480,6 +574,21 @@ async function loadDepts() {
   if (isAjaxOk(res) && Array.isArray(res.obj)) {
     depts.value = res.obj as Row[]
   }
+}
+
+/** 首次进入：用当前登录账号部门预填筛选（如 admin → 总经理） */
+function applyDefaultDeptFromLoginUser() {
+  if (deptId.value) return
+  const profile = (userStore.profile || {}) as Row
+  const id = String(profile.deptId || profile.dept_id || '').trim()
+  if (id && id !== '0' && depts.value.some((d) => String(d.id) === id)) {
+    deptId.value = id
+    return
+  }
+  const name = String(userStore.welcome?.deptName || profile.deptName || '').trim()
+  if (!name) return
+  const hit = depts.value.find((d) => String(d.deptName || '') === name)
+  if (hit) deptId.value = String(hit.id)
 }
 
 async function loadUsers() {
@@ -829,14 +938,32 @@ function onFsChange() {
 onMounted(async () => {
   window.addEventListener('resize', onResize)
   document.addEventListener('fullscreenchange', onFsChange)
+  try {
+    await userStore.ensureProfile()
+  } catch {
+    /* 未登录信息时仍加载看板，部门保持全部 */
+  }
   await loadDepts()
+  applyDefaultDeptFromLoginUser()
   await loadUsers()
   await reload()
 })
 
+/** keep-alive：进入时挂空白处关闭；切走时关掉明细并卸监听 */
+onActivated(() => {
+  document.addEventListener('mousedown', onPageClickCloseDrawer)
+})
+
+onDeactivated(() => {
+  closeAllHoverDrawers()
+  document.removeEventListener('mousedown', onPageClickCloseDrawer)
+})
+
 onBeforeUnmount(() => {
+  closeAllHoverDrawers()
   window.removeEventListener('resize', onResize)
   document.removeEventListener('fullscreenchange', onFsChange)
+  document.removeEventListener('mousedown', onPageClickCloseDrawer)
   pieChart?.dispose()
   lineChart?.dispose()
   taskTrendChart?.dispose()
@@ -1101,10 +1228,54 @@ onBeforeUnmount(() => {
 }
 
 button.kpi-card {
-  cursor: pointer;
+  width: 100%;
+  cursor: default;
   &:hover {
     border-color: rgba(45, 212, 191, 0.45);
     transform: translateY(-1px);
+  }
+}
+
+.drawer-row {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr 1fr;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line, rgba(148, 163, 184, 0.16));
+  font-size: 13px;
+  color: var(--text, #e2e8f0);
+
+  strong {
+    color: #e2e8f0;
+    word-break: break-all;
+  }
+  span {
+    color: var(--muted, #94a3b8);
+  }
+
+  &--4 {
+    grid-template-columns: 1.2fr 0.7fr 1fr 1fr;
+  }
+
+  &--5 {
+    grid-template-columns: 1.4fr 0.7fr 1fr 1fr 0.8fr;
+  }
+
+  &--head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    margin-top: -4px;
+    padding-top: 4px;
+    background: #0f172a;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.32);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted, #94a3b8);
+
+    span {
+      color: var(--muted, #94a3b8);
+    }
   }
 }
 
@@ -1428,15 +1599,6 @@ button.kpi-card {
   border-radius: 10px;
 }
 
-.drawer-row {
-  display: grid;
-  grid-template-columns: 1.2fr 0.8fr 1fr;
-  gap: 8px;
-  padding: 10px 0;
-  border-bottom: 1px solid #e5e7eb;
-  font-size: 13px;
-}
-
 @media (max-width: 1200px) {
   .ops-kpi,
   .ops-kpi--6,
@@ -1464,6 +1626,59 @@ button.kpi-card {
   .ops-streams,
   .ops-charts-grid {
     grid-template-columns: 1fr;
+  }
+}
+</style>
+
+<!-- 抽屉 teleport 后需非 scoped -->
+<style lang="scss">
+.ops-drawer-modal {
+  background-color: transparent !important;
+  pointer-events: none;
+}
+
+.el-drawer.ops-drawer {
+  background: #111827 !important;
+  color: #e2e8f0;
+  pointer-events: auto;
+
+  .el-drawer__header {
+    margin-bottom: 16px;
+    color: #e2e8f0;
+  }
+
+  .el-drawer__title {
+    color: #e2e8f0;
+    font-weight: 600;
+  }
+
+  .el-drawer__close-btn {
+    color: #94a3b8;
+
+    &:hover {
+      color: #e2e8f0;
+    }
+  }
+
+  .el-drawer__body {
+    color: #e2e8f0;
+    background: #0f172a;
+  }
+
+  .el-empty__description p {
+    color: #64748b;
+  }
+
+  .el-table {
+    --el-table-bg-color: #0f172a;
+    --el-table-tr-bg-color: #0f172a;
+    --el-table-header-bg-color: #1a2332;
+    --el-table-row-hover-bg-color: #1e293b;
+    --el-table-border-color: rgba(148, 163, 184, 0.16);
+    --el-table-text-color: #e2e8f0;
+    --el-table-header-text-color: #94a3b8;
+    --el-fill-color-lighter: #1a2332;
+    background: transparent;
   }
 }
 </style>

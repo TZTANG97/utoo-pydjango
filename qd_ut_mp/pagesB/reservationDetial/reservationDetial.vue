@@ -1382,7 +1382,8 @@
 
 			// 选择
 			select(keyName, listName, titleName, echoKey) {
-				if (this.detail.status != 0 && this.detail.status != 1) return
+				const st = this.detail ? Number(this.detail.status) : -1
+				if (st != 0 && st != 1) return
 				// 选择框标题
 				this.checkBoxTitle = titleName
 				// 选择框中数组展示的key
@@ -1402,8 +1403,14 @@
 					id: this.id
 				}).then(res => {
 					if (res.res) {
-						this.detail = res.obj.consult
-						this.zcMobile = res.obj.zcMobile
+						const obj = res.obj || {}
+						this.detail = obj.consult || {}
+						if (this.detail.status === undefined || this.detail.status === null || this.detail.status === '') {
+							this.detail.status = 0
+						} else {
+							this.detail.status = Number(this.detail.status)
+						}
+						this.zcMobile = obj.zcMobile
 						this.purchaseBossId = this.detail.purchaseBossId
 						this.company_account = this.detail.company_account_id
 						this.test_address = this.detail.test_address_id
@@ -1415,12 +1422,12 @@
 						this.order_type = this.detail.order_type
 						this.collection_time = this.detail.collection_time_str
 						this.delivery_time = this.detail.delivery_time_str
-						this.className = res.obj.className
-						this.classId = res.obj.classId
-						this.childsyp = res.obj.childsyp
-						this.files = res.obj.files
-						this.syuser_id = res.obj.consult.sale_manager
-						res.obj.childs.forEach(item => {
+						this.className = obj.className
+						this.classId = obj.classId
+						this.childsyp = obj.childsyp || []
+						this.files = obj.files || []
+						this.syuser_id = this.detail.sale_manager
+						;(obj.childs || []).forEach(item => {
 							// const sampleData = this.sampleList.find(e=>e.id == item.sample_id)
 							// if(sampleData) item.sample_name = sampleData.sample_name
 							item.goodsBrandName = item.goods_brand_name
@@ -1438,7 +1445,7 @@
 							})
 						})
 
-						this.childOrderList = res.obj.childs
+						this.childOrderList = obj.childs || []
 
 						if (this.childOrderList.length == 0) {
 							this.childOrderList = [{

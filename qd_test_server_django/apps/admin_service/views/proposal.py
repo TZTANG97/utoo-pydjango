@@ -70,3 +70,32 @@ def update_proposal_improve(request: Request, user=None):
         log_info=log_info,
     )
     return Response(ajax_ok(res_msg="修改成功!"))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view(require_staff=False)
+def add_proposal_improve(request: Request, user=None):
+    """小程序/后台提交提案改善 — productOrder/addProposalImprove.ajax。"""
+    if not user:
+        return Response(ajax_fail("用户未登录或登录已失效，请重新登录"))
+    data = merge_payload(request)
+    content = str(data.get("content") or "").strip()
+    if not content:
+        return Response(ajax_fail("请填写提议内容"))
+    platform = str(data.get("platform") or "").strip()
+    ids_raw = str(data.get("ids") or "").strip()
+    accessory_ids: list[int] = []
+    if ids_raw:
+        for part in ids_raw.split(","):
+            part = part.strip()
+            if part.isdigit():
+                accessory_ids.append(int(part))
+    row = proposal_repo.add_proposal(
+        content=content,
+        platform=platform,
+        user_id=staff_id(user, default=""),
+        accessory_ids=accessory_ids,
+    )
+    return Response(ajax_ok(obj=row, res_msg="添加成功!"))

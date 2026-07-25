@@ -138,6 +138,37 @@ def list_manage_options(type_: int, parent_id: str = "") -> list[dict[str, Any]]
     )
 
 
+def query_all_manages(type_: int) -> list[dict[str, Any]]:
+    """对齐 Java experimentManage/queryAll.ajax。"""
+    return fetch_all(
+        f"""
+        SELECT
+            t.id, t.addTime, t.name, t.sequence, t.type,
+            t.parent_id AS parentId, t.pt_type AS ptType, t.intro
+        FROM experiment_manage t
+        WHERE {_nd('t')} AND t.type = %(type)s
+        ORDER BY t.sequence ASC, t.id ASC
+        LIMIT 2000
+        """,
+        {"type": type_},
+    )
+
+
+def list_manages_by_parent(parent_id: int) -> list[dict[str, Any]]:
+    return fetch_all(
+        f"""
+        SELECT
+            t.id, t.addTime, t.name, t.sequence, t.type,
+            t.parent_id AS parentId, t.pt_type AS ptType, t.intro
+        FROM experiment_manage t
+        WHERE {_nd('t')} AND t.parent_id = %(pid)s
+        ORDER BY t.sequence ASC, t.id ASC
+        LIMIT 2000
+        """,
+        {"pid": parent_id},
+    )
+
+
 # ---------- experiment_project ----------
 def list_projects(
     *,

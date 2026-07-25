@@ -152,6 +152,16 @@ def paytype_list(request: Request, user=None):
     return Response(datatable_payload(draw=draw, total=total, rows=rows))
 
 
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def paytype_get_all(request: Request):
+    """小程序 consumePaytype/getallptype.ajax — Java getConsumePaytype(2)。"""
+    del request
+    rows = paytype_repo.list_all_by_pay_type(2)
+    return Response(ajax_ok(obj=rows, res_msg="获取成功!"))
+
+
 @api_view(["POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
@@ -213,6 +223,20 @@ def billtype_list(request: Request, user=None):
         bill_type=bill_type, page=page, page_size=page_size
     )
     return Response(datatable_payload(draw=draw, total=total, rows=rows))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def billtype_all_bill(request: Request):
+    """小程序 billtype/allBill.ajax — type 1进项 2出项。"""
+    data = _payload(request)
+    try:
+        bill_type = int(data.get("type") or 1)
+    except (TypeError, ValueError):
+        bill_type = 1
+    rows = bill_repo.list_all_by_type(bill_type)
+    return Response(ajax_ok(obj=rows, res_msg="获取成功!"))
 
 
 @api_view(["POST"])

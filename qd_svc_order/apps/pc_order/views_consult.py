@@ -3,8 +3,10 @@ from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from apps.auth_support.helpers import is_exp_customer
+from apps.core.db_utils import fetch_one
 from apps.core.pc_ajax import pc_ajax_view
-from qd_common.responses import api_fail, api_ok
+from qd_common.responses import ajax_fail, ajax_ok, api_fail, api_ok
 from apps.orders.services import consult as consult_svc
 from apps.orders.services import consult_list as consult_list_svc
 from apps.orders.services import reorder as reorder_svc
@@ -20,16 +22,57 @@ def _param(request: Request, name: str, default: str = "") -> str:
     return str(v) if v is not None else default
 
 
+def _resolve_consult_user_id(user: dict | None) -> int | None:
+    """实验预约 user_id 为 exp_user 数字 id；员工 sy_user 按手机号映射。"""
+    if not user:
+        return None
+    raw = user.get("user_id")
+    if is_exp_customer(user):
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return None
+    # 员工：优先用手机号匹配已有 C 端账号
+    sy_id = str(raw or "")
+    mobile = str(user.get("mobile") or user.get("user_name") or "").strip()
+    if not mobile and sy_id:
+        row = fetch_one(
+            """
+            SELECT mobile_phone_number AS mobile
+            FROM sy_users WHERE id = %(id)s LIMIT 1
+            """,
+            {"id": sy_id},
+        )
+        mobile = str((row or {}).get("mobile") or "").strip()
+    if mobile:
+        eu = fetch_one(
+            """
+            SELECT id FROM exp_user
+            WHERE mobile = %(m)s AND IFNULL(deleteStatus, 0) = 0
+            LIMIT 1
+            """,
+            {"m": mobile},
+        )
+        if eu and eu.get("id") is not None:
+            return int(eu["id"])
+    # 员工代客预约：无对应 C 端用户时用 0 占位（表单里仍有姓名/手机）
+    return 0
+
+
 @api_view(["GET", "POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
-@pc_ajax_view(require_customer=True)
+@pc_ajax_view(require_login=True, ajax_auth=True)
 def service_consult_add(request: Request, user=None):
+    """小程序实验预约 — 对齐 Java AjaxRes；员工/客户均可提交。"""
     class_id = _param(request, "class_id")
     if not class_id.isdigit():
-        return Response(api_fail(400, "请选择实验分类"))
+        return Response(ajax_fail("请选择实验分类"))
+    user_id = _resolve_consult_user_id(user)
+    if user_id is None:
+        return Response(ajax_fail("用户未登录或登录已失效，请重新登录"))
     ok_flag, msg, _ = consult_svc.create_consult(
-        user_id=int(user["user_id"]),
+        user_id=user_id,
         user_name=_param(request, "userName"),
         mobile=_param(request, "mobile"),
         company_name=_param(request, "company_name"),
@@ -46,8 +89,8 @@ def service_consult_add(request: Request, user=None):
         order_list=_param(request, "order_list"),
     )
     if not ok_flag:
-        return Response(api_fail(400, msg))
-    return Response(api_ok(message=msg))
+        return Response(ajax_fail(msg))
+    return Response(ajax_ok(res_msg=msg or "预约成功"))
 
 
 @api_view(["GET"])
@@ -118,18 +161,23 @@ def cancel_consult(request: Request, user=None):
     return Response(api_fail(400, msg))
 
 
-@api_view(["GET"])
+@api_view(["GET", "POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
-@pc_ajax_view(require_customer=True)
+@pc_ajax_view(require_login=True)
 def print_yyd(request: Request, user=None):
+    """打印预约单 — 员工/客户均可；返回 Java AjaxRes（res/obj）。"""
     oid = _param(request, "id")
     if not oid or not oid.strip().isdigit():
-        return Response(api_fail(400, "参数错误"))
+        return Response(ajax_fail("参数错误"))
+    try:
+        uid = int(user.get("user_id")) if user else 0
+    except (TypeError, ValueError):
+        uid = 0
     ok_flag, msg, data = accessory_ops_svc.print_yyd_url(
-        user_id=int(user["user_id"]),
+        user_id=uid,
         order_id=int(oid),
     )
     if ok_flag:
-        return Response(api_ok(data))
-    return Response(api_fail(400, msg))
+        return Response(ajax_ok(obj=data, res_msg=msg or "获取成功"))
+    return Response(ajax_fail(msg or "获取失败"))

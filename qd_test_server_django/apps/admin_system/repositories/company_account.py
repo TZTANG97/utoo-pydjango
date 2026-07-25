@@ -22,6 +22,19 @@ def list_accounts(*, page: int, page_size: int) -> tuple[list[dict[str, Any]], i
     return [_normalize_account(row) for row in rows], int(total)
 
 
+def list_all_accounts() -> list[dict[str, Any]]:
+    """对齐 Java companyaccount/accountList.ajax。"""
+    rows = fetch_all(
+        """
+        SELECT id, company_name, bankCardNum, bank, addTime, deleteStatus, defaultaccount
+        FROM company_account_info
+        WHERE deleteStatus = 0
+        ORDER BY defaultaccount DESC, id ASC
+        """
+    )
+    return [_normalize_account(row) for row in rows]
+
+
 def get_account(account_id: int) -> dict[str, Any] | None:
     row = fetch_one(
         """

@@ -9,9 +9,10 @@ from qd_common.password_java import encrypt_password_for_storage
 SUPPLIER_USER_TYPE = 6
 
 # 编辑/列表共用字段，避免宽 SELECT 因列缺失导致 DatabaseError
+# 注意：本地 `user` 表无 city/province 列
 _SUPPLIER_SELECT = """
     id, userName, company_name, trueName, mobile, address, area_info,
-    company_code, addTime, deleteStatus, email, area_id, city, province, address_info
+    company_code, addTime, deleteStatus, email, area_id, address_info
 """
 
 
@@ -99,12 +100,12 @@ def insert_supplier(data: dict[str, Any]) -> int:
         """
         INSERT INTO `user`
             (userName, company_name, trueName, mobile, address, area_info, company_code,
-             email, area_id, city, province, address_info, userType, password,
+             email, area_id, address_info, userType, password,
              deleteStatus, addTime, status)
         VALUES
             (%(userName)s, %(company_name)s, %(trueName)s, %(mobile)s, %(address)s,
-             %(area_info)s, %(company_code)s, %(email)s, %(area_id)s, %(city)s,
-             %(province)s, %(address_info)s, %(user_type)s, %(password)s, 0, NOW(), 1)
+             %(area_info)s, %(company_code)s, %(email)s, %(area_id)s,
+             %(address_info)s, %(user_type)s, %(password)s, 0, NOW(), 1)
         """,
         {
             "userName": data.get("userName") or "",
@@ -116,8 +117,6 @@ def insert_supplier(data: dict[str, Any]) -> int:
             "company_code": data.get("company_code") or data.get("companyCode"),
             "email": data.get("email"),
             "area_id": data.get("area_id") or data.get("areaId"),
-            "city": data.get("city"),
-            "province": data.get("province"),
             "address_info": data.get("address_info") or data.get("addreddInfo"),
             "user_type": SUPPLIER_USER_TYPE,
             "password": encrypt_password_for_storage(password),
@@ -128,18 +127,12 @@ def insert_supplier(data: dict[str, Any]) -> int:
 def update_supplier(supplier_id: int, data: dict[str, Any]) -> None:
     # address：有传则更新；未传则保留原值，避免编辑弹窗清空区划 ID
     existing = fetch_one(
-        "SELECT address, city, province FROM `user` WHERE id = %(id)s AND userType = %(user_type)s",
+        "SELECT address FROM `user` WHERE id = %(id)s AND userType = %(user_type)s",
         {"id": supplier_id, "user_type": SUPPLIER_USER_TYPE},
     ) or {}
     address = data.get("address")
     if address in (None, ""):
         address = existing.get("address") or ""
-    city = data.get("city")
-    if city in (None, ""):
-        city = existing.get("city")
-    province = data.get("province")
-    if province in (None, ""):
-        province = existing.get("province")
     execute(
         """
         UPDATE `user`
@@ -152,8 +145,6 @@ def update_supplier(supplier_id: int, data: dict[str, Any]) -> None:
             company_code = %(company_code)s,
             email = %(email)s,
             area_id = %(area_id)s,
-            city = %(city)s,
-            province = %(province)s,
             address_info = %(address_info)s
         WHERE id = %(id)s AND userType = %(user_type)s
         """,
@@ -168,8 +159,6 @@ def update_supplier(supplier_id: int, data: dict[str, Any]) -> None:
             "company_code": data.get("company_code") or data.get("companyCode"),
             "email": data.get("email"),
             "area_id": data.get("area_id") or data.get("areaId"),
-            "city": city,
-            "province": province,
             "address_info": data.get("address_info") or data.get("addreddInfo"),
             "user_type": SUPPLIER_USER_TYPE,
         },
@@ -196,13 +185,13 @@ def _district_label(address: Any) -> Any:
         return address
     aid = str(address).strip()
     dist = fetch_one(
-        "SELECT id, dis_name, superId FROM sy_district WHERE id = %(id)s LIMIT 1",
+        "SELECT id, dis_name, super_id FROM sy_district WHERE id = %(id)s LIMIT 1",
         {"id": aid},
     )
     if not dist:
         return address
     name = dist.get("dis_name") or ""
-    super_id = dist.get("superId")
+    super_id = dist.get("super_id")
     if super_id:
         parent = fetch_one(
             "SELECT dis_name FROM sy_district WHERE id = %(id)s LIMIT 1",

@@ -199,13 +199,39 @@ certs/                  # 微信商户私钥（本地放置，勿提交）
 
 ---
 
-## Celery（支付队列等）
+## Celery（支付队列 + 数字化统计刷表）
 
 ```powershell
+# Worker（消费任务）
 .\scripts\run_celery_worker.ps1
+
+# Beat（调度；与 Worker 分进程，需同时跑）
+.\scripts\run_celery_beat.ps1
 ```
 
 需本机 Redis 可用；`PAY_NOTIFY_USE_QUEUE=true` 时微信回调可走队列。
+
+### 数字化统计定时刷表
+
+Java `OrderTimeoutTaskAction` 停服后，看板依赖的快照表不会再更新。本服务已迁入等价任务：
+
+| 任务 | 对齐 Java | 作用 |
+|------|-----------|------|
+| `tasks.refresh_all_stat_snapshots` | integralEarnings2/5/6 | 每天 **01:00**（`Asia/Shanghai`）全量刷表 |
+
+- 重刷 `statistic_experiment_finish`（TRUNCATE + 按 type=10 子单重建）
+- 更新 `experiment_line.run_num`、`sy_users.test_num`
+
+**切流：** 先停 Java 端上述 `@Scheduled`，再启本仓库的 Celery Worker + Beat；**不要两边同时刷**（会互相清空）。
+
+手工补刷（不依赖 Beat）：
+
+```powershell
+.\.venv\Scripts\python.exe manage.py refresh_stat_finish
+.\.venv\Scripts\python.exe manage.py refresh_stat_finish --finish-only
+.\.venv\Scripts\python.exe manage.py refresh_stat_finish --lines-only
+.\.venv\Scripts\python.exe manage.py refresh_stat_finish --users-only
+```
 
 ---
 

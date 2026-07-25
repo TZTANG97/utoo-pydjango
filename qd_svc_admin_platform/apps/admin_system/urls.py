@@ -23,6 +23,7 @@ urlpatterns = [
     path("sys/dept/options.ajax", dept_views.dept_options),
     # sys/user
     path("sys/user/queryUsers.ajax", user_views.user_list),
+    path("sys/user/queryUsersExcept.ajax", user_views.user_list_except),
     path("sys/user/getById.ajax", user_views.user_get),
     path("sys/user/add.ajax", user_views.user_add),
     path("sys/user/update.ajax", user_views.user_update),
@@ -84,12 +85,14 @@ urlpatterns = [
     path("appUser/getById.ajax", app_user_views.app_user_detail),
     # testaddress
     path("testaddress/selectalladdress.ajax", test_address_views.address_list),
+    path("testaddress/addressList.ajax", test_address_views.address_list_mp),
     path("testaddress/getAddressById.ajax", test_address_views.address_get),
     path("testaddress/addresscreate.ajax", test_address_views.address_create),
     path("testaddress/updateStatus1.ajax", test_address_views.address_update),
     path("testaddress/updateStatus.ajax", test_address_views.address_delete),
     # companyaccount
     path("companyaccount/selectallaccount.ajax", company_account_views.account_list),
+    path("companyaccount/accountList.ajax", company_account_views.account_list_mp),
     path("companyaccount/getAddressById.ajax", company_account_views.account_get),
     path("companyaccount/accountcreate.ajax", company_account_views.account_create),
     path("companyaccount/updateStatus1.ajax", company_account_views.account_update),

@@ -7,7 +7,15 @@ from rest_framework.request import Request
 
 def merge_payload(request: Request) -> dict[str, Any]:
     q = {k: request.query_params.get(k) for k in request.query_params.keys()}
-    body = request.data if isinstance(request.data, dict) else {}
+    raw = request.data
+    # QueryDict 用 ** 展开会变成 list；.get() 才是单值字符串
+    if hasattr(raw, "get") and hasattr(raw, "keys") and not isinstance(raw, dict):
+        body = {k: raw.get(k) for k in raw.keys()}
+    elif isinstance(raw, dict):
+        # 仍可能是 QueryDict（isinstance(QueryDict, dict) == True）
+        body = {k: raw.get(k) for k in raw.keys()}
+    else:
+        body = {}
     return {**q, **body}
 
 
@@ -39,6 +47,8 @@ def page_clause(page: int, page_size: int) -> tuple[str, dict[str, int]]:
 def to_int(value, default=None):
     if value in (None, ""):
         return default
+    if isinstance(value, (list, tuple)) and value:
+        value = value[0]
     try:
         return int(value)
     except (TypeError, ValueError):

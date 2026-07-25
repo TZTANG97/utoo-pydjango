@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 
 import environ
+from celery.schedules import crontab
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -155,6 +156,15 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = "Asia/Shanghai"
 CELERY_ENABLE_UTC = True
+
+# 数字化统计刷表（对齐 Java OrderTimeoutTaskAction 凌晨 01:00）
+# 注意：与 Java 同任务不要同时开启，避免互相 TRUNCATE
+CELERY_BEAT_SCHEDULE = {
+    "refresh-all-stat-snapshots-daily": {
+        "task": "tasks.refresh_all_stat_snapshots",
+        "schedule": crontab(hour=1, minute=0),
+    },
+}
 
 LANGUAGE_CODE = "zh-hans"
 TIME_ZONE = "Asia/Shanghai"

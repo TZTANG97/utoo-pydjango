@@ -10,6 +10,41 @@ export const requestClose = () => {
 }
 // 正在进行中的请求数量,防止加载图标闪动
 let requesting = 0
+/** 未登录跳转防抖：已在个人中心时不再 reLaunch，避免页面闪烁死循环 */
+let loginRedirectTimer = null
+
+function clearLoginStorage() {
+	uni.removeStorageSync('userInfo')
+	uni.removeStorageSync('userList')
+	uni.removeStorageSync('token')
+	uni.removeStorageSync('uType')
+	uni.removeStorageSync('is_identify')
+	uni.removeStorageSync('defaultAccount')
+}
+
+function isOnMyPage() {
+	try {
+		const pages = getCurrentPages()
+		const cur = pages && pages.length ? pages[pages.length - 1] : null
+		const route = (cur && (cur.route || (cur.$page && cur.$page.fullPath))) || ''
+		return String(route).indexOf('pages/my/my') !== -1
+	} catch (e) {
+		return false
+	}
+}
+
+function redirectToMyIfNeeded() {
+	if (isOnMyPage()) return
+	if (loginRedirectTimer) return
+	loginRedirectTimer = setTimeout(() => {
+		loginRedirectTimer = null
+		if (isOnMyPage()) return
+		uni.reLaunch({
+			url: '/pages/my/my'
+		})
+	}, 1000)
+}
+
 const request = (params) => {
 	return new Promise((resolve, reject) => {
 		if (!Vue.prototype.$baseUrl) {
@@ -61,35 +96,16 @@ const excFunction = function(resolve, reject, params) {
 			'X-Channel': 'wx',
 		},
 		success(res) {
-			uni.hideLoading()
+			if (showLoading !== false) {
+				uni.hideLoading()
+			}
 			if (res.statusCode === 200) {
-				if(res.data.error && res.data.error == '403') {
-					uni.removeStorageSync('userInfo')
-					uni.removeStorageSync('userList')
-					uni.removeStorageSync('token')
-					uni.removeStorageSync('uType')
-					// uType: 0普通用户  1内部用户
-					uni.removeStorageSync('is_identify')
-					uni.removeStorageSync('defaultAccount')
-					setTimeout(() => {
-						uni.reLaunch({
-							url: '/pages/my/my'
-						})
-					}, 1000)
-					reject()
-				} else if(res.data.resMsg == '用户未登录') {
-					uni.removeStorageSync('userInfo')
-					uni.removeStorageSync('userList')
-					uni.removeStorageSync('token')
-					uni.removeStorageSync('uType')
-					// uType: 0普通用户  1内部用户
-					uni.removeStorageSync('is_identify')
-					uni.removeStorageSync('defaultAccount')
-					setTimeout(() => {
-						uni.reLaunch({
-							url: '/pages/my/my'
-						})
-					}, 1000)
+				const needLogin =
+					(res.data && res.data.error && res.data.error == '403') ||
+					(res.data && res.data.resMsg == '用户未登录')
+				if (needLogin) {
+					clearLoginStorage()
+					redirectToMyIfNeeded()
 					reject()
 				} else {
 					resolve(res.data)
@@ -101,47 +117,30 @@ const excFunction = function(resolve, reject, params) {
 							title: '请先登录',
 							icon: 'none'
 						})
-						uni.removeStorageSync('userInfo')
-						uni.removeStorageSync('token')
-						uni.removeStorageSync('userList')
-						uni.removeStorageSync('uType')
-						// uType: 0普通用户  1内部用户
-						uni.removeStorageSync('is_identify')
-						uni.removeStorageSync('defaultAccount')
-						setTimeout(() => {
-							uni.reLaunch({
-								url: '/pages/my/my'
-							})
-						}, 1000)
+						clearLoginStorage()
+						redirectToMyIfNeeded()
+						break
 					case 404:
 						uni.showToast({
 							title: '找不到资源',
 							icon: 'none'
 						})
-						uni.removeStorageSync('userInfo')
-						uni.removeStorageSync('token')
-						uni.removeStorageSync('userList')
-						uni.removeStorageSync('uType')
-						// uType: 0普通用户  1内部用户
-						uni.removeStorageSync('is_identify')
-						uni.removeStorageSync('defaultAccount')
-						setTimeout(() => {
-							uni.reLaunch({
-								url: '/pages/my/my'
-							})
-						}, 1000)
+						break
 					case 500:
 						uni.showToast({
 							title: '请求失败，请重试！',
 							icon: 'none'
 						})
+						break
 				}
 				reject()
 			}
 		},
 
 		fail() {
-			uni.hideLoading()
+			if (showLoading !== false) {
+				uni.hideLoading()
+			}
 			// uni.showToast({
 			// 	title: '请检查您的网络连接',
 			// 	icon: 'none'

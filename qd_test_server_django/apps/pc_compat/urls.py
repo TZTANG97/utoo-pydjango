@@ -60,6 +60,7 @@ urlpatterns = [
     path("indexExpList.ajax", views_catalog.index_exp_list, name="pc-indexExpList"),
     path("selExpList.ajax", views_catalog.sel_exp_list, name="pc-selExpList"),
     path("testClassDetail.ajax", views_catalog.test_class_detail, name="pc-testClassDetail"),
+    path("xcxtestClassDetail.ajax", views_catalog.xcx_test_class_detail, name="pc-xcxtestClassDetail"),
     path("queryProCityCo.ajax", views_district.query_pro_city_co, name="pc-queryProCityCo"),
     path("queryProCityCo1.ajax", views_district.query_pro_city_co1, name="pc-queryProCityCo1"),
     path("writeevaluate.ajax", views_evaluate.write_evaluate, name="pc-writeevaluate"),

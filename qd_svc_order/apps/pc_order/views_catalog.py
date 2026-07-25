@@ -4,7 +4,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.core.pc_ajax import pc_ajax_view
-from qd_common.responses import api_fail, api_ok
+from qd_common.responses import ajax_fail, ajax_ok, api_fail, api_ok
 from apps.core.services import banner as banner_svc
 from apps.orders.services import catalog as catalog_svc
 from apps.orders.services import experiment as experiment_svc
@@ -106,3 +106,17 @@ def test_class_detail(request: Request):
     if not data:
         return Response(api_fail(404, "实验不存在"))
     return Response(api_ok(data, message="获取成功!"))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def xcx_test_class_detail(request: Request):
+    """小程序实验详情 — 对齐 /pc/xcxtestClassDetail.ajax，Ajax {res,resMsg,obj}。"""
+    cid = str(request.query_params.get("id") or "")
+    if not cid.isdigit():
+        return Response(ajax_fail("参数错误"))
+    data = experiment_svc.test_class_detail(int(cid))
+    if not data:
+        return Response(ajax_fail("实验不存在"))
+    return Response(ajax_ok(data, "获取成功!"))

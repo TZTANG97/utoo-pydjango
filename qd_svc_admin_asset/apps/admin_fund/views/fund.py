@@ -24,6 +24,19 @@ def _to_int(value, default=None):
         return default
 
 
+def _resolve_uid(data: dict, user) -> str:
+    uid = str(data.get("userId") or data.get("user_id") or "").strip()
+    if uid:
+        return uid
+    if isinstance(user, dict):
+        return str(user.get("user_id") or user.get("id") or "").strip()
+    if user is not None:
+        return str(
+            getattr(user, "user_id", None) or getattr(user, "id", None) or ""
+        ).strip()
+    return ""
+
+
 # ---- settings ----
 @api_view(["GET", "POST"])
 @authentication_classes([])
@@ -97,12 +110,72 @@ def account_user_detail(request: Request, user=None):
 @authentication_classes([])
 @permission_classes([AllowAny])
 @admin_ajax_view()
+def account_user_balance(request: Request, user=None):
+    """小程序可用余额：对齐 /funds/account_userId.htm，响应体为数字。"""
+    data = merge_payload(request)
+    uid = _resolve_uid(data, user)
+    account_type = _to_int(data.get("type") or data.get("accountType") or data.get("account_type"), 1) or 1
+    return Response(account_repo.available_balance_for_user(uid, account_type))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def account_user_list_mp(request: Request, user=None):
+    """小程序转账用户列表：对齐 /account_User.ajax DataTables。"""
+    del user
+    data = merge_payload(request)
+    draw, _page, _page_size = parse_datatable_params(request)
+    account_type = _to_int(data.get("accountType") or data.get("account_type") or data.get("type"))
+    rows = account_repo.list_account_users_for_mp(account_type)
+    return Response(datatable_payload(draw=draw, total=len(rows), rows=rows))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
 def asset_overview(request: Request, user=None):
     data = merge_payload(request)
-    uid = str(data.get("userId") or data.get("user_id") or "").strip()
-    if not uid and user:
-        uid = str(getattr(user, "id", "") or "")
+    uid = _resolve_uid(data, user)
     return Response(ajax_ok(obj=account_repo.asset_summary(uid or None)))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def asset_account_xcx(request: Request, user=None):
+    """小程序账户统计汇总（totala/totalf/rmbi/usi + 利率）。"""
+    data = merge_payload(request)
+    uid = _resolve_uid(data, user)
+    setting = settings_repo.get_setting() or {}
+    try:
+        fx = float(setting.get("usExchangeRate") or 1)
+    except (TypeError, ValueError):
+        fx = 1.0
+    return Response(
+        ajax_ok(
+            obj=account_repo.asset_account_xcx(
+                uid or None,
+                us_exchange_rate=fx,
+                rmb_rate=setting.get("rmbRate") or 0,
+                us_rate=setting.get("usRate") or 0,
+            )
+        )
+    )
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def yesterday_income_xcx(request: Request, user=None):
+    """小程序昨日收益 rmbzrsy / uszrsy。"""
+    data = merge_payload(request)
+    uid = _resolve_uid(data, user)
+    return Response(ajax_ok(obj=account_repo.yesterday_income(uid or None)))
 
 
 @api_view(["GET", "POST"])

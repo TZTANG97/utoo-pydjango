@@ -17,7 +17,7 @@
 		{
 			"path": "pages/index/index",
 			"style": {
-				"navigationBarBackgroundColor": "#EFF6FF",
+				"navigationBarBackgroundColor": "#F5F6F8",
 				"navigationBarTitleText": "测试预约"
 			}
 		},
@@ -544,13 +544,13 @@
 	],
 	"globalStyle": {
 		"navigationBarTextStyle": "black",
-		"navigationBarBackgroundColor": "#F8F8F8",
-		"backgroundColor": "#F8F8F8"
+		"navigationBarBackgroundColor": "#F5F6F8",
+		"backgroundColor": "#F5F6F8"
 	},
 	"tabBar": {
 		"selectedColor": "#E96302",
 		"backgroundColor": "#FFFFFF",
-		"color": "#A7A7A7",
+		"color": "#8A8F98",
 		"iconWidth": "24px",
 		"list": [{
 				"pagePath": "pages/test_sub/test_sub",

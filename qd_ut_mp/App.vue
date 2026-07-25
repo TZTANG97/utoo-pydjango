@@ -8,8 +8,9 @@
 <style lang="scss">
 	@import "uview-ui/index.scss";
 	@import "@/layout/common.scss";
+  /* 页面底色对齐 uni.scss $ut-bg */
   page {
-    background: #f9f9f9;
+    background: #F5F6F8;
   }
   .search-box {
     position: relative;

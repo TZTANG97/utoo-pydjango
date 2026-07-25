@@ -50,6 +50,33 @@ def user_list(request: Request, user=None):
 @api_view(["GET", "POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
+@admin_ajax_view(require_staff=False)
+def user_list_except(request: Request, user=None):
+    """小程序分成人选 — sys/user/queryUsersExcept.ajax → {res,obj:[...]}。"""
+    del user
+    data = merge_payload(request)
+    except_id = str(data.get("exceptUserId") or data.get("except_user_id") or "").strip()
+    rows, _total = user_repo.list_users(page=1, page_size=2000)
+    obj = []
+    for row in rows:
+        uid = str(row.get("id") or "")
+        if except_id and uid == except_id:
+            continue
+        obj.append(
+            {
+                "id": row.get("id"),
+                "userId": row.get("id"),
+                "userName": row.get("userName") or "",
+                "trueName": row.get("trueName") or "",
+                "true_name": row.get("trueName") or "",
+            }
+        )
+    return Response(ajax_ok(obj=obj, res_msg="获取成功"))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
 @admin_ajax_view()
 def user_get(request: Request, user=None):
     del user

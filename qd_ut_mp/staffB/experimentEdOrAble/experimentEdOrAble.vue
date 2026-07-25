@@ -500,10 +500,11 @@
 								url: '/staffB/order_detail/order_detail?id=' + id
 							})
 						}
+						// 实验分包订单统一进 sub_detail（按钮接口为 experimentSubOrder/*）
 						if (this.type == 2 || this.type == 11 || this.type == 5 || this.type == 6 || this.type == 9 || this
 							.type == 8) {
 							uni.navigateTo({
-								url: '/staffB/order_detail/order_detail?id=' + id + '&type=' + this.type
+								url: '/staff/sub_detail/sub_detail?id=' + id + '&type=' + this.type
 							})
 						}
 

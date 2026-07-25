@@ -388,12 +388,12 @@
 					resMsg
 				}) => {
 					if (res) {
-						this.$toast('预约成功！')
+						this.$toast(resMsg || '预约成功！')
 						setTimeout(() => {
 							this.closeDialog(false);
 						}, 1000)
 					}else{
-						this.$toast('请求出错，请稍后重试！')
+						this.$toast(resMsg || '请求出错，请稍后重试！')
 						setTimeout(() => {
 							this.closeDialog(false);
 						}, 1000)

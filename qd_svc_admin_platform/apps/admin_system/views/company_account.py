@@ -34,6 +34,16 @@ def account_list(request: Request, user=None):
 @api_view(["GET", "POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
+def account_list_mp(request: Request):
+    """小程序 companyaccount/accountList.ajax。"""
+    del request
+    rows = account_repo.list_all_accounts()
+    return Response(ajax_ok(obj=rows, res_msg="获取成功!"))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
 @admin_ajax_view()
 def account_get(request: Request, user=None):
     del user

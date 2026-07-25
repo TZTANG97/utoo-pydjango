@@ -135,3 +135,48 @@ def purchase_orders_by_sale(
         "recordsTotal": total,
         "recordsFiltered": total,
     }
+
+
+def purchase_orders_by_sale_dpt(
+    *,
+    of_id: str = "",
+    order_id: str = "",
+    start: str = "0",
+    length: str = "10",
+    draw: str = "1",
+) -> dict[str, Any]:
+    """员工端子订单列表 — 不按客户归属过滤，顶层 DataTables。"""
+    offset = int(start) if str(start).isdigit() else 0
+    limit = int(length) if str(length).isdigit() else 10
+    if str(length) == "-1":
+        limit = 1000
+    draw_n = int(draw) if str(draw).isdigit() else 1
+    empty = {
+        "data": [],
+        "draw": draw_n,
+        "recordsTotal": 0,
+        "recordsFiltered": 0,
+    }
+    if not str(of_id).isdigit():
+        return empty
+
+    total, rows = repo.list_purchase_orders_by_sale(
+        parent_id=int(of_id),
+        order_id_kw=order_id or "",
+        offset=offset,
+        limit=limit,
+    )
+    orders = []
+    for r in rows:
+        o = dict(r)
+        st = int(o.get("order_status") or 0)
+        o["order_statusstr"] = purchase_order_status_str(st)
+        o["order_id"] = o.get("order_id") or o.get("orderId") or ""
+        o["totalPrice"] = to_jsonable(o.get("totalPrice") or o.get("total_price") or 0)
+        orders.append(to_jsonable(o))
+    return {
+        "data": orders,
+        "draw": draw_n,
+        "recordsTotal": total,
+        "recordsFiltered": total,
+    }

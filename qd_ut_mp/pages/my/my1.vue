@@ -1,5 +1,5 @@
 <template>
-	<view class="container syxHeight" :style="{overflow : userInfo.uType ? 'hidden' : 'auto'}">
+	<view class="container syxHeight" :style="{ overflow: userInfo && userInfo.uType ? 'hidden' : 'auto' }">
 		<image class="bg" v-if="!userInfo || userInfo.uType" src="@/static/my-bg.png" mode=""></image>
 		<template v-if="!userInfo">
 			<view class="header flex-center">
@@ -460,13 +460,16 @@
 			};
 		},
 		onShow() {
-			this.userInfo = uni.getStorageSync('userInfo');
-			console.log(this.userInfo,'userInfo')
+			const raw = uni.getStorageSync('userInfo')
+			this.userInfo = raw && typeof raw === 'object' ? raw : null
+			if (!this.userInfo) {
+				this.menusList = this.cateList
+				return
+			}
 			// 0普通 1内部
-			if (this.userInfo && !this.userInfo.uType) {
+			if (!this.userInfo.uType) {
 				this.menusList = this.normalUser
 				if (!uni.getStorageSync('defaultAccount')) {
-					// 获取默认收款账户
 					fetchDefaultAccountApi().then(res => {
 						if (res.res) {
 							uni.setStorageSync('defaultAccount', res.obj)
@@ -475,7 +478,6 @@
 				}
 				getUserNumberApi().then(res => {
 					if (res.res) {
-						// uni.setStorageSync('totalIntegral', res.obj.totalIntegral);
 						this.userNum = res.obj
 						this.wcOrderCount = Math.floor(res.obj.wcOrderCount / 5)
 					}
@@ -484,7 +486,6 @@
 					if (res.res) {
 						uni.setStorageSync('integralConvertRatio', res.obj.integral_convert_ratio)
 					}
-
 				})
 				this.getPoints()
 			} else {

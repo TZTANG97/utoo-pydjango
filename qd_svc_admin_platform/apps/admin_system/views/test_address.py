@@ -34,6 +34,27 @@ def address_list(request: Request, user=None):
 @api_view(["GET", "POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
+@admin_ajax_view(require_staff=False)
+def address_list_mp(request: Request, user=None):
+    """小程序 addressList.ajax：{res, obj:[{id,true_name,mobile,address},...]}。"""
+    del request, user
+    rows, _total = address_repo.list_addresses(page=1, page_size=1000)
+    obj = [
+        {
+            "id": row.get("id"),
+            "true_name": row.get("trueName") or "",
+            "trueName": row.get("trueName") or "",
+            "mobile": row.get("mobile") or "",
+            "address": row.get("address") or "",
+        }
+        for row in rows
+    ]
+    return Response(ajax_ok(obj=obj, res_msg="获取成功"))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
 @admin_ajax_view()
 def address_get(request: Request, user=None):
     del user

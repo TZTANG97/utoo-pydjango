@@ -1,3 +1,20 @@
 @import 'uview-ui/theme.scss';
-// $primary: #B7472A;
-$primary: #E96302;
+
+// ========== 愉兔设计 Token（后续页面对照此变量套样式）==========
+$ut-primary: #E96302;
+$ut-primary-soft: #FFF3E8;
+$ut-primary-disabled: #F5B88A;
+$ut-bg: #F5F6F8;
+$ut-card: #FFFFFF;
+$ut-text: #1F2329;
+$ut-text-secondary: #8A8F98;
+$ut-border: #E8EAED;
+$ut-radius-sm: 8rpx;
+$ut-radius-md: 16rpx;
+$ut-radius-lg: 24rpx;
+$ut-space-2: 16rpx;
+$ut-space-3: 24rpx;
+$ut-space-4: 32rpx;
+
+// 兼容旧变量名，避免 layout / 页面大面积改写
+$primary: $ut-primary;

@@ -1521,7 +1521,13 @@ def update_share_ratio(
     if not profit_pairs:
         return False, "请填写毛利分成比例"
     total = 0.0
-    for _, val in profit_pairs:
+    for uid, val in profit_pairs:
+        urow = fetch_one(
+            "SELECT id FROM sy_users WHERE id = %(id)s LIMIT 1",
+            {"id": uid},
+        )
+        if not urow:
+            return False, "请填写正确的分成人员"
         try:
             n = float(val)
         except (TypeError, ValueError):
@@ -1853,6 +1859,29 @@ def confirm_ordered(*, order_id: int) -> tuple[bool, str]:
     _set_order_status(order_id, 35)
     _write_order_log(order_id, "确认已下单")
     return True, "已确认下单"
+
+
+def update_sub_order_status(*, order_id: int, order_status: int) -> tuple[bool, str]:
+    """对齐 Java updateOrderStatus：厂家已发货等（常见 45）。"""
+    row = get_order(order_id)
+    if not row:
+        return False, "订单不存在"
+    if str(row.get("orderType") or "") != "9":
+        return False, "仅实验分包子订单支持此操作"
+    try:
+        st = int(row.get("orderStatus") or 0)
+    except (TypeError, ValueError):
+        st = 0
+    target = int(order_status)
+    if target == 45:
+        if st < 30 or st == 0:
+            return False, "当前状态不可发货"
+        if st >= 45:
+            return False, "已发货或已完成"
+        _set_order_status(order_id, 45)
+        _write_order_log(order_id, "厂家已发货")
+        return True, "发货成功"
+    return False, "不支持的状态变更"
 
 
 def update_sub_pay(*, order_id: int, pay_type: str | int) -> tuple[bool, str]:

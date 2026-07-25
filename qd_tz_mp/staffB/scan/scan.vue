@@ -35,7 +35,7 @@
 			</view>
 
 
-			<template v-if="(type == 1 || type == 5)? chooseLocation : type != 3 && type != 4">
+			<template v-if="(type == 1 || type == 5)? chooseLocation : type != 3 && type != 4 && type != 8">
 				<view class="group-item">
 					<view class="group-label">
 						仓库名称
@@ -141,6 +141,27 @@
 					</view>
 				</view>
 			</template>
+
+			<template v-if="type == 8">
+				<view class="group-item">
+					<view class="group-label">
+						<span>上传图片</span>
+					</view>
+					<view class="group-content">
+						<img v-if="subUrl" style="width: 50px; height: 50px; margin-right: 10px" :src="subUrl" />
+						<view @click="uploadImage">上传</view>
+					</view>
+				</view>
+				<view class="group-item">
+					<view class="group-label">
+						<span>描述</span>
+					</view>
+					<view class="group-content">
+						<input type="text" placeholder="请输入用户确认描述" v-model="submitMark" />
+					</view>
+				</view>
+			</template>
+
 			<view class="group-item" v-if="type == 2">
 				<view class="group-label">
 					<span>预约云视频时间</span>
@@ -166,7 +187,9 @@
 
 <script>
 	import {
-		scanOperateApi
+		scanOperateApi,
+		confirmsave,
+		isFlag
 	} from '@/api/index.js'
 	export default {
 		data() {
@@ -191,7 +214,10 @@
 				lcNewLocation: false,
 				showCalendar:false,
 				setting_time:null,
-				meeting_num:null
+				meeting_num:null,
+				submitMark: '',
+				subUrl: '',
+				subId: ''
 			}
 		},
 		onLoad({
@@ -215,6 +241,58 @@
 			}
 		},
 		methods: {
+			uploadImage() {
+				if(!this.sample_id) {
+					if (!this.sample_id) return this.$toast('请扫描样品二维码')
+					return
+				}
+				let _this = this;
+				const token = uni.getStorageSync('token')
+				uni.chooseImage({
+					count: 1,
+					sourceType: ['album', 'camera'],
+					success: (chooseRes) => {
+						console.log(chooseRes)
+						const tempFilePath = chooseRes.tempFilePaths
+						let num = 0;
+						uni.showLoading()
+						tempFilePath.forEach((item, index) => {
+							// 上传图片（自动使用 multipart/form-data 格式）
+							let uploadFile = uni.uploadFile({
+								url: `${_this.$baseUrl}/experimentChildOrder/uploadPhone.ajax`, //仅为示例，非真实的接口地址
+								filePath: item, // 本地临时文件路径
+								name: 'photo', // 后端接收文件的参数名（需与后端一致）
+								success: (uploadRes) => {
+									uni.hideLoading()
+									let res = JSON.parse(uploadRes.data);
+									console.log(res)
+									if(res.res) {
+										_this.subUrl = res.obj.url
+										_this.subId = res.obj.id;
+									} else {
+										uni.showToast({
+											title: '图片上传失败，请重试',
+											icon: 'none'
+										})
+									}
+								},
+								header: {
+									token,
+									uniapp: 'true'
+								},
+								fail: (err) => {
+									uni.hideLoading()
+									console.error('上传失败', err);
+								}
+							});
+							console.log(uploadFile)
+						})
+					}
+				});
+
+			},
+
+
 			scan(val) {
 				const that = this
 				uni.scanCode({
@@ -224,6 +302,16 @@
 							switch (val) {
 								case 1:
 									that.sample_id = res.result;
+									// 当type=8时，调用isFlag接口验证
+									if (that.type === 8) {
+										isFlag({ childId: res.result.split('_')[1] }).then(res => {
+											if (!res.res) {
+												// 验证失败，提示信息并清空sample_id
+												that.$toast(res.resMsg)
+												that.sample_id = ''
+											}
+										})
+									}
 									break;
 								case 2:
 									let [store_id, store_name, store] = res.result.split(';')
@@ -310,21 +398,46 @@
 					}
 					params['key'] = this.handle
 				}
-				scanOperateApi(params).then(res => {
-					if (res.res) {
-
-						// 如果存在id，则证明是从订单页面过来的。
-						if (this.id) {
-							uni.$_emit('refersh')
-						}
-
-						uni.redirectTo({
-							url: `/staffB/result/result?title=操作成功`
+				if(this.type == 8) {
+					if(!this.subUrl) {
+						uni.showToast({
+							title: '请先上传图片',
+							icon: 'none'
 						})
-					} else {
-						this.$toast(res.resMsg)
+						return
 					}
-				})
+					let params1 = {
+						childId: this.sample_id.split('_')[1],
+						mark: this.submitMark,
+						ids: this.subId
+					}
+					confirmsave(params1).then(res => {
+						if (res.res) {
+							uni.redirectTo({
+								url: `/staffB/result/result?title=操作成功`
+							})
+						} else {
+							this.$toast(res.resMsg)
+						}
+					})
+				} else {
+					scanOperateApi(params).then(res => {
+						if (res.res) {
+
+							// 如果存在id，则证明是从订单页面过来的。
+							if (this.id) {
+								uni.$_emit('refersh')
+							}
+
+							uni.redirectTo({
+								url: `/staffB/result/result?title=操作成功`
+							})
+						} else {
+							this.$toast(res.resMsg)
+						}
+					})
+				}
+
 			},
 			// 打开日历选择器
 			chooseDate() {

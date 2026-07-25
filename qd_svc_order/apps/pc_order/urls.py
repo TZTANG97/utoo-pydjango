@@ -19,6 +19,7 @@ urlpatterns = [
     path("indexExpList.ajax", views_catalog.index_exp_list),
     path("selExpList.ajax", views_catalog.sel_exp_list),
     path("testClassDetail.ajax", views_catalog.test_class_detail),
+    path("xcxtestClassDetail.ajax", views_catalog.xcx_test_class_detail),
     path("useraddress.ajax", views_address.user_address),
     path("getdeliveryaddress.ajax", views_address.get_delivery_address),
     path("insertdeliveryaddress.ajax", views_address.insert_delivery_address),

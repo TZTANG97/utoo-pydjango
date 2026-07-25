@@ -25,6 +25,20 @@ def list_paytypes(page: int, page_size: int) -> tuple[list[dict[str, Any]], int]
     return [_normalize_paytype(row) for row in rows], int(total)
 
 
+def list_all_by_pay_type(pay_type: int) -> list[dict[str, Any]]:
+    """对齐 Java getConsumePaytype(payType)：下拉全量。"""
+    rows = fetch_all(
+        """
+        SELECT id, name, del_status, nums, scale_val, pay_type, jszq, add_time, memo
+        FROM qd_consume_paytype
+        WHERE IFNULL(del_status, 0) = 0 AND pay_type = %(pt)s
+        ORDER BY id ASC
+        """,
+        {"pt": pay_type},
+    )
+    return [_normalize_paytype(row) for row in rows]
+
+
 def get_paytype(paytype_id: int) -> dict[str, Any] | None:
     row = fetch_one(
         """

@@ -12,7 +12,8 @@ from apps.pc_compat import (
     views_pay,
     views_profile,
 )
-from apps.wx_mp import views_login, views_profile as vp
+from apps.wx_mp import views_login, views_order_count, views_profile as vp
+from apps.wx_mp import views_scan
 from apps.wx_mp.ajax_wrap import wrap_as_ajax
 
 # (wx 路径, pc 视图, 转发用的 /api/pc 路径)
@@ -64,6 +65,10 @@ urlpatterns = [
     path("getUserInfo.ajax", vp.get_user_info_stub),
     path("TuZhebannerList.ajax", vp.tuzhe_banner_list),
     path("selFirAndSecClassListTuZhe.ajax", vp.sel_fir_and_sec_class_list_tuzhe),
+    path("getOrderCount.ajax", views_order_count.get_order_count),
+    # 扫码（优先于 stub）
+    path("scanCodeOperate.ajax", views_scan.scan_code_operate),
+    path("isFlag.ajax", views_scan.is_flag),
 ]
 
 urlpatterns += [
@@ -74,9 +79,6 @@ _STUBS = [
     "getAuditOrderList.ajax",
     "getAuditOrderList1.ajax",
     "getLog.ajax",
-    "getOrderCount.ajax",
-    "isFlag.ajax",
-    "scanCodeOperate.ajax",
     "selBankList.ajax",
     "selSecondClassList.ajax",
     "signInIntegral.ajax",

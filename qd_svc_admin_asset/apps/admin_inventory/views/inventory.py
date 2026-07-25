@@ -179,6 +179,24 @@ def lab_options(request: Request, user=None):
 @api_view(["GET", "POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
+@admin_ajax_view(require_staff=False)
+def sel_line_list(request: Request, user=None):
+    """小程序实验平台 DataTable — /lab/selLineList.ajax（字段 id/line_num）。"""
+    del user
+    data = merge_payload(request)
+    draw, page, page_size = parse_datatable_params(request)
+    line_num = str(data.get("line_num") or data.get("lineNum") or "").strip()
+    rows, total = booking_repo.list_sel_lines(
+        line_num=line_num,
+        page=page,
+        page_size=page_size,
+    )
+    return Response(datatable_payload(draw=draw, total=total, rows=rows))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
 @admin_ajax_view()
 def lab_get(request: Request, user=None):
     del user

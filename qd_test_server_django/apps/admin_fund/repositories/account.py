@@ -219,6 +219,87 @@ def asset_summary(user_id: str | None = None) -> dict[str, Any]:
     return result
 
 
+def get_user_is_rate(user_id: str) -> int:
+    """小程序账户统计用；无 is_rate 列时返回 0。"""
+    if not user_id:
+        return 0
+    cols = fetch_all(
+        """
+        SELECT COLUMN_NAME AS name
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'sy_users'
+          AND COLUMN_NAME IN ('is_rate', 'isRate')
+        LIMIT 1
+        """
+    )
+    if not cols:
+        return 0
+    col = str(cols[0].get("name") or "is_rate")
+    row = fetch_one(
+        f"SELECT `{col}` AS v FROM sy_users WHERE id = %(id)s LIMIT 1",
+        {"id": user_id},
+    )
+    return int((row or {}).get("v") or 0)
+
+
+def asset_account_xcx(
+    user_id: str | None,
+    *,
+    us_exchange_rate: float = 1.0,
+    rmb_rate: int | float = 0,
+    us_rate: int | float = 0,
+) -> dict[str, Any]:
+    """对齐小程序 /funds/assetAccountxcx.ajax 字段。"""
+    summary = asset_summary(user_id)
+    fx = float(us_exchange_rate or 1) or 1.0
+    return {
+        "totala": round(summary["rmbAvailable"] + summary["usdAvailable"] * fx, 2),
+        "totalf": round(summary["rmbFreezing"] + summary["usdFreezing"] * fx, 2),
+        "rmbi": summary["rmbIncome"],
+        "usi": summary["usdIncome"],
+        "syUsers": {"is_rate": get_user_is_rate(user_id or "")},
+        "setting": {
+            "rmbRate": rmb_rate,
+            "usRate": us_rate,
+            "usExchangeRate": fx,
+        },
+    }
+
+
+def yesterday_income(user_id: str | None = None) -> dict[str, Any]:
+    """昨日入账汇总：rmbzrsy / uszrsy。"""
+    params: dict[str, Any] = {}
+    user_filter = ""
+    if user_id:
+        user_filter = " AND a.user_id = %(user_id)s"
+        params["user_id"] = user_id
+    rows = fetch_all(
+        f"""
+        SELECT
+            a.account_type AS accountType,
+            COALESCE(SUM(t.log_amount), 0) AS amt
+        FROM account_log t
+        LEFT JOIN account a ON t.account_id = a.id
+        WHERE IFNULL(t.deleteStatus, 0) = 0
+          AND t.log_status = 1
+          AND t.log_amount > 0
+          AND DATE(t.addTime) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)
+          {user_filter}
+        GROUP BY a.account_type
+        """,
+        params,
+    )
+    result = {"rmbzrsy": 0.0, "uszrsy": 0.0}
+    for row in rows:
+        amt = float(row.get("amt") or 0)
+        if int(row.get("accountType") or 0) == 1:
+            result["rmbzrsy"] = amt
+        elif int(row.get("accountType") or 0) == 2:
+            result["uszrsy"] = amt
+    return result
+
+
 def list_stat_years() -> list[int]:
     rows = fetch_all(
         """
@@ -752,3 +833,50 @@ def list_fund_users(keyword: str = "") -> list[dict[str, Any]]:
         """,
         params,
     )
+
+
+def list_account_users_for_mp(account_type: int | None = None) -> list[dict[str, Any]]:
+    """小程序转账用户列表：userId / userName / trueName。"""
+    params: dict[str, Any] = {}
+    join = ""
+    if account_type:
+        join = (
+            "INNER JOIN account a ON a.user_id = u.id "
+            "AND a.account_type = %(account_type)s"
+        )
+        params["account_type"] = account_type
+    rows = fetch_all(
+        f"""
+        SELECT DISTINCT
+            u.id AS userId,
+            u.user_name AS userName,
+            u.true_name AS trueName
+        FROM sy_users u
+        {join}
+        WHERE u.user_status = 1
+        ORDER BY u.user_name ASC
+        LIMIT 999
+        """,
+        params,
+    )
+    if rows:
+        return rows
+    # 无匹配账户时回落全量用户
+    fallback = list_fund_users()
+    return [
+        {
+            "userId": r.get("id"),
+            "userName": r.get("userName"),
+            "trueName": r.get("trueName"),
+        }
+        for r in fallback
+    ]
+
+
+def available_balance_for_user(user_id: str, account_type: int = 1) -> float:
+    if not user_id:
+        return 0.0
+    acc = get_account_by_user(user_id, account_type)
+    if not acc:
+        return 0.0
+    return float(acc.get("availableBalance") or 0)

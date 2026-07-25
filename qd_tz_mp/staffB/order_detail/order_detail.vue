@@ -555,7 +555,6 @@
 
 <script>
 	import {
-		fetchCheckPendingTestOrderDetailApi,
 		cancelTestOrderApi,
 		settlementTestOrderCostApi,
 		submitAuditTestOrderApi,

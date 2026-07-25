@@ -87,6 +87,51 @@ def get_proposal_detail(proposal_id: int) -> dict[str, Any] | None:
     }
 
 
+def add_proposal(
+    *,
+    content: str,
+    platform: str,
+    user_id: str,
+    accessory_ids: list[int] | None = None,
+) -> dict[str, Any]:
+    """对齐 Java productOrder/addProposalImprove.ajax。"""
+    new_id = execute_insert(
+        """
+        INSERT INTO proposal_improve
+            (addTime, deleteStatus, user_id, platform, content, type, is_confirmed, update_time)
+        VALUES
+            (NOW(), 0, %(uid)s, %(platform)s, %(content)s, 'proposal', 0, NOW())
+        """,
+        {
+            "uid": (user_id or "")[:64],
+            "platform": (platform or "")[:32],
+            "content": content,
+        },
+    )
+    for aid in accessory_ids or []:
+        if not aid:
+            continue
+        execute(
+            """
+            UPDATE accessory
+            SET improve_id = %(pid)s
+            WHERE id = %(aid)s
+              AND (deleteStatus = 0 OR deleteStatus IS NULL)
+            """,
+            {"pid": new_id, "aid": int(aid)},
+        )
+    row = fetch_one(
+        """
+        SELECT *
+        FROM proposal_improve
+        WHERE id = %(id)s
+        LIMIT 1
+        """,
+        {"id": new_id},
+    )
+    return normalize_row(row) or {"id": new_id}
+
+
 def update_proposal(
     *,
     proposal_id: int,

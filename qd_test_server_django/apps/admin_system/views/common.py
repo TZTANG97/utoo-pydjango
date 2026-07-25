@@ -4,7 +4,12 @@ from rest_framework.request import Request
 
 
 def merge_payload(request: Request) -> dict:
-    body = request.data if isinstance(request.data, dict) else {}
+    # QueryDict 用 ** 展开会变成 list；.get() 才是单值字符串
+    raw = request.data
+    if hasattr(raw, "get") and hasattr(raw, "keys"):
+        body = {k: raw.get(k) for k in raw.keys()}
+    else:
+        body = {}
     query = {k: request.query_params.get(k) for k in request.query_params.keys()}
     return {**query, **body}
 

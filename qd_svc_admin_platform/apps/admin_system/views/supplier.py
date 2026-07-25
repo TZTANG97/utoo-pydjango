@@ -114,7 +114,7 @@ def supplier_delete(request: Request, user=None):
 @api_view(["GET", "POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
-@admin_ajax_view()
+@admin_ajax_view(require_staff=False)
 def supplier_query_all(_request: Request, user=None):
     del user
     rows, _ = supplier_repo.list_suppliers(page=1, page_size=5000)

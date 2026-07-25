@@ -29,6 +29,20 @@ def list_bill_types(*, bill_type: int, page: int, page_size: int) -> tuple[list[
     return [_normalize_bill(row) for row in rows], int(total)
 
 
+def list_all_by_type(bill_type: int) -> list[dict[str, Any]]:
+    """对齐 Java allBill.ajax：进项/出项下拉全量。"""
+    rows = fetch_all(
+        """
+        SELECT id, name, value, delete_status, type, add_time, update_time
+        FROM bill_type
+        WHERE type = %(type)s AND IFNULL(delete_status, 0) = 0
+        ORDER BY id ASC
+        """,
+        {"type": bill_type},
+    )
+    return [_normalize_bill(row) for row in rows]
+
+
 def get_bill_type(bill_id: int) -> dict[str, Any] | None:
     row = fetch_one(
         """

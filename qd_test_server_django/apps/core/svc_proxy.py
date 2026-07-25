@@ -28,6 +28,22 @@ def svc_auth_enabled() -> bool:
     return bool(svc_auth_url())
 
 
+def _plain_form_dict(data) -> dict:
+    """QueryDict/dict → 单值 dict，避免 json 序列化成 list。"""
+    if data is None:
+        return {}
+    keys = getattr(data, "keys", None)
+    if not callable(keys):
+        return {}
+    out: dict = {}
+    for k in data.keys():
+        v = data.get(k) if hasattr(data, "get") else data[k]
+        if isinstance(v, list) and len(v) == 1:
+            v = v[0]
+        out[k] = v
+    return out
+
+
 def forward_request(
     request: Request,
     *,
@@ -51,9 +67,17 @@ def forward_request(
             if request.method.upper() == "GET":
                 upstream = client.get(url, params=params, headers=headers)
             elif request.method.upper() == "POST":
-                body = request.data
-                if isinstance(body, dict):
-                    upstream = client.post(url, json=body, params=params, headers=headers)
+                ct = (request.content_type or "").lower()
+                # form/multipart 必须原样透传 body；勿用 json= 重编码，
+                # 否则 headers 里残留的 form Content-Type 会导致上游解析不到参数。
+                if "application/json" in ct:
+                    fwd = {k: v for k, v in headers.items() if k.lower() != "content-type"}
+                    upstream = client.post(
+                        url,
+                        json=_plain_form_dict(request.data),
+                        params=params,
+                        headers={**fwd, "Content-Type": "application/json"},
+                    )
                 else:
                     upstream = client.post(
                         url, content=request.body, params=params, headers=headers

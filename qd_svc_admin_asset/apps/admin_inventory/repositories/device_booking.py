@@ -301,3 +301,37 @@ def list_line_options() -> list[dict[str, Any]]:
         ORDER BY line_num ASC
         """
     )
+
+
+def list_sel_lines(
+    *,
+    line_num: str = "",
+    page: int,
+    page_size: int,
+) -> tuple[list[dict[str, Any]], int]:
+    """小程序 selLineList：返回 id + line_num。"""
+    where = "WHERE IFNULL(t.deleteStatus, 0) = 0 AND IFNULL(t.status, 1) = 1"
+    params: dict[str, Any] = {}
+    line_num = _norm(line_num)
+    if line_num:
+        where += " AND t.line_num LIKE %(line_num)s"
+        params["line_num"] = f"%{line_num}%"
+    total = int(
+        scalar(
+            f"SELECT COUNT(*) FROM experiment_line t {where}",
+            params,
+        )
+        or 0
+    )
+    clause, page_params = page_clause(page, page_size)
+    rows = fetch_all(
+        f"""
+        SELECT t.id, t.line_num AS line_num, t.line_num AS lineNum
+        FROM experiment_line t
+        {where}
+        ORDER BY t.line_num ASC
+        {clause}
+        """,
+        {**params, **page_params},
+    )
+    return rows or [], total

@@ -1,99 +1,95 @@
 <template>
-	<view class="container syxHeight" :style="{overflow : userInfo.uType ? 'hidden' : 'auto'}">
-		<image class="bg" v-if="!userInfo || userInfo.uType" src="@/static/my-bg.png" mode=""></image>
+	<view class="container syxHeight" :style="{ overflow: userInfo && userInfo.uType ? 'hidden' : 'auto' }">
+		<image class="bg" src="@/static/my-bg.png" mode=""></image>
 		<template v-if="!userInfo">
-			<view class="header flex-center">
-				<view class="label">
-					<text>Hi，</text>
-					<text>欢迎来到愉兔检测</text>
+			<view class="guest-user">
+				<view class="guest-hero">
+					<text class="guest-hero__title">个人中心</text>
+					<view class="guest-hero__row">
+						<image class="guest-hero__avatar" src="@/static/head.png" mode="aspectFill" />
+						<view class="guest-hero__meta">
+							<view class="guest-hero__hi">Hi，欢迎来到愉兔检测</view>
+							<view class="guest-hero__tip">登录后查看订单、积分与预约</view>
+						</view>
+					</view>
 				</view>
-				<image class="head" src="@/static/head.png" mode="" />
-			</view>
-			<view class="login-btn" @click="viewMyProfile">
-				注册/登录
+				<view class="guest-sheet">
+					<view class="guest-login" @click="viewMyProfile">注册 / 登录</view>
+					<view class="guest-hint">检测预约 · 积分兑换 · 发票管理</view>
+				</view>
 			</view>
 		</template>
 
 		<template v-else-if="userInfo.uType">
 			<view class="admin-user">
-				<text class="myUser">个人中心</text>
-				<view class="header flex-center" @click="viewMyProfile">
-					<image class="head" v-if="userInfo['photo']" :src="userInfo['photo']" mode="" />
-					<image class="head" v-else src="@/static/head.png" mode="" />
-					<view class="user-info flex-between"
-						:style="{ 'justify-content': !userInfo.mobile? 'center' : '' }">
-						<view class="user-name">
-							{{ userInfo.wx_nickname? userInfo.wx_nickname : '没有昵称'}}
-						</view>
-						<view class="user-phone">
-							{{ userInfo.mobile? userInfo.mobile : ''}}
-						</view>
-					</view>
-					<view class="log-out" style="font-size: 40rpx;" @click.stop="logOut">
-						<!-- <image src="@/static/logout.png" mode=""></image> -->
-						退出
-					</view>
-				</view>
-				<!-- :style="{height:visibleHeight * 2 +'rpx'}" -->
-				<view class="main" style="height: 100%;" v-if="userInfo.userType != 5">
-					<view class="menus-list">
-						<view class="menuItem" @click="menuItem(item)"
-							:style="{background:item.checked ? '#fff' : '#f6f6f6'}" v-for="(item,index) in newMenuList"
-							:key="index" v-if="userInfo.userType != 3 && index != 2 || userInfo.userType == 3">
-							{{item.name}} <br>
-							{{item.num >= 0 ? item.num : ''}}
-						</view>
-					</view>
-					<view class="menus-Box" v-for="(item,index) in newMenuList" :key="index" v-if="item.checked">
-						<view v-for="(subItem,subInd) in item.childs" :key="subInd" @click="cutMenu(subInd, subItem)">
-							<view v-if="!userInfo['uType']" class="span">{{subItem.icon}}</view>
-							<view v-else class="span">{{subItem.icon}}</view>
-							<!-- <image v-else class="span" src="@/static/我的订单.png" mode=""></image> -->
-
-							<view v-if="!userInfo['uType']" class="text">{{subItem}}</view>
-							<view v-else class="text">{{subItem.name}} <text v-if="index != 0 && subItem.num">({{subItem.num}})</text>
+				<view class="admin-hero">
+					<text class="admin-hero__title">个人中心</text>
+					<view class="admin-hero__row" @click="viewMyProfile">
+						<image class="admin-hero__avatar" v-if="userInfo['photo']" :src="userInfo['photo']" mode="aspectFill" />
+						<image class="admin-hero__avatar" v-else src="@/static/head.png" mode="aspectFill" />
+						<view class="admin-hero__meta" :class="{ 'is-center': !userInfo.mobile }">
+							<view class="admin-hero__name">
+								{{ userInfo.wx_nickname ? userInfo.wx_nickname : '没有昵称' }}
+							</view>
+							<view class="admin-hero__phone" v-if="userInfo.mobile">
+								{{ userInfo.mobile }}
 							</view>
 						</view>
+						<view class="admin-hero__logout" @click.stop="logOut">
+							<image src="@/static/logout.png" mode=""></image>
+							<text>退出</text>
+						</view>
 					</view>
-
 				</view>
 
-				<view class="scan" @click="$refs.scan.open()" v-if="userInfo && userInfo.uType">
+				<view class="admin-main" v-if="userInfo.userType != 5">
+					<scroll-view scroll-y class="admin-side" :show-scrollbar="false">
+						<view
+							v-for="item in sideMenuList"
+							:key="item.id"
+							class="admin-side__item"
+							:class="{ 'is-active': item.checked }"
+							@click="menuItem(item)"
+						>
+							<text class="admin-side__name">{{ item.name }}</text>
+							<text v-if="item.num >= 0" class="admin-side__num">{{ item.num }}</text>
+						</view>
+					</scroll-view>
+
+					<scroll-view scroll-y class="admin-panel" :show-scrollbar="false">
+						<view v-if="activeMenu" class="admin-panel__grid">
+							<view
+								v-for="(subItem, subInd) in activeMenu.childs"
+								:key="subInd"
+								class="admin-panel__cell"
+							>
+								<UtStatCard
+									:title="subItem.name"
+									:mark="subItem.icon"
+									:count="statCardCount(subItem)"
+									@click="cutMenu(subInd, subItem)"
+								/>
+							</view>
+						</view>
+					</scroll-view>
+				</view>
+
+				<view class="admin-scan" @click="$refs.scan.open()" v-if="userInfo && userInfo.uType">
 					<image src="@/static/scan.png" mode=""></image>
 				</view>
 
-
 				<uni-popup ref="scan" type="bottom">
 					<view class="scan-btns">
-						<view class="title">
-							扫码操作
-						</view>
+						<view class="title">扫码操作</view>
 						<view class="btns-list">
-							<view class="btn-item" @click="logInfo(1)">
-								入库
-							</view>
-							<view class="btn-item" @click="logInfo(2)">
-								领用
-							</view>
-							<view class="btn-item" @click="logInfo(3)">
-								开始测试
-							</view>
-							<!-- 扫码确认即可完成 -->
-							<view class="btn-item" @click="logInfo(4)">
-								完成测试
-							</view>
-							<view class="btn-item" @click="logInfo(5)">
-								样品归还
-							</view>
-							<view class="btn-item" @click="logInfo(6)">
-								样品寄回
-							</view>
-							<view class="btn-item" @click="logInfo(7)">
-								样品留存
-							</view>
-							<view class="btn-item" @click="logInfo(8)">
-								客户确认完成
-							</view>
+							<view class="btn-item" @click="logInfo(1)">入库</view>
+							<view class="btn-item" @click="logInfo(2)">领用</view>
+							<view class="btn-item" @click="logInfo(3)">开始测试</view>
+							<view class="btn-item" @click="logInfo(4)">完成测试</view>
+							<view class="btn-item" @click="logInfo(5)">样品归还</view>
+							<view class="btn-item" @click="logInfo(6)">样品寄回</view>
+							<view class="btn-item" @click="logInfo(7)">样品留存</view>
+							<view class="btn-item" @click="logInfo(8)">客户确认完成</view>
 						</view>
 					</view>
 				</uni-popup>
@@ -102,90 +98,83 @@
 
 		<template v-else>
 			<view class="regular-user">
-				<view class="regular-user-header" @click="viewMyProfile">
-					<image v-if="userInfo['photo']" :src="userInfo['photo']" mode="" />
-					<image v-else src="@/static/head.png" mode="" />
-					<view class="nick-name">
-						{{ userInfo.wx_nickname? userInfo.wx_nickname : '没有昵称'}}
-					</view>
-					<view class="user-mobile">
-						{{ userInfo.mobile? userInfo.mobile : '没有手机号' }}
-					</view>
-				</view>
-				<view class="badge">
-					<template v-for="item in 5">
-						<image v-if="wcOrderCount >= (item + 1) * 10" src="@/static/badge-light.png" mode=""></image>
-						<image v-else src="@/static/badge.png" mode=""></image>
-					</template>
-				</view>
-				<view class="main-menu">
-					<view class="main-menu-item" @click="cutMenu(0)">
-						<view class="num">{{ userNum['orderCount'] }}</view>
-						<view class="label">我的订单</view>
-					</view>
-					<view class="main-menu-item" @click="cutMenu(3)">
-						<view class="num">{{ userNum['fpCount'] }}</view>
-						<view class="label">我的发票</view>
-					</view>
-					<view class="main-menu-item" @click="cutMenu(5)">
-						<view class="num">{{ userNum['yuyueCount'] }}</view>
-						<view class="label">预约记录</view>
-					</view>
-				</view>
-				<view class="sub-menu">
-					<view class="sub-menu-item" @click="cutMenu(2)">
-						<view class="label">
-							我的积分
-						</view>
-						<view class="money">
-							<text>{{ dataObj.totalIntegral }}</text>
-							<br>
-							<view class="btn">
-								兑换
+				<view class="regular-hero">
+					<text class="regular-hero__title">个人中心</text>
+					<view class="regular-hero__row" @click="viewMyProfile">
+						<image class="regular-hero__avatar" v-if="userInfo['photo']" :src="userInfo['photo']" mode="aspectFill" />
+						<image class="regular-hero__avatar" v-else src="@/static/head.png" mode="aspectFill" />
+						<view class="regular-hero__meta">
+							<view class="regular-hero__name">
+								{{ userInfo.wx_nickname ? userInfo.wx_nickname : '没有昵称' }}
+							</view>
+							<view class="regular-hero__phone">
+								{{ userInfo.mobile ? userInfo.mobile : '没有手机号' }}
 							</view>
 						</view>
-					</view>
-					<view class="sub-menu-item" @click="cutMenu(1)">
-						<view class="label">
-							<text>我的余额</text>
-							<image @click.stop="checkBalance = false" v-if="checkBalance" src="@/static/eye.png"
-								mode="">
-							</image>
-							<image @click.stop="checkBalance = true" v-else src="@/static/eye-close.png" mode="">
-							</image>
-						</view>
-						<view class="money">
-							<text v-if="checkBalance">{{ userNum['balance'].toFixed(2) }}</text>
-							<text v-else>******</text>
-							<br>
-							<view class="btn">
-								充值
-							</view>
+						<view class="regular-hero__logout" @click.stop="logOut">
+							<image src="@/static/logout.png" mode=""></image>
+							<text>退出</text>
 						</view>
 					</view>
-				</view>
-				<view class="make-task">
-					<!-- <view class="label">
-						<text>DISCOVERY</text>
-						<text>探索任务</text>
-					</view> -->
-					<view class="label" @click="taskFn(1)">
-						<text>DAILYLOGIN</text>
-						<text>每日签到</text>
-					</view>
-					<view class="label" @click="taskFn(2)">
-						<text>MISSION</text>
-						<text>我的任务</text>
-					</view>
-					<view class="label" @click="taskFn(3)">
-						<text>FEEDBACK</text>
-						<text>意见反馈</text>
-					</view>
-					<!-- <image src="@/static/right.png" mode=""></image> -->
 				</view>
 
-				<view class="log-out" @click="logOut">
-					退出登录
+				<view class="regular-sheet">
+					<view class="regular-badge">
+						<template v-for="item in 5">
+							<image v-if="wcOrderCount >= (item + 1) * 10" :key="'bl' + item" src="@/static/badge-light.png" mode=""></image>
+							<image v-else :key="'bd' + item" src="@/static/badge.png" mode=""></image>
+						</template>
+					</view>
+
+					<view class="regular-stats">
+						<view class="regular-stats__item" @click="cutMenu(0)">
+							<view class="regular-stats__num">{{ userNum['orderCount'] }}</view>
+							<view class="regular-stats__label">我的订单</view>
+						</view>
+						<view class="regular-stats__item regular-stats__item--mid" @click="cutMenu(3)">
+							<view class="regular-stats__num">{{ userNum['fpCount'] }}</view>
+							<view class="regular-stats__label">我的发票</view>
+						</view>
+						<view class="regular-stats__item" @click="cutMenu(5)">
+							<view class="regular-stats__num">{{ userNum['yuyueCount'] }}</view>
+							<view class="regular-stats__label">预约记录</view>
+						</view>
+					</view>
+
+					<view class="regular-assets">
+						<view class="regular-asset" @click="cutMenu(2)">
+							<view class="regular-asset__label">我的积分</view>
+							<view class="regular-asset__value">{{ dataObj.totalIntegral }}</view>
+							<view class="regular-asset__btn">兑换</view>
+						</view>
+						<view class="regular-asset" @click="cutMenu(1)">
+							<view class="regular-asset__label">
+								<text>我的余额</text>
+								<image @click.stop="checkBalance = false" v-if="checkBalance" src="@/static/eye.png" mode=""></image>
+								<image @click.stop="checkBalance = true" v-else src="@/static/eye-close.png" mode=""></image>
+							</view>
+							<view class="regular-asset__value" v-if="checkBalance">{{ userNum['balance'].toFixed(2) }}</view>
+							<view class="regular-asset__value" v-else>******</view>
+							<view class="regular-asset__btn">充值</view>
+						</view>
+					</view>
+
+					<view class="regular-tasks">
+						<view class="regular-task" @click="taskFn(1)">
+							<view class="regular-task__en">DAILYLOGIN</view>
+							<view class="regular-task__zh">每日签到</view>
+						</view>
+						<view class="regular-task" @click="taskFn(2)">
+							<view class="regular-task__en">MISSION</view>
+							<view class="regular-task__zh">我的任务</view>
+						</view>
+						<view class="regular-task" @click="taskFn(3)">
+							<view class="regular-task__en">FEEDBACK</view>
+							<view class="regular-task__zh">意见反馈</view>
+						</view>
+					</view>
+
+					<view class="regular-logout" @click="logOut">退出登录</view>
 				</view>
 			</view>
 		</template>
@@ -217,7 +206,11 @@
 		getOrderCount,
 		signInIntegral
 	} from '@/api/index.js'
+	import UtStatCard from '@/components/UtStatCard.vue'
 	export default {
+		components: {
+			UtStatCard
+		},
 		data() {
 			return {
 				pageHeight: 0,
@@ -276,7 +269,7 @@
 						id: 2,
 						name: '我的实验',
 						checked: false,
-						num: 1,
+						num: 0,
 						childs: [{
 								id: '2-1',
 								label: '实验订单',
@@ -491,10 +484,15 @@
 			};
 		},
 		onShow() {
-			this.userInfo = uni.getStorageSync('userInfo');
-			console.log(this.userInfo,'userInfo')
+			const raw = uni.getStorageSync('userInfo')
+			// 空字符串 / 非法值统一视为未登录，避免模板在多套 UI 间抖动
+			this.userInfo = raw && typeof raw === 'object' ? raw : null
+			if (!this.userInfo) {
+				this.menusList = this.cateList
+				return
+			}
 			// 0普通 1内部
-			if (this.userInfo && !this.userInfo.uType) {
+			if (!this.userInfo.uType) {
 				this.menusList = this.normalUser
 				if (!uni.getStorageSync('defaultAccount')) {
 					// 获取默认收款账户
@@ -506,7 +504,6 @@
 				}
 				getUserNumberApi().then(res => {
 					if (res.res) {
-						// uni.setStorageSync('totalIntegral', res.obj.totalIntegral);
 						this.userNum = res.obj
 						this.wcOrderCount = res.obj.wcOrderCount
 					}
@@ -515,12 +512,12 @@
 					if (res.res) {
 						uni.setStorageSync('integralConvertRatio', res.obj.integral_convert_ratio)
 					}
-
 				})
 				this.getPoints()
 			} else {
 				this.menusList = this.cateList
 			}
+			// 仅登录后拉订单统计；未登录调接口会触发「用户未登录」→ reLaunch 个人中心死循环闪烁
 			this.getOrderCountFn()
 		},
 		onLoad() {
@@ -558,6 +555,23 @@
 			})
 
 		},
+		computed: {
+			sideMenuList() {
+				const list = this.newMenuList || []
+				const userType = this.userInfo && this.userInfo.userType
+				if (userType == 3) return list
+				return list.filter((_, index) => index != 2)
+			},
+			activeMenuIndex() {
+				const list = this.newMenuList || []
+				return list.findIndex((item) => item.checked)
+			},
+			activeMenu() {
+				const idx = this.activeMenuIndex
+				if (idx < 0) return null
+				return this.newMenuList[idx] || null
+			}
+		},
 		methods: {
 			taskFn(type){
 				if(type == 1){
@@ -573,25 +587,28 @@
 			},
 			getOrderCountFn() {
 				getOrderCount().then(res => {
-					if (res.res) {
-						// const data = uni.getStorageSync('userInfo')
-						if (res.obj.orderCountByManage >= 0 && this.newMenuList[2]) {
-							this.newMenuList[2].num = res.obj.orderCountByManage
-							this.newMenuList[2].childs[0].num = res.obj.orderCountm
-							this.newMenuList[2].childs[1].num = res.obj.suborderCountm
-							this.newMenuList[2].childs[2].num = res.obj.orderchildCountm
-							this.newMenuList[2].childs[3].num = res.obj.suborderchildCountm
-							this.newMenuList[2].childs[4].num = res.obj.expsubChildpayListnum
+					if (res.res && res.obj) {
+						const obj = res.obj
+						const n = (v) => {
+							const x = Number(v)
+							return Number.isFinite(x) ? x : 0
 						}
-						if (res.obj.orderCountAll) {
-							this.newMenuList[1].num = res.obj.orderCountAll
-							this.newMenuList[1].childs[0].num = res.obj.orderCount
-							this.newMenuList[1].childs[1].num = res.obj.suborderCount
-							this.newMenuList[1].childs[2].num = res.obj.orderchildCount
-							this.newMenuList[1].childs[3].num = res.obj.suborderchildCount
+						if (obj.orderCountByManage != null && obj.orderCountByManage !== '' && this.newMenuList[2]) {
+							this.newMenuList[2].num = n(obj.orderCountByManage)
+							this.newMenuList[2].childs[0].num = n(obj.orderCountm)
+							this.newMenuList[2].childs[1].num = n(obj.suborderCountm)
+							this.newMenuList[2].childs[2].num = n(obj.orderchildCountm)
+							this.newMenuList[2].childs[3].num = n(obj.suborderchildCountm)
+							this.newMenuList[2].childs[4].num = n(obj.expsubChildpayListnum)
+						}
+						if (obj.orderCountAll != null && obj.orderCountAll !== '') {
+							this.newMenuList[1].num = n(obj.orderCountAll)
+							this.newMenuList[1].childs[0].num = n(obj.orderCount)
+							this.newMenuList[1].childs[1].num = n(obj.suborderCount)
+							this.newMenuList[1].childs[2].num = n(obj.orderchildCount)
+							this.newMenuList[1].childs[3].num = n(obj.suborderchildCount)
 						}
 					}
-					console.log(res, 'res')
 				})
 			},
 			// 打印样品信息
@@ -774,6 +791,13 @@
 						item.checked = false
 					}
 				})
+			},
+			/** 避免模板里复杂三元写入属性，兼容 mp-weixin 编译 */
+			statCardCount(subItem) {
+				if (this.activeMenuIndex === 0) return null
+				if (!subItem) return null
+				if (subItem.num === 0 || subItem.num) return subItem.num
+				return null
 			}
 		}
 	}
@@ -785,379 +809,535 @@
 	}
 
 	.regular-user {
-		// overflow: hidden;
-		padding: 0 30rpx;
+		position: relative;
+		z-index: 1;
+		padding-bottom: calc(40rpx + env(safe-area-inset-bottom));
 
-		.make-task {
-			// display: flex;
-			// flex-direction: column;
-			// justify-content: space-between;
-			// align-items: center;
-			padding: 40rpx 0;
-			margin-top: 20rpx;
+		.regular-hero {
+			padding: 160rpx $ut-space-4 36rpx;
+		}
 
-			.label {
-				display: flex;
-				align-items: center;
-				height: 120rpx;
-				border-bottom: 2px #f7f7f7 solid;
-				text:nth-child(1) {
-					font-size: 30rpx;
-					font-weight: bold;
-				}
+		.regular-hero__title {
+			display: block;
+			font-size: 40rpx;
+			font-weight: 600;
+			color: #fff;
+			margin-bottom: 28rpx;
+		}
 
-				text:nth-child(2) {
-					color: #B4B5B5;
-					margin-left: 30rpx;
-					font-size: 30rpx;
-				}
-			}
+		.regular-hero__row {
+			display: flex;
+			align-items: center;
+		}
+
+		.regular-hero__avatar {
+			width: 112rpx;
+			height: 112rpx;
+			border-radius: 50%;
+			border: 4rpx solid rgba(255, 255, 255, 0.55);
+			flex-shrink: 0;
+			background: rgba(255, 255, 255, 0.2);
+		}
+
+		.regular-hero__meta {
+			flex: 1;
+			min-width: 0;
+			margin-left: $ut-space-3;
+		}
+
+		.regular-hero__name {
+			font-size: 34rpx;
+			font-weight: 600;
+			color: #fff;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+
+		.regular-hero__phone {
+			margin-top: 8rpx;
+			font-size: 24rpx;
+			color: rgba(255, 255, 255, 0.85);
+		}
+
+		.regular-hero__logout {
+			flex-shrink: 0;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			padding: 12rpx 16rpx;
+			margin-left: $ut-space-2;
+			border-radius: $ut-radius-md;
+			background: rgba(255, 255, 255, 0.18);
 
 			image {
-				width: 30rpx;
-				height: 30rpx;
+				width: 36rpx;
+				height: 36rpx;
+			}
+
+			text {
+				margin-top: 4rpx;
+				font-size: 22rpx;
+				color: #fff;
 			}
 		}
 
-		.sub-menu {
+		.regular-sheet {
+			margin: 0 $ut-space-3;
+			padding: $ut-space-4;
+			border-radius: $ut-radius-lg;
+			background: $ut-card;
+			box-shadow: 0 -8rpx 24rpx rgba(31, 35, 41, 0.06);
+		}
+
+		.regular-badge {
 			display: flex;
 			justify-content: space-between;
-			margin-top: 20rpx;
+			padding: 0 8rpx 8rpx;
 
-			.sub-menu-item {
-				display: flex;
-				flex-direction: column;
-				justify-content: space-between;
-				width: 48%;
-				border-radius: 15rpx;
-				background-color: #F8FAF9;
-				padding: 20rpx;
-
-				.money {
-					text {
-						display: block;
-						font-weight: bold;
-						font-size: 40rpx;
-						max-width: 191rpx;
-						margin-top: 10rpx;
-					}
-				}
-
-				.btn {
-					display: inline-block;
-					padding: 5rpx 23rpx;
-					background-color: $primary;
-					border-radius: 30rpx;
-					color: #fff;
-					margin-top: 10rpx;
-				}
-
-				.label {
-					display: flex;
-					justify-content: space-between;
-					color: #B4B5B5;
-					font-size: 24rpx;
-
-					image {
-						width: 30rpx;
-						height: 30rpx;
-					}
-				}
+			image {
+				width: 72rpx;
+				height: 72rpx;
+				border-radius: 50%;
 			}
 		}
 
-		.main-menu {
+		.regular-stats {
 			display: flex;
-			justify-content: space-around;
-			align-items: center;
-			margin-top: 30rpx;
-			background-color: #F8FAF9;
-			border-radius: 10rpx;
-			height: 200rpx;
+			margin-top: $ut-space-3;
+			padding: $ut-space-3 0;
+			border-radius: $ut-radius-md;
+			background: $ut-bg;
 
-			.main-menu-item {
+			&__item {
+				flex: 1;
 				text-align: center;
+
+				&--mid {
+					border-left: 1rpx solid $ut-border;
+					border-right: 1rpx solid $ut-border;
+				}
+
+				&:active {
+					opacity: 0.85;
+				}
 			}
 
-			.num {
-				font-size: 40rpx;
-				font-weight: bold;
+			&__num {
+				font-size: 36rpx;
+				font-weight: 700;
+				color: $ut-primary;
 			}
 
-			.label {
-				color: #B4B5B5;
-				font-size: 24rpx;
-				margin-top: 10rpx;
+			&__label {
+				margin-top: 8rpx;
+				font-size: 22rpx;
+				color: $ut-text-secondary;
 			}
 		}
 
-		.badge {
+		.regular-assets {
 			display: flex;
-			justify-content: space-around;
-			margin-top: 40rpx;
+			gap: $ut-space-3;
+			margin-top: $ut-space-3;
+		}
 
-			image {
-				width: 90rpx;
-				height: 90rpx;
-				border-radius: 50%;
+		.regular-asset {
+			flex: 1;
+			padding: $ut-space-3;
+			border-radius: $ut-radius-md;
+			background: linear-gradient(160deg, $ut-primary-soft 0%, #FFF8F2 100%);
+			border: 1rpx solid rgba(233, 99, 2, 0.1);
+
+			&:active {
+				opacity: 0.9;
+			}
+
+			&__label {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				font-size: 22rpx;
+				color: $ut-text-secondary;
+
+				image {
+					width: 28rpx;
+					height: 28rpx;
+				}
+			}
+
+			&__value {
+				margin-top: 12rpx;
+				font-size: 36rpx;
+				font-weight: 700;
+				color: $ut-text;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+
+			&__btn {
+				display: inline-block;
+				margin-top: 16rpx;
+				padding: 6rpx 22rpx;
+				border-radius: 999rpx;
+				background: $ut-primary;
+				color: #fff;
+				font-size: 22rpx;
 			}
 		}
 
-		.log-out {
-			text-align: center;
-			padding: 20rpx 0;
-			border-radius: 45rpx;
-			margin: 100rpx auto 30rpx;
-			background-color: #fff;
-			color: $primary;
-			border: 2rpx solid $primary;
+		.regular-tasks {
+			margin-top: $ut-space-3;
+			border-radius: $ut-radius-md;
+			overflow: hidden;
+			border: 1rpx solid $ut-border;
 		}
 
-		.regular-user-header {
-			width: 400rpx;
-			height: 400rpx;
+		.regular-task {
+			display: flex;
+			align-items: center;
+			padding: 28rpx $ut-space-3;
+			background: $ut-card;
+			border-bottom: 1rpx solid $ut-border;
+
+			&:last-child {
+				border-bottom: none;
+			}
+
+			&:active {
+				background: $ut-bg;
+			}
+
+			&__en {
+				font-size: 24rpx;
+				font-weight: 700;
+				color: $ut-text;
+				min-width: 200rpx;
+			}
+
+			&__zh {
+				font-size: 26rpx;
+				color: $ut-text-secondary;
+			}
+		}
+
+		.regular-logout {
+			margin-top: $ut-space-4;
+			text-align: center;
+			padding: 22rpx 0;
+			border-radius: 999rpx;
+			color: $ut-primary;
+			border: 2rpx solid $ut-primary;
+			font-weight: 600;
+			background: $ut-card;
+
+			&:active {
+				background: $ut-primary-soft;
+			}
+		}
+	}
+
+	.guest-user {
+		position: relative;
+		z-index: 1;
+
+		.guest-hero {
+			padding: 160rpx $ut-space-4 36rpx;
+		}
+
+		.guest-hero__title {
+			display: block;
+			font-size: 40rpx;
+			font-weight: 600;
+			color: #fff;
+			margin-bottom: 28rpx;
+		}
+
+		.guest-hero__row {
+			display: flex;
+			align-items: center;
+		}
+
+		.guest-hero__avatar {
+			width: 112rpx;
+			height: 112rpx;
 			border-radius: 50%;
-			border: 2rpx solid #efefef;
-			margin: 100rpx auto 0;
+			border: 4rpx solid rgba(255, 255, 255, 0.55);
+			flex-shrink: 0;
+			background: rgba(255, 255, 255, 0.2);
+		}
+
+		.guest-hero__meta {
+			margin-left: $ut-space-3;
+		}
+
+		.guest-hero__hi {
+			font-size: 32rpx;
+			font-weight: 600;
+			color: #fff;
+		}
+
+		.guest-hero__tip {
+			margin-top: 10rpx;
+			font-size: 24rpx;
+			color: rgba(255, 255, 255, 0.85);
+		}
+
+		.guest-sheet {
+			margin: 0 $ut-space-3;
+			padding: $ut-space-4;
+			border-radius: $ut-radius-lg;
+			background: $ut-card;
+			box-shadow: 0 -8rpx 24rpx rgba(31, 35, 41, 0.06);
+		}
+
+		.guest-login {
 			text-align: center;
+			padding: 26rpx 0;
+			border-radius: 999rpx;
+			background: $ut-primary;
+			color: #fff;
+			font-size: 30rpx;
+			font-weight: 600;
 
-			image {
-				width: 120rpx;
-				height: 120rpx;
-				border-radius: 50%;
-				border: 2rpx solid #efefef;
-				margin-top: 60rpx;
+			&:active {
+				opacity: 0.9;
 			}
+		}
 
-			.nick-name,
-			.user-mobile {
-				margin-top: 10rpx;
-				font-size: bold;
-			}
+		.guest-hint {
+			margin-top: $ut-space-3;
+			text-align: center;
+			font-size: 22rpx;
+			color: $ut-text-secondary;
 		}
 	}
 
 	.admin-user {
 		position: relative;
 		height: 100%;
+		display: flex;
+		flex-direction: column;
 
-		.myUser {
-			position: absolute;
-			font-size: 45rpx;
-			top: -80rpx;
-			left: 50rpx;
+		.admin-hero {
+			position: relative;
+			z-index: 1;
+			padding: 160rpx $ut-space-4 36rpx;
+		}
+
+		.admin-hero__title {
+			display: block;
+			font-size: 40rpx;
+			font-weight: 600;
 			color: #fff;
+			margin-bottom: 28rpx;
+		}
+
+		.admin-hero__row {
+			display: flex;
+			align-items: center;
+		}
+
+		.admin-hero__avatar {
+			width: 112rpx;
+			height: 112rpx;
+			border-radius: 50%;
+			border: 4rpx solid rgba(255, 255, 255, 0.55);
+			flex-shrink: 0;
+			background: rgba(255, 255, 255, 0.2);
+		}
+
+		.admin-hero__meta {
+			flex: 1;
+			min-width: 0;
+			margin-left: $ut-space-3;
+			display: flex;
+			flex-direction: column;
+			justify-content: center;
+
+			&.is-center {
+				justify-content: center;
+			}
+		}
+
+		.admin-hero__name {
+			font-size: 34rpx;
+			font-weight: 600;
+			color: #fff;
+			max-width: 360rpx;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+
+		.admin-hero__phone {
+			margin-top: 8rpx;
+			font-size: 24rpx;
+			color: rgba(255, 255, 255, 0.85);
+		}
+
+		.admin-hero__logout {
+			flex-shrink: 0;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+			padding: 12rpx 16rpx;
+			margin-left: $ut-space-2;
+			border-radius: $ut-radius-md;
+			background: rgba(255, 255, 255, 0.18);
+
+			image {
+				width: 36rpx;
+				height: 36rpx;
+			}
+
+			text {
+				margin-top: 4rpx;
+				font-size: 22rpx;
+				color: #fff;
+			}
+
+			&:active {
+				background: rgba(255, 255, 255, 0.28);
+			}
+		}
+
+		.admin-main {
+			flex: 1;
+			min-height: 0;
+			display: flex;
+			margin: 0 $ut-space-3 0;
+			border-radius: $ut-radius-lg $ut-radius-lg 0 0;
+			overflow: hidden;
+			background: $ut-card;
+			box-shadow: 0 -8rpx 24rpx rgba(31, 35, 41, 0.06);
+		}
+
+		.admin-side {
+			width: 210rpx;
+			height: 100%;
+			background: $ut-bg;
+			flex-shrink: 0;
+		}
+
+		.admin-side__item {
+			position: relative;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+			min-height: 128rpx;
+			padding: $ut-space-2 12rpx;
+			color: $ut-text-secondary;
+
+			&.is-active {
+				background: $ut-card;
+				color: $ut-text;
+				font-weight: 600;
+
+				&::before {
+					content: '';
+					position: absolute;
+					left: 0;
+					top: 50%;
+					transform: translateY(-50%);
+					width: 6rpx;
+					height: 40rpx;
+					border-radius: 0 6rpx 6rpx 0;
+					background: $ut-primary;
+				}
+			}
+		}
+
+		.admin-side__name {
+			font-size: 26rpx;
+			text-align: center;
+			line-height: 1.35;
+		}
+
+		.admin-side__num {
+			margin-top: 8rpx;
+			font-size: 22rpx;
+			color: $ut-primary;
+			font-weight: 600;
+		}
+
+		.admin-panel {
+			flex: 1;
+			height: 100%;
+			background: $ut-card;
+		}
+
+		.admin-panel__grid {
+			display: flex;
+			flex-wrap: wrap;
+			padding: $ut-space-3 $ut-space-2 $ut-space-4;
+			box-sizing: border-box;
+		}
+
+		.admin-panel__cell {
+			width: 50%;
+			padding: 8rpx;
+			box-sizing: border-box;
 		}
 
 		.scan-btns {
-			padding: 0 20rpx;
-			height: 400rpx;
-			background-color: #fff;
-			border-top-left-radius: 30rpx;
-			border-top-right-radius: 30rpx;
+			padding: 0 $ut-space-3 40rpx;
+			background-color: $ut-card;
+			border-top-left-radius: $ut-radius-lg;
+			border-top-right-radius: $ut-radius-lg;
 
 			.btns-list {
-				margin-top: 30rpx;
+				margin-top: $ut-space-3;
 
 				.btn-item {
 					display: inline-block;
 					width: 30%;
-					height: 65rpx;
+					height: 68rpx;
 					text-align: center;
-					line-height: 65rpx;
+					line-height: 68rpx;
 					color: #fff;
-					background-color: $primary;
-					border-radius: 5rpx;
+					background-color: $ut-primary;
+					border-radius: $ut-radius-sm;
 
 					&:nth-child(3n-1) {
 						margin: 0 5%;
 					}
 
 					&:nth-child(n+4) {
-						margin-top: 30rpx;
+						margin-top: $ut-space-3;
 					}
 				}
 			}
 
 			.title {
 				font-size: 30rpx;
-				padding: 15rpx 0;
+				padding: $ut-space-3 0;
 				text-align: center;
+				color: $ut-text;
+				font-weight: 600;
 			}
 		}
 
-		.scan {
+		.admin-scan {
 			position: fixed;
-			right: 50rpx;
-			bottom: 80rpx;
-			width: 100rpx;
-			height: 100rpx;
+			right: $ut-space-4;
+			bottom: calc(120rpx + env(safe-area-inset-bottom));
+			width: 104rpx;
+			height: 104rpx;
 			border-radius: 50%;
-			background-color: $primary;
-			text-align: center;
-			line-height: 100rpx;
-			z-index: 2;
-
-			image {
-				width: 65rpx;
-				height: 65rpx;
-				vertical-align: middle;
-			}
-		}
-
-		.cate-item {
-			width: 50%;
-			text-align: center;
-			overflow: hidden;
-
-			&:nth-child(n+3) {
-				margin-top: 40rpx
-			}
-
-
-			image {
-				display: block;
-				margin: 0 auto 10rpx;
-				width: 110rpx;
-				height: 110rpx;
-			}
-		}
-
-		.menus-item-active {
-			position: relative;
-			background-color: #fff;
-
-			&::before {
-				display: block;
-				position: absolute;
-				content: '';
-				width: 8rpx;
-				height: 40rpx;
-				left: 0;
-				top: 50%;
-				margin-top: -20rpx;
-				background-color: $primary;
-			}
-		}
-
-		.main {
+			background-color: $ut-primary;
 			display: flex;
-			margin-top: 50rpx;
+			align-items: center;
+			justify-content: center;
+			z-index: 2;
+			box-shadow: 0 10rpx 28rpx rgba(233, 99, 2, 0.4);
 
-			.menus-list {
-				width: 35%;
-				background-color: #f6f6f6;
-
-				.menuItem {
-					display: flex;
-					flex-direction: column;
-					justify-content: center;
-					align-items: center;
-					width: 100%;
-					height: 140rpx;
-					background-color: #f6f6f6;
-				}
-			}
-
-			.menus-Box {
-				width: 65%;
-				background-color: #fff;
-
-				&>view {
-					display: inline-block;
-					width: 50%;
-					height: 180rpx;
-					margin-top: 40rpx;
-					text-align: center;
-					vertical-align: top;
-
-					.span {
-						font-size: 60rpx;
-						color: #e96302;
-					}
-
-					.text {
-						color: #000;
-						margin-top: 10rpx;
-					}
-				}
-			}
-
-			// .menus-list {
-			// 	margin-top: 40rpx;
-			// 	padding: 0 40rpx;
-
-			// 	.menus-item {
-			// 		display: flex;
-			// 		justify-content: space-between;
-			// 		height: 100rpx;
-			// 		vertical-align: middle;
-
-			// 		text {
-			// 			margin-left: 10rpx;
-			// 		}
-
-			// 		image {
-			// 			width: 35rpx;
-			// 			height: 35rpx;
-			// 		}
-			// 	}
-			// }
-
-			.menus-detail-cate {
-				width: 75%;
-				flex-wrap: wrap;
-				// 解决flex换行时间距过大
-				align-content: flex-start;
-				overflow-y: scroll;
-				padding: 40rpx 0;
-			}
-		}
-
-
-	}
-
-	.header {
-		width: 100%;
-		height: 200rpx;
-		padding: 0 40rpx;
-		color: #fff;
-		margin-top: 170rpx;
-		justify-content: space-between;
-
-		.head {
-			width: 150rpx;
-			height: 150rpx;
-			border-radius: 50%;
-		}
-
-
-
-		.label {
-			text {
-				display: block;
-			}
-
-			font-size: 52rpx;
-		}
-
-		.user-info {
-			align-items: flex-start;
-			flex-grow: 1;
-			height: 53%;
-			flex-direction: column;
-			margin-left: 20rpx;
-
-			.user-name {
-				font-size: 38rpx;
-				font-weight: bold;
-			}
-		}
-
-		.log-out {
 			image {
-				width: 50rpx;
-				height: 50rpx;
+				width: 56rpx;
+				height: 56rpx;
 			}
 		}
 	}
@@ -1168,17 +1348,7 @@
 		height: 420rpx;
 		left: 0;
 		top: 0;
-		z-index: -1;
-	}
-
-
-	.login-btn {
-		text-align: center;
-		margin: 190rpx 40rpx 0;
-		padding: 20rpx 0;
-		border-radius: 45rpx;
-		background-color: $primary;
-		color: #fff;
+		z-index: 0;
 	}
 
 

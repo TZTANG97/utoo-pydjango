@@ -560,6 +560,13 @@
 		settlementTestOrderCostApi,
 		submitAuditTestOrderApi,
 		cancelAuditTestOrderApi,
+		fetchCheckPendingTestSubOrderDetailApi,
+		cancelTestSubOrderApi,
+		settlementTestSubOrderApi,
+		submitAuditForTestSubOrderApi,
+		cancelTestSubOrderAuditApplicationApi,
+		handleCheckPendingTestSubOrderApi,
+		adjustDevideApi,
 		// 收款/开票
 		saleOrderOpenBillApi,
 		// 评价客户
@@ -657,7 +664,8 @@
 				isyyd: false,
 				isOut: false,
 				isType: null,
-				roleName: ''
+				roleName: '',
+				isSubOrder: false
 			};
 		},
 		onLoad({
@@ -669,6 +677,9 @@
 			console.log(this.roleName, 'roleName')
 			console.log(type, 'type')
 			if (type) this.isType = type
+			// 数字化中心 type=2/5/6/8/9/11 等为实验分包相关入口
+			const subTypes = ['2', '5', '6', '8', '9', '11']
+			this.isSubOrder = subTypes.includes(String(type || ''))
 			if (!id) return this.$tip2('缺少订单ID')
 			this.id = id
 			this.getDetail()
@@ -681,6 +692,22 @@
 			uni.$off('isEdit')
 		},
 		methods: {
+			// 模板方法名别名（与菜单按钮绑定一致）
+			cancelAuditApplication() {
+				this.cancelAudit()
+			},
+			auditOrder(type) {
+				this.audit(type)
+			},
+			settlement() {
+				this.settlementCost()
+			},
+			confirmCommunicateForClinet() {
+				this.communicateConfirm()
+			},
+			editDevideInfo() {
+				this.adjustDevide()
+			},
 			viewPDF(type) {
 				uni.showLoading()
 				fetchPDFUrlApi({
@@ -748,7 +775,8 @@
 
 				if (totalDevide !== 100) return this.$tip('毛利分成总和必须等于100%')
 
-				updateDevideInfoApi({
+				const api = this.isSubOrder ? adjustDevideApi : updateDevideInfoApi
+				api({
 					id: this.id,
 					user_scale_info: ml.map(item => `${item.userId}_${item.scale}`).join(','),
 					salecb_user_scale_info: cb.map(item => `${item.userId}_${item.scale}`).join(','),
@@ -810,7 +838,9 @@
 					content: `确定审核${type == 1? '通过' : '驳回' }？`,
 					success(res) {
 						if (res.confirm) {
-							handleCheckPendingTestOrderApi({
+							const api = that.isSubOrder ? handleCheckPendingTestSubOrderApi :
+								handleCheckPendingTestOrderApi
+							api({
 								id: that.id,
 								type
 							}).then(res => {
@@ -892,7 +922,9 @@
 					content: '是否确认取消审核申请？',
 					success(res) {
 						if (res.confirm) {
-							cancelAuditTestOrderApi({
+							const api = that.isSubOrder ? cancelTestSubOrderAuditApplicationApi :
+								cancelAuditTestOrderApi
+							api({
 								id: that.id
 							}).then(res => {
 								if (res.res) {
@@ -916,7 +948,9 @@
 					content: '是否确认提交审核申请？',
 					success(res) {
 						if (res.confirm) {
-							submitAuditTestOrderApi({
+							const api = that.isSubOrder ? submitAuditForTestSubOrderApi :
+								submitAuditTestOrderApi
+							api({
 								id: that.id
 							}).then(res => {
 								if (res.res) {
@@ -940,7 +974,9 @@
 					content: '是否进行所有成本已结清操作？',
 					success(res) {
 						if (res.confirm) {
-							settlementTestOrderCostApi({
+							const api = that.isSubOrder ? settlementTestSubOrderApi :
+								settlementTestOrderCostApi
+							api({
 								id: that.id
 							}).then(res => {
 								if (res.res) {
@@ -964,9 +1000,10 @@
 					content: '确定取消？',
 					success(res) {
 						if (res.confirm) {
-							cancelTestOrderApi({
+							const api = that.isSubOrder ? cancelTestSubOrderApi : cancelTestOrderApi
+							api({
 								id: that.id,
-								type
+								type: type || '2'
 							}).then(res => {
 								if (res.res) {
 									that.$tip('取消成功')
@@ -989,7 +1026,12 @@
 
 			// 获取详情
 			getDetail() {
-				orderdetaildptxcx(this.id).then(res => {
+				const detailApi = this.isSubOrder ? fetchCheckPendingTestSubOrderDetailApi :
+					(id => orderdetaildptxcx(id))
+				const detailReq = this.isSubOrder ? detailApi({
+					id: this.id
+				}) : detailApi(this.id)
+				detailReq.then(res => {
 					if (res.res) {
 						let {
 							of: mainData,
@@ -1018,6 +1060,9 @@
 						this.evaluate = evaluate
 						this.isfcbl = isfcbl
 						this.my_data = mainData
+						if (String(mainData.order_type) === '8') {
+							this.isSubOrder = true
+						}
 						this.openBills = openBills
 						this.bfb = bfb
 						this.collectionTimes = collectionTimes

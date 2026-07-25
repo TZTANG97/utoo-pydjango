@@ -23,14 +23,16 @@ def has_pending_payment_application(order_id: int) -> bool:
 
 
 def has_invoice_apply_for_order(order_id: int) -> bool:
+    # 表字段为 order_ids（逗号分隔 pk），不是 order_id
     return bool(
         fetch_one(
             """
             SELECT 1 AS ok FROM invoice_apply_log
-            WHERE deleteStatus = 0 AND order_id = %(oid)s
+            WHERE deleteStatus = 0
+              AND FIND_IN_SET(%(oid)s, REPLACE(IFNULL(order_ids, ''), ' ', '')) > 0
             LIMIT 1
             """,
-            {"oid": order_id},
+            {"oid": str(order_id)},
         )
     )
 

@@ -38,8 +38,9 @@ def consult_list(request: Request, user=None):
 @api_view(["GET", "POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
-@admin_ajax_view()
+@admin_ajax_view(require_staff=False)
 def consult_detail(request: Request, user=None):
+    """小程序预约详情 — 不强制后台员工登录（对齐可读详情）。"""
     del user
     data = merge_payload(request)
     consult_id = data.get("id")

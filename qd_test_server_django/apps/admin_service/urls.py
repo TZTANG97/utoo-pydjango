@@ -36,6 +36,7 @@ urlpatterns = [
     path("productOrder/prove_list.ajax", proposal_views.prove_list),
     path("productOrder/proveDetail.ajax", proposal_views.prove_detail),
     path("productOrder/updateProposalImprove.ajax", proposal_views.update_proposal_improve),
+    path("productOrder/addProposalImprove.ajax", proposal_views.add_proposal_improve),
     # OpenID
     path("expOpenid/openidList.ajax", openid_views.openid_list),
     path("expOpenid/submitOpenid.ajax", openid_views.submit_openid),

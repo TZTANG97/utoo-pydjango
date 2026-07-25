@@ -501,7 +501,7 @@ appointment relatedOrders
 					生成预约单
 				</view>
 
-				<navigator v-if="!isType" :url="`/staff/child_order/child_order?id=${id}`" hover-class="none"
+				<navigator v-if="!isType" :url="`/staff/child_order/child_order?id=${id}&type=6`" hover-class="none"
 					class="btn">
 					子订单
 				</navigator>
@@ -540,7 +540,6 @@ appointment relatedOrders
 
 <script>
 	import {
-		fetchCheckPendingTestOrderDetailApi,
 		cancelTestOrderApi,
 		settlementTestOrderCostApi,
 		submitAuditTestOrderApi,
@@ -561,7 +560,8 @@ appointment relatedOrders
 	import {
 		addressList,
 		geranateYydForm,
-		addRelevanceOrder_dpt
+		addRelevanceOrder_dpt,
+		orderdetaildptxcx
 	} from '@/api/staffB.js'
 	import collection from '../collection'
 	import rateCustomers from '../rateCustomers'
@@ -1037,9 +1037,7 @@ appointment relatedOrders
 
 			// 获取详情
 			getDetail() {
-				fetchCheckPendingTestOrderDetailApi({
-					id: this.id
-				}).then(res => {
+				orderdetaildptxcx(this.id).then(res => {
 					if (res.res) {
 						let {
 							of: mainData,
