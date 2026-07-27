@@ -7,7 +7,7 @@
 | GitLab | http://gitlab.wisecom-tech.com/web/utoo-pydjango.git |
 | 开发分支 | **`dev`**（日常推送） |
 | 生产分支 | **`prod`** |
-| 前端 | `qd_test_front_v3` → http://127.0.0.1:**9530** |
+| 前端 | `qd_web_front`（C 端 + 管理后台单 SPA）→ http://127.0.0.1:**9530** |
 | 网关 | `qd_test_server_django` → http://127.0.0.1:**18083** |
 
 ```powershell
@@ -22,8 +22,9 @@ git checkout dev
 
 | 目录 | 端口 | 说明 |
 |------|------|------|
-| **`qd_test_front_v3`** | **9530** | Vue3 C 端前端（Vite，`/api` 代理到网关） |
-| **`qd_admin_front`** | — | Vue3 管理后台（代理到网关） |
+| **`qd_web_front`** | **9530** | Vue3 **统一前端**（C 端 `#/...` + 管理后台 `#/admin/...`） |
+| ~~`qd_test_front_v3`~~ | — | **已废弃** → 并入 `qd_web_front/src/client` |
+| ~~`qd_admin_front`~~ | — | **已废弃** → 并入 `qd_web_front/src/admin` |
 | `qd_test_server_django` | **18083** | API **网关 / BFF**（含 `admin_auth` + **C 端认证 `auth_pc`**） |
 | `qd_svc_order` | 18082 | 订单 + 后台实验管理 |
 | `qd_svc_payment` | **18084** | 支付 / 资产 + **微信 `/api/wx/*`**（原 wx 已并入） |
@@ -69,8 +70,7 @@ graph LR
 
 ```mermaid
 graph TB
-  Browser[Browser 9530] --> Vite[Vue3]
-  AdminFE[qd_admin_front] --> GW
+  Browser[Browser 9530] --> Vite[qd_web_front]
   Vite --> GW[Gateway 18083]
   GW --> Order[qd_svc_order 18082]
   GW --> Pay[qd_svc_payment 18084]
@@ -147,17 +147,17 @@ pip install -r requirements.txt
 copy .env.example .env
 python run.py
 
-# 2) 前端（终端 B）
-cd qd_test_front_v3
+# 2) 统一前端（终端 B）
+cd qd_web_front
 npm install
-# 可选：copy .env.development.local.example .env.development.local
 # 默认 VITE_API_TARGET=http://127.0.0.1:18083
 npm run dev
 ```
 
 | 地址 | 说明 |
 |------|------|
-| http://127.0.0.1:**9530** | 前端（用户入口） |
+| http://127.0.0.1:**9530**/#/home | C 端 |
+| http://127.0.0.1:**9530**/#/admin/login | 管理后台 |
 | http://127.0.0.1:**18083** | 网关 API |
 | `GET /health` | 网关健康检查 |
 
@@ -366,19 +366,18 @@ qd_test_server_django/
 ## 11. 前端目录速览
 
 ```
-qd_test_front_v3/
+qd_web_front/
   src/
-    api/           # 接口封装
-    views/         # 页面（订单、资产、发票等）
-    components/    # 公共组件
-    router/        # 路由
-    store/         # Vuex / Pinia
-  vite.config.ts   # 开发代理 /api → 网关
+    client/        # 原 C 端（Vuex，#/home、#/b/...）
+    admin/         # 原管理后台（Pinia，#/admin/...）
+    router/        # 合并路由
+    main.ts
+  vite.config.ts   # 开发代理 /api → 网关 :9530
   package.json
 ```
 
 ```powershell
-cd qd_test_front_v3
+cd qd_web_front
 npm run dev      # http://127.0.0.1:9530
 npm run build    # 产出 dist/
 ```
@@ -389,7 +388,7 @@ npm run build    # 产出 dist/
 
 | 文档 | 说明 |
 |------|------|
-| `qd_test_front_v3/README.md` | 前端细节 |
+| `qd_web_front/README.md` | 统一前端说明 |
 | `qd_test_server_django/README.md` | 网关细节 |
 | **`deploy/README.md`** | **GitLab CI/CD 发版（6 微服务 + 网关 + 前端，systemd）** |
 | **`docs/README.md`** | **文档索引（含对内中台系列）** |

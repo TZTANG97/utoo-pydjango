@@ -97,8 +97,14 @@ Missing deploy variables. Set GitLab CI/CD Variables (or deploy/ci-local/utoo-de
 }
 
 $RemoteRoot = Normalize-DeployLinuxPath (Get-CiEnv 'UTOO_REMOTE_ROOT') '/opt/utoo'
-$StaticC = Normalize-DeployLinuxPath (Get-CiEnv 'UTOO_STATIC_C') '/var/www/utoo-c'
-$StaticAdmin = Normalize-DeployLinuxPath (Get-CiEnv 'UTOO_STATIC_ADMIN') '/var/www/utoo-admin'
+$StaticWeb = Normalize-DeployLinuxPath (Get-CiEnv 'UTOO_STATIC_WEB') '/var/www/utoo-web'
+# 兼容旧 CI 变量
+if ([string]::IsNullOrWhiteSpace((Get-CiEnv 'UTOO_STATIC_WEB'))) {
+	$legacyC = Get-CiEnv 'UTOO_STATIC_C'
+	if (-not [string]::IsNullOrWhiteSpace($legacyC)) {
+		$StaticWeb = Normalize-DeployLinuxPath $legacyC '/var/www/utoo-web'
+	}
+}
 
 # 上游微服务（不含网关）
 # auth/wx 已废弃：C 端认证在网关；/api/wx/* 在 payment :18084
@@ -283,14 +289,10 @@ try {
 	}
 
 	if ($doStatic) {
-		$cDist = Join-Path $root 'qd_test_front_v3/dist'
-		$aDist = Join-Path $root 'qd_admin_front/dist'
-		if (-not (Test-Path -LiteralPath $cDist)) { Write-Error "Missing $cDist — run build_frontend_* first"; exit 1 }
-		if (-not (Test-Path -LiteralPath $aDist)) { Write-Error "Missing $aDist — run build_frontend_* first"; exit 1 }
-		Write-Host '[deploy] sync C-front static...'
-		Sync-DirToRemote -LocalDir $cDist -RemoteDir $StaticC -Exclude @() -PreserveNames @('.keep')
-		Write-Host '[deploy] sync admin-front static...'
-		Sync-DirToRemote -LocalDir $aDist -RemoteDir $StaticAdmin -Exclude @() -PreserveNames @('.keep')
+		$webDist = Join-Path $root 'qd_web_front/dist'
+		if (-not (Test-Path -LiteralPath $webDist)) { Write-Error "Missing $webDist — run build_frontend_* first"; exit 1 }
+		Write-Host ("[deploy] sync unified front static -> {0}" -f $StaticWeb)
+		Sync-DirToRemote -LocalDir $webDist -RemoteDir $StaticWeb -Exclude @() -PreserveNames @('.keep')
 		Write-Host '[deploy] phase static done.'
 	}
 

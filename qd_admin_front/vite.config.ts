@@ -5,8 +5,11 @@ import vue from '@vitejs/plugin-vue'
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const proxyTarget = env.VITE_API_TARGET || 'http://127.0.0.1:18083'
+  // 测试/生产同域部署时设为 /admin/（见桌面部署手册）；本地开发保持 /
+  const base = env.VITE_BASE_PATH || '/'
 
   return {
+    base,
     plugins: [vue()],
     resolve: {
       alias: {

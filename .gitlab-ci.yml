@@ -2,10 +2,10 @@
 # Runner tag：utoo-windows（须为本项目单独注册，否则会 stuck）
 #
 # Stages（4 段，对应微服务发版步骤）：
-#   build           → 构建双前端
+#   build           → 构建统一前端 qd_web_front
 #   deploy_services → qd_libs_common + 4 上游（order/payment/asset/platform）
 #   deploy_gateway  → 网关（含 C 端认证；SVC_* 转发）
-#   deploy_static   → C 端 / 管理后台静态
+#   deploy_static   → 统一前端静态（C 端 + 管理后台单 SPA）
 stages:
   - build
   - deploy_services
@@ -16,8 +16,10 @@ variables:
   GIT_STRATEGY: fetch
   GIT_CLEAN_FLAGS: "-ffd"
   UTOO_REMOTE_ROOT: "/opt/utoo"
-  UTOO_STATIC_C: "/var/www/utoo-c"
-  UTOO_STATIC_ADMIN: "/var/www/utoo-admin"
+  UTOO_STATIC_WEB: "/var/www/utoo-web"
+  # 兼容旧变量名（若仍配置了则部署脚本可忽略）
+  UTOO_STATIC_C: "/var/www/utoo-web"
+  UTOO_STATIC_ADMIN: "/var/www/utoo-web"
 
 .windows_ci_clear_ssh_known_hosts:
   variables:
@@ -45,8 +47,7 @@ build_frontend_dev:
     - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-build-frontend.ps1"
   artifacts:
     paths:
-      - qd_test_front_v3/dist/
-      - qd_admin_front/dist/
+      - qd_web_front/dist/
     expire_in: 2 hours
 
 build_frontend_prod:
@@ -62,8 +63,7 @@ build_frontend_prod:
     - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-build-frontend.ps1"
   artifacts:
     paths:
-      - qd_test_front_v3/dist/
-      - qd_admin_front/dist/
+      - qd_web_front/dist/
     expire_in: 2 hours
 
 # --- deploy_services：4 上游（auth/wx 已废弃） ---

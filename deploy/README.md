@@ -17,10 +17,10 @@
 
 | Stage | Job | 作用 |
 |-------|-----|------|
-| `build` | `build_frontend_*` | 构建双前端 dist |
+| `build` | `build_frontend_*` | 构建统一前端 `qd_web_front` dist |
 | `deploy_services` | `deploy_services_*` | `qd_libs_common` + 4 上游（order/payment/asset/platform） |
 | `deploy_gateway` | `deploy_gateway_*` | 网关 `qd-gateway`（含 C 端认证） |
-| `deploy_static` | `deploy_static_*` | `/var/www/utoo-c`、`/var/www/utoo-admin` |
+| `deploy_static` | `deploy_static_*` | `/var/www/utoo-web`（C 端 + 管理后台单 SPA） |
 
 `deploy_services` 内顺序：
 
@@ -45,17 +45,16 @@
   qd_svc_admin_platform/
   qd_test_server_django/         # 网关 .env 须含 SVC_*_URL（勿设 SVC_AUTH_URL）
 
-/var/www/utoo-c/                 # C 端 dist
-/var/www/utoo-admin/             # 管理后台 dist
+/var/www/utoo-web/               # 统一前端 dist（C 端 + 管理后台）
 ```
 
 systemd 示例：`deploy/systemd/qd-*.service.example`（可停用 `qd-auth` / `qd-wx`）。
 
-Nginx 对外只反代网关与静态：
+Nginx 对外只反代网关与静态（**同一站点、一份 SPA**）：
 
-- API → `127.0.0.1:18083`
-- C 端静态 → `/var/www/utoo-c`
-- 管理后台静态 → `/var/www/utoo-admin`
+- API → `127.0.0.1:18083`（`/api/`）
+- 静态 root → `/var/www/utoo-web`
+- C 端：`/#/home`；管理后台：`/#/admin/login`
 
 上游仅本机访问，不必对公网开放 18082–18091。
 
@@ -134,8 +133,8 @@ copy deploy\ci-local\utoo-deploy-dev.env.ps1.example deploy\ci-local\utoo-deploy
 ## 服务器一次性准备
 
 ```bash
-sudo mkdir -p /opt/utoo/config /var/www/utoo-c /var/www/utoo-admin
-sudo chown -R deploy:deploy /opt/utoo /var/www/utoo-c /var/www/utoo-admin
+sudo mkdir -p /opt/utoo/config /var/www/utoo-web
+sudo chown -R deploy:deploy /opt/utoo /var/www/utoo-web
 
 # 放置密钥（勿提交仓库）
 # /opt/utoo/config/shared-database.env

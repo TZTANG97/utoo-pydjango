@@ -3,6 +3,8 @@
 interface ImportMetaEnv {
   readonly VITE_APP_BASE_API: string
   readonly VITE_API_TARGET: string
+  /** 同域子路径部署，如 /admin/；本地开发可省略 */
+  readonly VITE_BASE_PATH?: string
 }
 
 interface ImportMeta {

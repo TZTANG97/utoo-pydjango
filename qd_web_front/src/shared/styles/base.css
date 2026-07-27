@@ -1,0 +1,6 @@
+/* 真正跨端共享的基础样式（保持极简，避免主题互污染） */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}

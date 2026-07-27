@@ -1,4 +1,4 @@
-# GitLab CI：构建 C 端 + 管理后台前端（npm + package-lock）
+# GitLab CI：构建统一前端 qd_web_front（C 端 + 管理后台单 SPA）
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'ci-project-root.ps1')
 $jobCwd = (Get-Location).Path
@@ -6,51 +6,51 @@ $root = Get-UtooCiProjectRoot
 Set-Location $root
 Write-Host "[ci] project root: $root"
 
-$frontends = @(
-	@{ Dir = 'qd_test_front_v3'; Name = 'C-front' },
-	@{ Dir = 'qd_admin_front'; Name = 'admin-front' }
-)
+$feDir = 'qd_web_front'
+$target = Join-Path $root $feDir
+if (-not (Test-Path -LiteralPath (Join-Path $target 'package.json'))) {
+	Write-Error "No package.json under $target"
+	exit 1
+}
 
-foreach ($fe in $frontends) {
-	$target = Join-Path $root $fe.Dir
-	if (-not (Test-Path -LiteralPath (Join-Path $target 'package.json'))) {
-		Write-Error "No package.json under $target"
-		exit 1
-	}
-	Set-Location $target
-	Write-Host ("[ci] build {0} in {1}" -f $fe.Name, (Get-Location))
+Set-Location $target
+Write-Host ("[ci] build unified front in {0}" -f (Get-Location))
 
-	if (Test-Path -LiteralPath (Join-Path $target 'package-lock.json')) {
-		& npm ci
-	} else {
-		& npm install
-	}
-	if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+@(
+	'VITE_APP_BASE_API=/api',
+	'VITE_API_MODE=django'
+) | Set-Content -LiteralPath (Join-Path $target '.env.production') -Encoding utf8
+Write-Host '[ci] wrote qd_web_front/.env.production'
 
-	& npm run build
-	if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if (Test-Path -LiteralPath (Join-Path $target 'package-lock.json')) {
+	& npm ci
+} else {
+	& npm install
+}
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-	# Windows runner 偶发 artifacts 基准目录与检出根不一致，镜像一份到 job cwd
-	if (-not [string]::IsNullOrWhiteSpace($jobCwd)) {
-		try {
-			$jobTarget = Join-Path $jobCwd $fe.Dir
-			$srcDist = Join-Path $target 'dist'
-			if (Test-Path -LiteralPath $srcDist) {
-				$srcNorm = [System.IO.Path]::GetFullPath($srcDist)
-				$dstDist = Join-Path $jobTarget 'dist'
-				$dstNorm = [System.IO.Path]::GetFullPath($dstDist)
-				if (-not [string]::Equals($srcNorm, $dstNorm, [System.StringComparison]::OrdinalIgnoreCase)) {
-					New-Item -ItemType Directory -Force -Path $jobTarget | Out-Null
-					if (Test-Path -LiteralPath $dstDist) {
-						Remove-Item -LiteralPath $dstDist -Recurse -Force -ErrorAction SilentlyContinue
-					}
-					Copy-Item -LiteralPath $srcDist -Destination $dstDist -Recurse -Force
-					Write-Host "Mirrored dist to: $dstNorm"
+& npm run build
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+if (-not [string]::IsNullOrWhiteSpace($jobCwd)) {
+	try {
+		$jobTarget = Join-Path $jobCwd $feDir
+		$srcDist = Join-Path $target 'dist'
+		if (Test-Path -LiteralPath $srcDist) {
+			$srcNorm = [System.IO.Path]::GetFullPath($srcDist)
+			$dstDist = Join-Path $jobTarget 'dist'
+			$dstNorm = [System.IO.Path]::GetFullPath($dstDist)
+			if (-not [string]::Equals($srcNorm, $dstNorm, [System.StringComparison]::OrdinalIgnoreCase)) {
+				New-Item -ItemType Directory -Force -Path $jobTarget | Out-Null
+				if (Test-Path -LiteralPath $dstDist) {
+					Remove-Item -LiteralPath $dstDist -Recurse -Force -ErrorAction SilentlyContinue
 				}
+				Copy-Item -LiteralPath $srcDist -Destination $dstDist -Recurse -Force
+				Write-Host "Mirrored dist to: $dstNorm"
 			}
-		} catch {
-			Write-Warning ("Mirror dist failed: " + $_.Exception.Message)
 		}
+	} catch {
+		Write-Warning ("Mirror dist failed: " + $_.Exception.Message)
 	}
 }
 
