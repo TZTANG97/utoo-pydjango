@@ -1,11 +1,13 @@
-# .gitlab-ci.yml — Utoo 微服务独立发版（与 EMKU 无关）
+# .gitlab-ci.yml — Utoo 微服务红绿双实例发版（与 EMKU 无关）
 # Runner tag：utoo-windows（须为本项目单独注册，否则会 stuck）
 #
-# Stages（4 段，对应微服务发版步骤）：
+# Stages（4 段）：
 #   build           → 构建统一前端 qd_web_front
-#   deploy_services → qd_libs_common + 4 上游（order/payment/asset/platform）
-#   deploy_gateway  → 网关（含 C 端认证；SVC_* 转发）
-#   deploy_static   → 统一前端静态（C 端 + 管理后台单 SPA）
+#   deploy_services → 空闲槽：qd_libs_common + 4 上游
+#   deploy_gateway  → 空闲槽网关 + health + utoo-switch-active.sh 切流
+#   deploy_static   → 切流后再发 /var/www/utoo-web
+#
+# 禁止复用 emku-windows /opt/emku-* / emku_upstream_*
 stages:
   - build
   - deploy_services
@@ -15,9 +17,11 @@ stages:
 variables:
   GIT_STRATEGY: fetch
   GIT_CLEAN_FLAGS: "-ffd"
-  UTOO_REMOTE_ROOT: "/opt/utoo"
   UTOO_STATIC_WEB: "/var/www/utoo-web"
-  # 兼容旧变量名（若仍配置了则部署脚本可忽略）
+  UTOO_SHARED_CONFIG: "/opt/utoo/config"
+  UTOO_UPSTREAM_CONF: "/usr/local/nginx/conf/utoo_upstream_server.conf"
+  UTOO_SWITCH_SCRIPT: "/usr/local/sbin/utoo-switch-active.sh"
+  # 兼容旧变量名
   UTOO_STATIC_C: "/var/www/utoo-web"
   UTOO_STATIC_ADMIN: "/var/www/utoo-web"
 

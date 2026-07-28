@@ -1,0 +1,19 @@
+# 绿槽 admin-asset :18190
+
+[Unit]
+Description=Utoo Admin Asset Microservice (green)
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/utoo-green/qd_svc_admin_asset
+Environment=DJANGO_SETTINGS_MODULE=config.settings
+ExecStart=/opt/utoo-green/qd_svc_admin_asset/.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:18190 --workers 2 --timeout 120 --access-logfile - --error-logfile -
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

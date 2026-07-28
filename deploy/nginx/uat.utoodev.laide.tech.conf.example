@@ -1,0 +1,47 @@
+# 独立 server：uat.utoodev.laide.tech（Django 微服务测试域）
+# 安装前：
+#   1. DNS 指向本机
+#   2. 证书放到 /usr/local/nginx/conf/cert/（勿复用 uat.utoo.laide.tech 证书，域名不同）
+#   3. 已有 utoo_upstream_server.conf + utoo-switch-active.sh
+#   4. 在主 nginx.conf 的 http{} 内 include 本文件，或粘贴 server 块
+#
+# 不要改现有 utootesting.com / uat.utoo.laide.tech / IP:80 旧 /api→9000。
+
+upstream utoo_gateway {
+    include /usr/local/nginx/conf/utoo_upstream_server.conf;
+    keepalive 32;
+}
+
+server {
+    listen 80;
+    server_name uat.utoodev.laide.tech;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name uat.utoodev.laide.tech;
+
+    # 证书文件名按实际申请结果修改
+    ssl_certificate     /usr/local/nginx/conf/cert/uat.utoodev.laide.tech.pem;
+    ssl_certificate_key /usr/local/nginx/conf/cert/uat.utoodev.laide.tech.key;
+
+    client_max_body_size 20m;
+    root /var/www/utoo-web;
+    index index.html;
+
+    location /api/ {
+        proxy_pass http://utoo_gateway;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 120s;
+        proxy_set_header Connection "";
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

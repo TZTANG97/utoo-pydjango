@@ -1,5 +1,5 @@
-# GitLab CI：Windows Shell Runner + OpenSSH → Linux systemd
-# 微服务模式：4 上游 + 网关 + 双前端静态（无蓝绿；auth/wx 已废弃）
+# GitLab CI：Windows Shell Runner + OpenSSH → Linux 红绿双实例
+# 空闲槽发版 → health → Nginx 切网关 → 再发静态（对齐 EMKU 流程；路径/脚本与 EMKU 隔离）
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'ci-project-root.ps1')
 $root = Get-UtooCiProjectRoot
@@ -96,27 +96,18 @@ Missing deploy variables. Set GitLab CI/CD Variables (or deploy/ci-local/utoo-de
 	exit 1
 }
 
-$RemoteRoot = Normalize-DeployLinuxPath (Get-CiEnv 'UTOO_REMOTE_ROOT') '/opt/utoo'
 $StaticWeb = Normalize-DeployLinuxPath (Get-CiEnv 'UTOO_STATIC_WEB') '/var/www/utoo-web'
-# 兼容旧 CI 变量
 if ([string]::IsNullOrWhiteSpace((Get-CiEnv 'UTOO_STATIC_WEB'))) {
 	$legacyC = Get-CiEnv 'UTOO_STATIC_C'
 	if (-not [string]::IsNullOrWhiteSpace($legacyC)) {
 		$StaticWeb = Normalize-DeployLinuxPath $legacyC '/var/www/utoo-web'
 	}
 }
+$SharedConfig = Normalize-DeployLinuxPath (Get-CiEnv 'UTOO_SHARED_CONFIG') '/opt/utoo/config'
+$UpstreamConf = Normalize-DeployLinuxPath (Get-CiEnv 'UTOO_UPSTREAM_CONF') '/usr/local/nginx/conf/utoo_upstream_server.conf'
+$SwitchScript = Normalize-DeployLinuxPath (Get-CiEnv 'UTOO_SWITCH_SCRIPT') '/usr/local/sbin/utoo-switch-active.sh'
 
-# 上游微服务（不含网关）
-# auth/wx 已废弃：C 端认证在网关；/api/wx/* 在 payment :18084
-$UpstreamUnits = @(
-	@{ Dir = 'qd_svc_order'; Service = 'qd-order'; Port = 18082 },
-	@{ Dir = 'qd_svc_payment'; Service = 'qd-payment'; Port = 18084 },
-	@{ Dir = 'qd_svc_admin_asset'; Service = 'qd-admin-asset'; Port = 18090 },
-	@{ Dir = 'qd_svc_admin_platform'; Service = 'qd-admin-platform'; Port = 18091 }
-)
-$GatewayUnit = @{ Dir = 'qd_test_server_django'; Service = 'qd-gateway'; Port = 18083 }
-
-# libs_services | gateway | static | all（默认 all，兼容旧单 Job）
+# libs_services | gateway | static | all
 $DeployPhase = (Get-CiEnv 'UTOO_DEPLOY_PHASE')
 if ([string]::IsNullOrWhiteSpace($DeployPhase)) { $DeployPhase = 'all' }
 $DeployPhase = $DeployPhase.Trim().ToLowerInvariant()
@@ -126,7 +117,7 @@ if ($validPhases -notcontains $DeployPhase) {
 	exit 1
 }
 
-Write-Host ("[deploy] target={0} host={1}@{2} root={3} phase={4}" -f $deployTarget, $DeployUser, $deployHost, $RemoteRoot, $DeployPhase)
+Write-Host ("[deploy] target={0} host={1}@{2} phase={3}" -f $deployTarget, $DeployUser, $deployHost, $DeployPhase)
 
 # --- SSH key / known_hosts ---
 $keyFile = Join-Path $env:TEMP ("gitlab_ci_utoo_key_{0}" -f [Guid]::NewGuid().ToString('N'))
@@ -161,6 +152,11 @@ try {
 	function Invoke-Remote([string]$RemoteCmd) {
 		& $script:UtooSshExe @SshArgs $SshTarget $RemoteCmd
 		if ($LASTEXITCODE -ne 0) { throw "Remote command failed (exit $LASTEXITCODE): $RemoteCmd" }
+	}
+	function Invoke-RemoteCapture([string]$RemoteCmd) {
+		$out = & $script:UtooSshExe @SshArgs $SshTarget $RemoteCmd 2>&1
+		if ($LASTEXITCODE -ne 0) { throw "Remote command failed (exit $LASTEXITCODE): $RemoteCmd`n$out" }
+		return (($out | Out-String).Trim())
 	}
 	function Invoke-RemoteSudo([string]$RemoteCmd) {
 		$escaped = $RemoteCmd -replace "'", "'\''"
@@ -206,6 +202,31 @@ try {
 			Remove-Item -LiteralPath $localSh -Force -ErrorAction SilentlyContinue
 		}
 	}
+	function Invoke-RemoteSudoCapture([string]$RemoteCmd) {
+		$escaped = $RemoteCmd -replace "'", "'\''"
+		$cmd = "sudo -n bash -c '$escaped'"
+		$out = & $script:UtooSshExe @SshArgs $SshTarget $cmd 2>&1
+		if ($LASTEXITCODE -ne 0) {
+			$out = & $script:UtooSshExe @SshArgs $SshTarget $RemoteCmd 2>&1
+			if ($LASTEXITCODE -ne 0) { throw "Remote sudo/capture failed (exit $LASTEXITCODE): $RemoteCmd`n$out" }
+		}
+		return (($out | Out-String).Trim())
+	}
+	function Invoke-RemoteBashScriptCapture([string]$LocalScriptPath, [hashtable]$Replacements) {
+		$text = [IO.File]::ReadAllText($LocalScriptPath)
+		foreach ($k in $Replacements.Keys) { $text = $text.Replace($k, [string]$Replacements[$k]) }
+		$remoteSh = "/tmp/utoo_ci_{0}.sh" -f [Guid]::NewGuid().ToString('N')
+		$localSh = Join-Path $env:TEMP ("utoo_ci_{0}.sh" -f [Guid]::NewGuid().ToString('N'))
+		try {
+			$unix = ($text -replace "`r`n", "`n" -replace "`r", "`n")
+			[IO.File]::WriteAllText($localSh, $unix, [Text.UTF8Encoding]::new($false))
+			Invoke-Scp -LocalPath $localSh -RemotePath $remoteSh
+			$out = Invoke-RemoteSudoCapture ("bash {0}; ec=`$?; rm -f {0}; exit `$ec" -f $remoteSh)
+			return $out
+		} finally {
+			Remove-Item -LiteralPath $localSh -Force -ErrorAction SilentlyContinue
+		}
+	}
 
 	function Sync-DirToRemote([string]$LocalDir, [string]$RemoteDir, [string[]]$Exclude, [string[]]$PreserveNames) {
 		$preserveExpr = ($PreserveNames | ForEach-Object { "-not -name $_" }) -join ' '
@@ -222,9 +243,53 @@ try {
 		}
 	}
 
+	# --- 解析空闲槽（红绿）---
+	$needSlot = ($DeployPhase -eq 'all' -or $DeployPhase -eq 'libs_services' -or $DeployPhase -eq 'gateway')
+	$Slot = $null
+	$RemoteRoot = $null
+	$GwPort = $null
+
+	if ($needSlot) {
+		Write-Host ("[deploy] discover active upstream from {0}" -f $UpstreamConf)
+		$activePort = (Invoke-RemoteBashScriptCapture -LocalScriptPath (Join-Path $PSScriptRoot 'ci-remote-discover-upstream-port.sh') -Replacements @{
+			'__CONF__' = $UpstreamConf
+		}).Trim()
+		if ($activePort -notmatch '^(18083|18183)$') {
+			Write-Host ("[deploy][warn] unexpected active port '{0}', fallback 18083" -f $activePort) -ForegroundColor Yellow
+			$activePort = '18083'
+		}
+		Write-Host ("[deploy] Nginx active gateway port: {0}" -f $activePort)
+
+		if ($activePort -eq '18083') {
+			$Slot = 'green'
+			$RemoteRoot = '/opt/utoo-green'
+			$GwPort = 18183
+			$UpstreamUnits = @(
+				@{ Dir = 'qd_svc_order'; Service = 'qd-order-green'; Port = 18182 },
+				@{ Dir = 'qd_svc_payment'; Service = 'qd-payment-green'; Port = 18184 },
+				@{ Dir = 'qd_svc_admin_asset'; Service = 'qd-admin-asset-green'; Port = 18190 },
+				@{ Dir = 'qd_svc_admin_platform'; Service = 'qd-admin-platform-green'; Port = 18191 }
+			)
+			$GatewayUnit = @{ Dir = 'qd_test_server_django'; Service = 'qd-gateway-green'; Port = 18183 }
+		} else {
+			$Slot = 'blue'
+			$RemoteRoot = '/opt/utoo-blue'
+			$GwPort = 18083
+			$UpstreamUnits = @(
+				@{ Dir = 'qd_svc_order'; Service = 'qd-order-blue'; Port = 18082 },
+				@{ Dir = 'qd_svc_payment'; Service = 'qd-payment-blue'; Port = 18084 },
+				@{ Dir = 'qd_svc_admin_asset'; Service = 'qd-admin-asset-blue'; Port = 18090 },
+				@{ Dir = 'qd_svc_admin_platform'; Service = 'qd-admin-platform-blue'; Port = 18091 }
+			)
+			$GatewayUnit = @{ Dir = 'qd_test_server_django'; Service = 'qd-gateway-blue'; Port = 18083 }
+		}
+		Write-Host ("[deploy] idle slot={0} root={1} new_gateway={2}" -f $Slot, $RemoteRoot, $GwPort) -ForegroundColor Cyan
+	}
+
 	function Deploy-DjangoUnit {
 		param(
-			[Parameter(Mandatory)][hashtable]$Unit
+			[Parameter(Mandatory)][hashtable]$Unit,
+			[Parameter(Mandatory)][string]$SlotRoot
 		)
 		$dir = $Unit.Dir
 		$svc = $Unit.Service
@@ -233,7 +298,7 @@ try {
 		if (-not (Test-Path -LiteralPath $localDir)) {
 			throw "Local service directory missing: $localDir"
 		}
-		$remoteDir = "{0}/{1}" -f $RemoteRoot, $dir
+		$remoteDir = "{0}/{1}" -f $SlotRoot, $dir
 		$healthUrl = "http://127.0.0.1:{0}/health" -f $port
 
 		Write-Host ("[deploy] === {0} ({1} :{2}) ===" -f $dir, $svc, $port) -ForegroundColor Cyan
@@ -245,17 +310,20 @@ try {
 			-Exclude @('.venv', '__pycache__', '*.pyc', '.git', '.env', '.env.local', 'tests', '.pytest_cache') `
 			-PreserveNames @('.venv', '.env', '.env.local')
 
-		$envCheck = ("if [ ! -f {0}/.env ] && [ ! -f {1}/config/shared-database.env ]; then echo deploy_error_missing_env:{2}; exit 1; fi" -f $remoteDir, $RemoteRoot, $dir)
+		# 确保槽内 config/shared-database.env 可用（symlink 到共享目录）
+		Invoke-RemoteSudo ("mkdir -p {0}/config {1} && if [ -f {1}/shared-database.env ] && [ ! -e {0}/config/shared-database.env ]; then ln -sfn {1}/shared-database.env {0}/config/shared-database.env; fi" -f $SlotRoot, $SharedConfig)
+
+		$envCheck = ("if [ ! -f {0}/.env ] && [ ! -f {1}/config/shared-database.env ]; then echo deploy_error_missing_env:{2}; exit 1; fi" -f $remoteDir, $SlotRoot, $dir)
 		Invoke-Remote $envCheck
 
 		Write-Host ("[deploy] pip {0}..." -f $dir)
 		Invoke-RemoteBashScript -LocalScriptPath (Join-Path $PSScriptRoot 'ci-remote-pip-install.sh') -Replacements @{
-			'__ROOT__' = $RemoteRoot
+			'__ROOT__' = $SlotRoot
 			'__SVC_DIR__' = $dir
 		}
 		Write-Host ("[deploy] django check {0}..." -f $dir)
 		Invoke-RemoteBashScript -LocalScriptPath (Join-Path $PSScriptRoot 'ci-remote-smoke.sh') -Replacements @{
-			'__ROOT__' = $RemoteRoot
+			'__ROOT__' = $SlotRoot
 			'__SVC_DIR__' = $dir
 		}
 
@@ -268,30 +336,36 @@ try {
 	$doLibsServices = ($DeployPhase -eq 'all' -or $DeployPhase -eq 'libs_services')
 	$doGateway = ($DeployPhase -eq 'all' -or $DeployPhase -eq 'gateway')
 	$doStatic = ($DeployPhase -eq 'all' -or $DeployPhase -eq 'static')
+	$script:StagedDistTar = $null
 
 	if ($doLibsServices) {
-		Write-Host '[deploy] sync qd_libs_common...'
+		Write-Host ("[deploy] sync qd_libs_common -> {0}" -f $RemoteRoot)
 		Sync-DirToRemote `
 			-LocalDir (Join-Path $root 'qd_libs_common') `
 			-RemoteDir ("{0}/qd_libs_common" -f $RemoteRoot) `
 			-Exclude @('.venv', '__pycache__', '*.pyc', '.git', '*.egg-info') `
 			-PreserveNames @('.keep')
-		Invoke-RemoteSudo ("mkdir -p {0}/config" -f $RemoteRoot)
+		Invoke-RemoteSudo ("mkdir -p {0}/config {1}" -f $RemoteRoot, $SharedConfig)
 		foreach ($unit in $UpstreamUnits) {
-			Deploy-DjangoUnit -Unit $unit
+			Deploy-DjangoUnit -Unit $unit -SlotRoot $RemoteRoot
 		}
 		Write-Host '[deploy] phase libs_services done.'
 	}
 
 	if ($doGateway) {
-		Deploy-DjangoUnit -Unit $GatewayUnit
-		Write-Host '[deploy] phase gateway done.'
+		# 若仅跑 gateway 阶段，仍需已解析槽位
+		if (-not $RemoteRoot) { throw 'gateway phase requires slot resolution' }
+		Deploy-DjangoUnit -Unit $GatewayUnit -SlotRoot $RemoteRoot
+
+		Write-Host ("[deploy] switch nginx upstream -> {0} via {1}" -f $GwPort, $SwitchScript)
+		Invoke-RemoteSudo ("/bin/bash '{0}' {1}" -f $SwitchScript, $GwPort)
+		Write-Host '[deploy] phase gateway done (switched).'
 	}
 
 	if ($doStatic) {
 		$webDist = Join-Path $root 'qd_web_front/dist'
 		if (-not (Test-Path -LiteralPath $webDist)) { Write-Error "Missing $webDist — run build_frontend_* first"; exit 1 }
-		Write-Host ("[deploy] sync unified front static -> {0}" -f $StaticWeb)
+		Write-Host ("[deploy] sync unified front static -> {0} (after switch)" -f $StaticWeb)
 		Sync-DirToRemote -LocalDir $webDist -RemoteDir $StaticWeb -Exclude @() -PreserveNames @('.keep')
 		Write-Host '[deploy] phase static done.'
 	}

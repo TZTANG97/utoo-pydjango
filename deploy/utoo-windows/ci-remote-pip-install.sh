@@ -3,7 +3,11 @@
 set -euo pipefail
 cd "__ROOT__/__SVC_DIR__"
 if [ ! -x .venv/bin/pip ]; then
-  (python3 -m venv .venv || python -m venv .venv)
+  if [ -x /opt/utoo/.python/bin/python ]; then
+    /opt/utoo/.python/bin/python -m venv .venv
+  else
+    (python3 -m venv .venv || python -m venv .venv)
+  fi
 fi
 export PIP_DISABLE_PIP_VERSION_CHECK=1
 export PIP_DEFAULT_TIMEOUT=${PIP_DEFAULT_TIMEOUT:-120}
@@ -15,7 +19,8 @@ echo deploy_pip_svc:__SVC_DIR__
 for i in 1 2 3; do
   echo deploy_pip_attempt:$i/3
   if .venv/bin/python -m pip install --upgrade pip -i "$PIP_INDEX_URL" --retries "$PIP_RETRIES" --timeout "$PIP_DEFAULT_TIMEOUT" --progress-bar off \
-    && .venv/bin/python -m pip install -r requirements.txt gunicorn -i "$PIP_INDEX_URL" --retries "$PIP_RETRIES" --timeout "$PIP_DEFAULT_TIMEOUT" --progress-bar off; then
+    && .venv/bin/python -m pip install -r requirements.txt gunicorn -i "$PIP_INDEX_URL" --retries "$PIP_RETRIES" --timeout "$PIP_DEFAULT_TIMEOUT" --progress-bar off \
+    && .venv/bin/python -m pip install -e "__ROOT__/qd_libs_common" -i "$PIP_INDEX_URL" --retries "$PIP_RETRIES" --timeout "$PIP_DEFAULT_TIMEOUT" --progress-bar off; then
     break
   fi
   if [ "$i" -eq 3 ]; then echo deploy_pip_failed; exit 1; fi

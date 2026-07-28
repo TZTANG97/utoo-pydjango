@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Utoo 红绿切流：改写 upstream 小文件并 reload Nginx。
+# 安装：
+#   sudo cp utoo-switch-active.sh.example /usr/local/sbin/utoo-switch-active.sh
+#   sudo chmod 755 /usr/local/sbin/utoo-switch-active.sh
+# 用法：
+#   sudo utoo-switch-active.sh 18083   # 切到蓝槽网关
+#   sudo utoo-switch-active.sh 18183   # 切到绿槽网关
+#
+# 与工厂 EMKU 的 emku-switch-active.sh 完全独立，勿混用。
+
+set -euo pipefail
+
+NEW_PORT="${1:-}"
+if [[ -z "$NEW_PORT" ]]; then
+  echo "usage: $0 <18083|18183>" >&2
+  exit 1
+fi
+if [[ "$NEW_PORT" != "18083" && "$NEW_PORT" != "18183" ]]; then
+  echo "invalid gateway port: $NEW_PORT (expect 18083 or 18183)" >&2
+  exit 1
+fi
+
+CONF="${UTOO_UPSTREAM_CONF:-/usr/local/nginx/conf/utoo_upstream_server.conf}"
+NGINX_BIN="${UTOO_NGINX_BIN:-}"
+if [[ -z "$NGINX_BIN" ]]; then
+  if [[ -x /usr/local/nginx/sbin/nginx ]]; then
+    NGINX_BIN=/usr/local/nginx/sbin/nginx
+  elif command -v nginx >/dev/null 2>&1; then
+    NGINX_BIN=$(command -v nginx)
+  else
+    echo "nginx binary not found; set UTOO_NGINX_BIN" >&2
+    exit 1
+  fi
+fi
+
+mkdir -p "$(dirname "$CONF")"
+printf 'server 127.0.0.1:%s;\n' "$NEW_PORT" >"$CONF"
+echo "utoo upstream -> 127.0.0.1:${NEW_PORT} (${CONF})"
+
+"$NGINX_BIN" -t
+# reload：优先 signal；兼容非 systemd 管理的自编译 nginx
+if "$NGINX_BIN" -s reload 2>/dev/null; then
+  echo "nginx reloaded"
+else
+  # 部分环境需指定 conf
+  if [[ -f /usr/local/nginx/conf/nginx.conf ]]; then
+    "$NGINX_BIN" -c /usr/local/nginx/conf/nginx.conf -s reload
+    echo "nginx reloaded (-c conf)"
+  else
+    echo "nginx reload failed" >&2
+    exit 1
+  fi
+fi
