@@ -82,8 +82,6 @@ deploy_services_dev:
   variables:
     UTOO_DEPLOY_TARGET: dev
     UTOO_DEPLOY_PHASE: libs_services
-  needs:
-    - build_frontend_dev
   when: manual
   allow_failure: false
   script:
@@ -99,8 +97,6 @@ deploy_services_prod:
   variables:
     UTOO_DEPLOY_TARGET: prod
     UTOO_DEPLOY_PHASE: libs_services
-  needs:
-    - build_frontend_prod
   when: manual
   allow_failure: false
   script:
@@ -118,11 +114,6 @@ deploy_gateway_dev:
   variables:
     UTOO_DEPLOY_TARGET: dev
     UTOO_DEPLOY_PHASE: gateway
-  needs:
-    - job: deploy_services_dev
-      artifacts: false
-    - job: build_frontend_dev
-      artifacts: true
   when: on_success
   allow_failure: false
   script:
@@ -138,11 +129,6 @@ deploy_gateway_prod:
   variables:
     UTOO_DEPLOY_TARGET: prod
     UTOO_DEPLOY_PHASE: gateway
-  needs:
-    - job: deploy_services_prod
-      artifacts: false
-    - job: build_frontend_prod
-      artifacts: true
   when: on_success
   allow_failure: false
   script:
@@ -160,11 +146,8 @@ deploy_static_dev:
   variables:
     UTOO_DEPLOY_TARGET: dev
     UTOO_DEPLOY_PHASE: static
-  needs:
-    - job: deploy_gateway_dev
-      artifacts: false
-    - job: build_frontend_dev
-      artifacts: true
+  dependencies:
+    - build_frontend_dev
   when: on_success
   allow_failure: false
   script:
@@ -180,11 +163,8 @@ deploy_static_prod:
   variables:
     UTOO_DEPLOY_TARGET: prod
     UTOO_DEPLOY_PHASE: static
-  needs:
-    - job: deploy_gateway_prod
-      artifacts: false
-    - job: build_frontend_prod
-      artifacts: true
+  dependencies:
+    - build_frontend_prod
   when: on_success
   allow_failure: false
   script:
