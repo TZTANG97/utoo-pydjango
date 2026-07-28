@@ -1,9 +1,9 @@
 # 绿槽网关 :18183
-# SVC_* 指向本槽 18182/84/90/91；勿设 SVC_AUTH_URL
+# SVC_* 指向 Nginx 稳定内部端口 19082/84/90/91；勿设 SVC_AUTH_URL
 
 [Unit]
 Description=Utoo Django API Gateway (green)
-After=network.target qd-order-green.service qd-payment-green.service qd-admin-asset-green.service qd-admin-platform-green.service
+After=network.target
 Wants=network-online.target
 
 [Service]

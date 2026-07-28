@@ -1,18 +1,13 @@
 # .gitlab-ci.yml — Utoo 微服务红绿双实例发版（与 EMKU 无关）
 # Runner tag：utoo-windows（须为本项目单独注册，否则会 stuck）
 #
-# Stages（4 段）：
-#   build           → 构建统一前端 qd_web_front
-#   deploy_services → 空闲槽：qd_libs_common + 4 上游
-#   deploy_gateway  → 空闲槽网关 + health + utoo-switch-active.sh 切流
-#   deploy_static   → 切流后再发 /var/www/utoo-web
+# 每个环境有 6 个独立手动发布入口：
+# order / payment / admin_asset / admin_platform / gateway / frontend
+# 前四者按各自 upstream 的空闲蓝绿实例发布并切流；gateway 独立切公网入口。
 #
 # 禁止复用 emku-windows /opt/emku-* / emku_upstream_*
 stages:
-  - build
-  - deploy_services
-  - deploy_gateway
-  - deploy_static
+  - deploy
 
 variables:
   GIT_STRATEGY: fetch
@@ -36,77 +31,75 @@ variables:
   tags:
     - utoo-windows
 
-# --- build ---
+# --- dev：6 个独立发布入口 ---
 
-build_frontend_dev:
+deploy_order_dev:
   extends: .utoo_windows_runner
-  stage: build
-  only:
-    - dev
-  except:
-    - merge_requests
-  when: manual
-  allow_failure: false
-  script:
-    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-build-frontend.ps1"
-  artifacts:
-    paths:
-      - qd_web_front/dist/
-    expire_in: 2 hours
-
-build_frontend_prod:
-  extends: .utoo_windows_runner
-  stage: build
-  only:
-    - prod
-  except:
-    - merge_requests
-  when: manual
-  allow_failure: false
-  script:
-    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-build-frontend.ps1"
-  artifacts:
-    paths:
-      - qd_web_front/dist/
-    expire_in: 2 hours
-
-# --- deploy_services：4 上游（auth/wx 已废弃） ---
-
-deploy_services_dev:
-  extends: .utoo_windows_runner
-  stage: deploy_services
+  stage: deploy
   only:
     - dev
   except:
     - merge_requests
   variables:
     UTOO_DEPLOY_TARGET: dev
-    UTOO_DEPLOY_PHASE: libs_services
+    UTOO_DEPLOY_PHASE: service
+    UTOO_DEPLOY_SERVICE: order
   when: manual
   allow_failure: false
   script:
     - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
 
-deploy_services_prod:
+deploy_payment_dev:
   extends: .utoo_windows_runner
-  stage: deploy_services
+  stage: deploy
   only:
-    - prod
+    - dev
   except:
     - merge_requests
   variables:
-    UTOO_DEPLOY_TARGET: prod
-    UTOO_DEPLOY_PHASE: libs_services
+    UTOO_DEPLOY_TARGET: dev
+    UTOO_DEPLOY_PHASE: service
+    UTOO_DEPLOY_SERVICE: payment
   when: manual
   allow_failure: false
   script:
     - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
 
-# --- deploy_gateway ---
+deploy_admin_asset_dev:
+  extends: .utoo_windows_runner
+  stage: deploy
+  only:
+    - dev
+  except:
+    - merge_requests
+  variables:
+    UTOO_DEPLOY_TARGET: dev
+    UTOO_DEPLOY_PHASE: service
+    UTOO_DEPLOY_SERVICE: admin_asset
+  when: manual
+  allow_failure: false
+  script:
+    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
+
+deploy_admin_platform_dev:
+  extends: .utoo_windows_runner
+  stage: deploy
+  only:
+    - dev
+  except:
+    - merge_requests
+  variables:
+    UTOO_DEPLOY_TARGET: dev
+    UTOO_DEPLOY_PHASE: service
+    UTOO_DEPLOY_SERVICE: admin_platform
+  when: manual
+  allow_failure: false
+  script:
+    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
 
 deploy_gateway_dev:
   extends: .utoo_windows_runner
-  stage: deploy_gateway
+  stage: deploy
   only:
     - dev
   except:
@@ -114,14 +107,98 @@ deploy_gateway_dev:
   variables:
     UTOO_DEPLOY_TARGET: dev
     UTOO_DEPLOY_PHASE: gateway
-  when: on_success
+    UTOO_DEPLOY_SERVICE: gateway
+  when: manual
+  allow_failure: false
+  script:
+    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
+
+deploy_frontend_dev:
+  extends: .utoo_windows_runner
+  stage: deploy
+  only:
+    - dev
+  except:
+    - merge_requests
+  variables:
+    UTOO_DEPLOY_TARGET: dev
+    UTOO_DEPLOY_PHASE: static
+    UTOO_DEPLOY_SERVICE: frontend
+  when: manual
+  allow_failure: false
+  script:
+    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-build-frontend.ps1"
+    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
+
+# --- prod：6 个独立发布入口 ---
+
+deploy_order_prod:
+  extends: .utoo_windows_runner
+  stage: deploy
+  only:
+    - prod
+  except:
+    - merge_requests
+  variables:
+    UTOO_DEPLOY_TARGET: prod
+    UTOO_DEPLOY_PHASE: service
+    UTOO_DEPLOY_SERVICE: order
+  when: manual
+  allow_failure: false
+  script:
+    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
+
+deploy_payment_prod:
+  extends: .utoo_windows_runner
+  stage: deploy
+  only:
+    - prod
+  except:
+    - merge_requests
+  variables:
+    UTOO_DEPLOY_TARGET: prod
+    UTOO_DEPLOY_PHASE: service
+    UTOO_DEPLOY_SERVICE: payment
+  when: manual
+  allow_failure: false
+  script:
+    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
+
+deploy_admin_asset_prod:
+  extends: .utoo_windows_runner
+  stage: deploy
+  only:
+    - prod
+  except:
+    - merge_requests
+  variables:
+    UTOO_DEPLOY_TARGET: prod
+    UTOO_DEPLOY_PHASE: service
+    UTOO_DEPLOY_SERVICE: admin_asset
+  when: manual
+  allow_failure: false
+  script:
+    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
+
+deploy_admin_platform_prod:
+  extends: .utoo_windows_runner
+  stage: deploy
+  only:
+    - prod
+  except:
+    - merge_requests
+  variables:
+    UTOO_DEPLOY_TARGET: prod
+    UTOO_DEPLOY_PHASE: service
+    UTOO_DEPLOY_SERVICE: admin_platform
+  when: manual
   allow_failure: false
   script:
     - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
 
 deploy_gateway_prod:
   extends: .utoo_windows_runner
-  stage: deploy_gateway
+  stage: deploy
   only:
     - prod
   except:
@@ -129,33 +206,15 @@ deploy_gateway_prod:
   variables:
     UTOO_DEPLOY_TARGET: prod
     UTOO_DEPLOY_PHASE: gateway
-  when: on_success
+    UTOO_DEPLOY_SERVICE: gateway
+  when: manual
   allow_failure: false
   script:
     - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
 
-# --- deploy_static ---
-
-deploy_static_dev:
+deploy_frontend_prod:
   extends: .utoo_windows_runner
-  stage: deploy_static
-  only:
-    - dev
-  except:
-    - merge_requests
-  variables:
-    UTOO_DEPLOY_TARGET: dev
-    UTOO_DEPLOY_PHASE: static
-  dependencies:
-    - build_frontend_dev
-  when: on_success
-  allow_failure: false
-  script:
-    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
-
-deploy_static_prod:
-  extends: .utoo_windows_runner
-  stage: deploy_static
+  stage: deploy
   only:
     - prod
   except:
@@ -163,9 +222,9 @@ deploy_static_prod:
   variables:
     UTOO_DEPLOY_TARGET: prod
     UTOO_DEPLOY_PHASE: static
-  dependencies:
-    - build_frontend_prod
-  when: on_success
+    UTOO_DEPLOY_SERVICE: frontend
+  when: manual
   allow_failure: false
   script:
+    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-build-frontend.ps1"
     - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"

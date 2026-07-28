@@ -106,18 +106,37 @@ if ([string]::IsNullOrWhiteSpace((Get-CiEnv 'UTOO_STATIC_WEB'))) {
 $SharedConfig = Normalize-DeployLinuxPath (Get-CiEnv 'UTOO_SHARED_CONFIG') '/opt/utoo/config'
 $UpstreamConf = Normalize-DeployLinuxPath (Get-CiEnv 'UTOO_UPSTREAM_CONF') '/usr/local/nginx/conf/utoo_upstream_server.conf'
 $SwitchScript = Normalize-DeployLinuxPath (Get-CiEnv 'UTOO_SWITCH_SCRIPT') '/usr/local/sbin/utoo-switch-active.sh'
+$ServiceUpstreamConfDir = Normalize-DeployLinuxPath (Get-CiEnv 'UTOO_SERVICE_UPSTREAM_CONF_DIR') '/usr/local/nginx/conf'
+$ServiceSwitchScript = Normalize-DeployLinuxPath (Get-CiEnv 'UTOO_SERVICE_SWITCH_SCRIPT') '/usr/local/sbin/utoo-switch-service.sh'
 
-# libs_services | gateway | static | all
+# libs_services | gateway | static | service | all
 $DeployPhase = (Get-CiEnv 'UTOO_DEPLOY_PHASE')
 if ([string]::IsNullOrWhiteSpace($DeployPhase)) { $DeployPhase = 'all' }
 $DeployPhase = $DeployPhase.Trim().ToLowerInvariant()
-$validPhases = @('libs_services', 'gateway', 'static', 'all')
+$validPhases = @('libs_services', 'gateway', 'static', 'service', 'all')
 if ($validPhases -notcontains $DeployPhase) {
 	Write-Error ("Invalid UTOO_DEPLOY_PHASE={0}. Use: {1}" -f $DeployPhase, ($validPhases -join ', '))
 	exit 1
 }
 
-Write-Host ("[deploy] target={0} host={1}@{2} phase={3}" -f $deployTarget, $DeployUser, $deployHost, $DeployPhase)
+$DeployService = (Get-CiEnv 'UTOO_DEPLOY_SERVICE')
+if ([string]::IsNullOrWhiteSpace($DeployService)) { $DeployService = 'all' }
+$DeployService = $DeployService.Trim().ToLowerInvariant()
+$validServices = @('order', 'payment', 'admin_asset', 'admin_platform', 'gateway', 'frontend', 'all')
+if ($validServices -notcontains $DeployService) {
+	Write-Error ("Invalid UTOO_DEPLOY_SERVICE={0}. Use: {1}" -f $DeployService, ($validServices -join ', '))
+	exit 1
+}
+if ($DeployPhase -eq 'service' -and $DeployService -notin @('order', 'payment', 'admin_asset', 'admin_platform', 'gateway')) {
+	Write-Error 'UTOO_DEPLOY_PHASE=service requires UTOO_DEPLOY_SERVICE=order|payment|admin_asset|admin_platform|gateway'
+	exit 1
+}
+if ($DeployPhase -eq 'static' -and $DeployService -notin @('frontend', 'all')) {
+	Write-Error 'UTOO_DEPLOY_PHASE=static requires UTOO_DEPLOY_SERVICE=frontend'
+	exit 1
+}
+
+Write-Host ("[deploy] target={0} host={1}@{2} phase={3} service={4}" -f $deployTarget, $DeployUser, $deployHost, $DeployPhase, $DeployService)
 
 # --- SSH key / known_hosts ---
 $keyFile = Join-Path $env:TEMP ("gitlab_ci_utoo_key_{0}" -f [Guid]::NewGuid().ToString('N'))
@@ -243,13 +262,13 @@ try {
 		}
 	}
 
-	# --- 解析空闲槽（红绿）---
-	$needSlot = ($DeployPhase -eq 'all' -or $DeployPhase -eq 'libs_services' -or $DeployPhase -eq 'gateway')
+	# --- 网关发布：按公网 Nginx upstream 解析空闲槽（保留整套发布回退路径）---
+	$needGatewaySlot = ($DeployPhase -eq 'all' -or $DeployPhase -eq 'libs_services' -or $DeployPhase -eq 'gateway')
 	$Slot = $null
 	$RemoteRoot = $null
 	$GwPort = $null
 
-	if ($needSlot) {
+	if ($needGatewaySlot) {
 		Write-Host ("[deploy] discover active upstream from {0}" -f $UpstreamConf)
 		$activePort = (Invoke-RemoteBashScriptCapture -LocalScriptPath (Join-Path $PSScriptRoot 'ci-remote-discover-upstream-port.sh') -Replacements @{
 			'__CONF__' = $UpstreamConf
@@ -284,6 +303,63 @@ try {
 			$GatewayUnit = @{ Dir = 'qd_test_server_django'; Service = 'qd-gateway-blue'; Port = 18083 }
 		}
 		Write-Host ("[deploy] idle slot={0} root={1} new_gateway={2}" -f $Slot, $RemoteRoot, $GwPort) -ForegroundColor Cyan
+	}
+
+	# --- 单上游服务发布：按该服务的 Nginx upstream 解析自己的空闲槽 ---
+	$SingleServiceUnit = $null
+	if ($DeployPhase -eq 'service') {
+		$serviceDefinitions = @{
+			'order' = @{
+				Dir = 'qd_svc_order'; UnitBase = 'qd-order'; BluePort = 18082; GreenPort = 18182
+				UpstreamFile = 'utoo_upstream_order.conf'
+			}
+			'payment' = @{
+				Dir = 'qd_svc_payment'; UnitBase = 'qd-payment'; BluePort = 18084; GreenPort = 18184
+				UpstreamFile = 'utoo_upstream_payment.conf'
+			}
+			'admin_asset' = @{
+				Dir = 'qd_svc_admin_asset'; UnitBase = 'qd-admin-asset'; BluePort = 18090; GreenPort = 18190
+				UpstreamFile = 'utoo_upstream_admin_asset.conf'
+			}
+			'admin_platform' = @{
+				Dir = 'qd_svc_admin_platform'; UnitBase = 'qd-admin-platform'; BluePort = 18091; GreenPort = 18191
+				UpstreamFile = 'utoo_upstream_admin_platform.conf'
+			}
+		}
+		$definition = $serviceDefinitions[$DeployService]
+		if ($null -eq $definition) {
+			throw "No independent deployment definition for service: $DeployService"
+		}
+
+		$serviceConf = "{0}/{1}" -f $ServiceUpstreamConfDir, $definition.UpstreamFile
+		$portRegex = "{0}|{1}" -f $definition.BluePort, $definition.GreenPort
+		Write-Host ("[deploy] discover active {0} upstream from {1}" -f $DeployService, $serviceConf)
+		$activePort = (Invoke-RemoteBashScriptCapture -LocalScriptPath (Join-Path $PSScriptRoot 'ci-remote-discover-service-port.sh') -Replacements @{
+			'__CONF__' = $serviceConf
+			'__PORTS__' = $portRegex
+			'__DEFAULT_PORT__' = [string]$definition.BluePort
+		}).Trim()
+		if ($activePort -notmatch ("^({0})$" -f $portRegex)) {
+			Write-Host ("[deploy][warn] unexpected active {0} port '{1}', fallback {2}" -f $DeployService, $activePort, $definition.BluePort) -ForegroundColor Yellow
+			$activePort = [string]$definition.BluePort
+		}
+
+		if ($activePort -eq [string]$definition.BluePort) {
+			$Slot = 'green'
+			$RemoteRoot = '/opt/utoo-green'
+			$targetPort = $definition.GreenPort
+		} else {
+			$Slot = 'blue'
+			$RemoteRoot = '/opt/utoo-blue'
+			$targetPort = $definition.BluePort
+		}
+		$SingleServiceUnit = @{
+			Dir = $definition.Dir
+			Service = ("{0}-{1}" -f $definition.UnitBase, $Slot)
+			Port = $targetPort
+			UpstreamFile = $definition.UpstreamFile
+		}
+		Write-Host ("[deploy] active {0}=:{1}; deploy {2} to idle {3}=:{4}" -f $DeployService, $activePort, $SingleServiceUnit.Service, $Slot, $targetPort) -ForegroundColor Cyan
 	}
 
 	function Deploy-DjangoUnit {
@@ -335,8 +411,24 @@ try {
 
 	$doLibsServices = ($DeployPhase -eq 'all' -or $DeployPhase -eq 'libs_services')
 	$doGateway = ($DeployPhase -eq 'all' -or $DeployPhase -eq 'gateway')
+	$doSingleService = ($DeployPhase -eq 'service')
 	$doStatic = ($DeployPhase -eq 'all' -or $DeployPhase -eq 'static')
 	$script:StagedDistTar = $null
+
+	if ($doSingleService) {
+		Write-Host ("[deploy] sync qd_libs_common -> {0} for {1}" -f $RemoteRoot, $DeployService)
+		Sync-DirToRemote `
+			-LocalDir (Join-Path $root 'qd_libs_common') `
+			-RemoteDir ("{0}/qd_libs_common" -f $RemoteRoot) `
+			-Exclude @('.venv', '__pycache__', '*.pyc', '.git', '*.egg-info') `
+			-PreserveNames @('.keep')
+		Invoke-RemoteSudo ("mkdir -p {0}/config {1}" -f $RemoteRoot, $SharedConfig)
+		Deploy-DjangoUnit -Unit $SingleServiceUnit -SlotRoot $RemoteRoot
+
+		Write-Host ("[deploy] switch {0} upstream -> {1} via {2}" -f $DeployService, $SingleServiceUnit.Port, $ServiceSwitchScript)
+		Invoke-RemoteSudo ("/bin/bash '{0}' {1} {2}" -f $ServiceSwitchScript, $DeployService, $SingleServiceUnit.Port)
+		Write-Host ("[deploy] phase service done: {0}." -f $DeployService)
+	}
 
 	if ($doLibsServices) {
 		Write-Host ("[deploy] sync qd_libs_common -> {0}" -f $RemoteRoot)

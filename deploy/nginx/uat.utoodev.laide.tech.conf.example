@@ -12,6 +12,9 @@ upstream utoo_gateway {
     keepalive 32;
 }
 
+# Stable local gateways for independently switched backend services.
+include /usr/local/nginx/conf/utoo-internal-upstreams.conf;
+
 server {
     listen 80;
     server_name uat.utoodev.laide.tech;

@@ -2,19 +2,25 @@
 
 **本流水线专用于 Utoo 微服务 monorepo，与工厂 EMKU 发版完全分开**：独立 Runner tag（`utoo-windows`）、独立 Variables、独立服务器目录（`/opt/utoo-blue` / `/opt/utoo-green`）。**禁止**使用 `emku-windows`、`/opt/emku-*`、`emku-switch-*`、`emku_upstream_*` 或 8021/8023/8024/8027。
 
-机制：Windows Shell Runner + SSH → Linux **systemd 裸进程** + **Nginx upstream 切网关端口**（对齐 EMKU「空闲槽发版 → health → 切流 → 再发静态」）。
+机制：Windows Shell Runner + SSH → Linux **systemd 裸进程** + **Nginx upstream 独立切流**。每个上游服务只发布并切换自己的蓝绿实例；gateway 和前端也是独立发布入口。
 
-与本地一致：网关 `.env` 配置 `SVC_*_URL` 后必须启全部本槽上游，否则对应域 **503**。
+与本地一致：网关 `.env` 配置 `SVC_*_URL` 后，对应 upstream 不可用时该域 API 返回 **503**。
 
 ## 红绿架构
 
 ```text
-Nginx（uat.utoodev.laide.tech 等）
-  /api/  → include utoo_upstream_server.conf  → 当前 active 网关端口
+公网 Nginx（uat.utoodev.laide.tech 等）
+  /api/  → utoo_upstream_server.conf → 当前 gateway :18083 或 :18183
   /      → /var/www/utoo-web
 
-/opt/utoo-blue/     网关 :18083 + 上游 18082/84/90/91
-/opt/utoo-green/    网关 :18183 + 上游 18182/84/90/91
+内部 Nginx（仅 127.0.0.1）
+  :19082 → utoo_upstream_order.conf          → order :18082 或 :18182
+  :19084 → utoo_upstream_payment.conf        → payment :18084 或 :18184
+  :19090 → utoo_upstream_admin_asset.conf    → asset :18090 或 :18190
+  :19091 → utoo_upstream_admin_platform.conf → platform :18091 或 :18191
+
+/opt/utoo-blue/     180xx 物理实例
+/opt/utoo-green/    181xx 物理实例
 /opt/utoo/config/shared-database.env   # 双槽共用密钥（CI 不覆盖；各槽 config/ 下可 symlink）
 ```
 
@@ -23,34 +29,28 @@ Nginx（uat.utoodev.laide.tech 等）
 | blue | `/opt/utoo-blue` | **18083** | 18082 | 18084 | 18090 | 18091 | `-blue` |
 | green | `/opt/utoo-green` | **18183** | 18182 | 18184 | 18190 | 18191 | `-green` |
 
-- 每槽网关 `.env` 的 `SVC_*_URL` **只指向本槽上游**。
-- 静态单目录 `/var/www/utoo-web`：**切流成功后再覆盖**。
-- Upstream 小文件：`/usr/local/nginx/conf/utoo_upstream_server.conf`（一行 `server 127.0.0.1:PORT;`）
-- 切流脚本：`/usr/local/sbin/utoo-switch-active.sh <gateway_port>`
+- 两个 gateway `.env` 的 `SVC_*_URL` 均指向稳定内部端口 `19082/84/90/91`。
+- 静态单目录 `/var/www/utoo-web` 独立发布，无蓝绿切流。
+- gateway upstream：`/usr/local/nginx/conf/utoo_upstream_server.conf`（一行 `server 127.0.0.1:PORT;`）。
+- 单服务 upstream：`/usr/local/nginx/conf/utoo_upstream_{service}.conf`。
+- 切流脚本：`utoo-switch-active.sh <gateway_port>` 或 `utoo-switch-service.sh <service> <port>`。
 
 样例见 [`deploy/nginx/`](nginx/)、[`deploy/systemd/`](systemd/)。从单实例迁 139：见 [`MIGRATE-BLUE-GREEN-139.md`](MIGRATE-BLUE-GREEN-139.md)。
 
 ## 发布流程
 
 1. 推送到 `dev` 或 `prod`
-2. GitLab → **CI/CD → Pipelines**（应看到 **4 个 stages**）
-3. 手动 Play **`build_frontend_*`**
-4. 手动 Play **`deploy_services_*`**（打到**空闲槽**：libs + 4 上游）
-5. 其后 **`deploy_gateway_*`**（空闲槽网关 → health → **切 Nginx**）→ **`deploy_static_*`**（解压前端）会自动接着跑
+2. GitLab → **CI/CD → Pipelines**（应看到一个 `deploy` stage 和 **6 个手动按钮**）
+3. 按改动范围选择对应按钮；所有按钮互不自动触发。
 
-| Stage | Job | 作用 |
-|-------|-----|------|
-| `build` | `build_frontend_*` | 构建统一前端 `qd_web_front` dist |
-| `deploy_services` | `deploy_services_*` | 空闲槽：`qd_libs_common` + 4 上游 |
-| `deploy_gateway` | `deploy_gateway_*` | 空闲槽网关 + health + `utoo-switch-active.sh` |
-| `deploy_static` | `deploy_static_*` | `/var/www/utoo-web`（切流后） |
-
-`deploy_services` 内顺序（空闲槽端口）：
-
-1. `qd_svc_order`
-2. `qd_svc_payment`（含原 `/api/wx/*`）
-3. `qd_svc_admin_asset`
-4. `qd_svc_admin_platform`
+| Job | 发布内容 | 切换方式 |
+|-----|----------|----------|
+| `deploy_order_*` | `qd_svc_order` | :18082 ↔ :18182 |
+| `deploy_payment_*` | `qd_svc_payment`，含原微信代理 | :18084 ↔ :18184 |
+| `deploy_admin_asset_*` | `qd_svc_admin_asset` | :18090 ↔ :18190 |
+| `deploy_admin_platform_*` | `qd_svc_admin_platform`，含 entry/invoice | :18091 ↔ :18191 |
+| `deploy_gateway_*` | `qd_test_server_django` | :18083 ↔ :18183 |
+| `deploy_frontend_*` | 构建并发布统一 `qd_web_front` | 更新 `/var/www/utoo-web` |
 
 若 Pipeline 显示 **stuck**：没有 tag=`utoo-windows` 的 Runner，先注册 Runner，不是 stages 少了。
 
@@ -58,22 +58,20 @@ Nginx（uat.utoodev.laide.tech 等）
 
 ## 网关 SVC_*（每槽各自 `.env`）
 
-**蓝** `/opt/utoo-blue/qd_test_server_django/.env`：
+**blue 和 green 均使用相同的服务地址**（gateway 自身 `SERVER_PORT_HTTP` 保持各自 18083 / 18183）：
 
 ```env
 # 勿设 SVC_AUTH_URL
-SVC_ORDER_URL=http://127.0.0.1:18082
-SVC_PAYMENT_URL=http://127.0.0.1:18084
-SVC_WX_URL=http://127.0.0.1:18084
-SVC_ADMIN_ASSET_URL=http://127.0.0.1:18090
-SVC_ADMIN_PLATFORM_URL=http://127.0.0.1:18091
-SVC_INVOICE_URL=http://127.0.0.1:18091
-SVC_ENTRY_URL=http://127.0.0.1:18091
+SVC_ORDER_URL=http://127.0.0.1:19082
+SVC_PAYMENT_URL=http://127.0.0.1:19084
+SVC_WX_URL=http://127.0.0.1:19084
+SVC_ADMIN_ASSET_URL=http://127.0.0.1:19090
+SVC_ADMIN_PLATFORM_URL=http://127.0.0.1:19091
+SVC_INVOICE_URL=http://127.0.0.1:19091
+SVC_ENTRY_URL=http://127.0.0.1:19091
 DEBUG_RELOAD=false
 SERVER_PORT_HTTP=18083
 ```
-
-**绿** 将端口改为 `18182` / `18184` / `18190` / `18191` / 网关 `18183`。
 
 各上游 `.env` 的 `SERVER_PORT_HTTP` 与上表一致。CI **不会**覆盖 `.env` / `shared-database.env`。
 
@@ -93,6 +91,8 @@ SERVER_PORT_HTTP=18083
 | `DEPLOY_USER` / `DEPLOY_HOST` / `SSH_PRIVATE_KEY` | SSH（可 `_DEV` / `_PROD` 后缀） |
 | `UTOO_UPSTREAM_CONF` | 可选，默认 `/usr/local/nginx/conf/utoo_upstream_server.conf` |
 | `UTOO_SWITCH_SCRIPT` | 可选，默认 `/usr/local/sbin/utoo-switch-active.sh` |
+| `UTOO_SERVICE_UPSTREAM_CONF_DIR` | 可选，默认 `/usr/local/nginx/conf` |
+| `UTOO_SERVICE_SWITCH_SCRIPT` | 可选，默认 `/usr/local/sbin/utoo-switch-service.sh` |
 | `UTOO_STATIC_WEB` | 可选，默认 `/var/www/utoo-web` |
 | `UTOO_SHARED_CONFIG` | 可选，默认 `/opt/utoo/config`（共享密钥目录） |
 
@@ -100,7 +100,7 @@ SERVER_PORT_HTTP=18083
 
 ```text
 # /etc/sudoers.d/utoo-gitlab-deploy
-deploy ALL=(root) NOPASSWD: /bin/bash, /usr/bin/bash, /bin/systemctl, /usr/bin/systemctl, /bin/mkdir, /bin/rm, /bin/tar, /usr/bin/tar, /bin/chown, /usr/bin/find, /usr/bin/xargs, /bin/chmod, /usr/local/sbin/utoo-switch-active.sh, /usr/local/nginx/sbin/nginx
+deploy ALL=(root) NOPASSWD: /bin/bash, /usr/bin/bash, /bin/systemctl, /usr/bin/systemctl, /bin/mkdir, /bin/rm, /bin/tar, /usr/bin/tar, /bin/chown, /usr/bin/find, /usr/bin/xargs, /bin/chmod, /usr/local/sbin/utoo-switch-active.sh, /usr/local/sbin/utoo-switch-service.sh, /usr/local/nginx/sbin/nginx
 ```
 
 单元名示例：`qd-order-blue` `qd-order-green` `qd-gateway-blue` `qd-gateway-green` 等（见 systemd 样例）。
@@ -118,10 +118,11 @@ sudo mkdir -p /opt/utoo/config /opt/utoo-blue /opt/utoo-green /var/www/utoo-web
 sudo chown -R deploy:deploy /opt/utoo /opt/utoo-blue /opt/utoo-green /var/www/utoo-web
 # 放置 shared-database.env；各槽 config/ 下 symlink
 # 安装 deploy/systemd/*-{blue,green}.service.example
-# 安装 deploy/nginx/utoo_upstream_server.conf.example + utoo-switch-active.sh.example
+# 安装 gateway upstream、4 个服务 upstream、utoo-internal-upstreams.conf 与两个切流脚本
 ```
 
 ## 回滚
 
-- 再跑一版旧 commit 的 Pipeline（打到当前空闲槽并切流），或
-- 手动：`sudo /usr/local/sbin/utoo-switch-active.sh 18083`（或 `18183`）切回上一槽网关端口
+- 单服务：`sudo /usr/local/sbin/utoo-switch-service.sh order 18082`（按服务替换名称和上一端口）。
+- gateway：`sudo /usr/local/sbin/utoo-switch-active.sh 18083`（或 `18183`）切回上一 gateway。
+- 前端：重新执行上一 commit 的 `deploy_frontend_*`。

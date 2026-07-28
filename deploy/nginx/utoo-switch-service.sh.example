@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Utoo 单服务红绿切流。用法：
+#   sudo utoo-switch-service.sh order 18182
+# 服务：order | payment | admin_asset | admin_platform
+
+set -euo pipefail
+
+SERVICE="${1:-}"
+NEW_PORT="${2:-}"
+NGINX_CONF_DIR="${UTOO_NGINX_CONF_DIR:-/usr/local/nginx/conf}"
+NGINX_BIN="${UTOO_NGINX_BIN:-}"
+
+case "$SERVICE" in
+  order) expected_ports='18082|18182'; conf_name='utoo_upstream_order.conf' ;;
+  payment) expected_ports='18084|18184'; conf_name='utoo_upstream_payment.conf' ;;
+  admin_asset) expected_ports='18090|18190'; conf_name='utoo_upstream_admin_asset.conf' ;;
+  admin_platform) expected_ports='18091|18191'; conf_name='utoo_upstream_admin_platform.conf' ;;
+  *)
+    echo "usage: $0 <order|payment|admin_asset|admin_platform> <port>" >&2
+    exit 1
+    ;;
+esac
+
+if [[ ! "$NEW_PORT" =~ ^($expected_ports)$ ]]; then
+  echo "invalid port for ${SERVICE}: ${NEW_PORT}" >&2
+  exit 1
+fi
+
+if [[ -z "$NGINX_BIN" ]]; then
+  if [[ -x /usr/local/nginx/sbin/nginx ]]; then
+    NGINX_BIN=/usr/local/nginx/sbin/nginx
+  elif command -v nginx >/dev/null 2>&1; then
+    NGINX_BIN=$(command -v nginx)
+  else
+    echo "nginx binary not found; set UTOO_NGINX_BIN" >&2
+    exit 1
+  fi
+fi
+
+CONF="${NGINX_CONF_DIR}/${conf_name}"
+mkdir -p "$(dirname "$CONF")"
+printf 'server 127.0.0.1:%s;\n' "$NEW_PORT" >"$CONF"
+echo "utoo ${SERVICE} upstream -> 127.0.0.1:${NEW_PORT} (${CONF})"
+
+"$NGINX_BIN" -t
+if "$NGINX_BIN" -s reload 2>/dev/null; then
+  echo "nginx reloaded"
+elif [[ -f /usr/local/nginx/conf/nginx.conf ]]; then
+  "$NGINX_BIN" -c /usr/local/nginx/conf/nginx.conf -s reload
+  echo "nginx reloaded (-c conf)"
+else
+  echo "nginx reload failed" >&2
+  exit 1
+fi
