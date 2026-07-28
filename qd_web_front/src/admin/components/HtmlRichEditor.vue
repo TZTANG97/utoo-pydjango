@@ -17,7 +17,6 @@ import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vu
 import AlbumImagePicker from '@admin/components/AlbumImagePicker.vue'
 
 const html = defineModel<string>({ default: '' })
-
 const toolbarHost = ref<HTMLDivElement | null>(null)
 const editorHost = ref<HTMLDivElement | null>(null)
 const editorRef = shallowRef<IDomEditor | null>(null)
