@@ -20,14 +20,7 @@ variables:
   UTOO_STATIC_C: "/var/www/utoo-web"
   UTOO_STATIC_ADMIN: "/var/www/utoo-web"
 
-.windows_ci_clear_ssh_known_hosts:
-  variables:
-    SSH_KNOWN_HOSTS: ""
-    SSH_KNOWN_HOSTS_DEV: ""
-    SSH_KNOWN_HOSTS_PROD: ""
-
 .utoo_windows_runner:
-  extends: .windows_ci_clear_ssh_known_hosts
   tags:
     - utoo-windows
 

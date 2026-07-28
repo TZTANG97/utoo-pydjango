@@ -7,6 +7,7 @@ import 'normalize.css/normalize.css'
 import 'element-plus/dist/index.css'
 import 'nprogress/nprogress.css'
 import '@wangeditor/editor/dist/css/style.css'
+import '@shared/styles/base.css'
 import 'virtual:svg-icons-register'
 
 // C 端全局样式
