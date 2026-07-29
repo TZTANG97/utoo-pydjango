@@ -149,13 +149,30 @@ try {
 
 	$kh = Get-BranchAwareEnv 'SSH_KNOWN_HOSTS'
 	if ([string]::IsNullOrWhiteSpace($kh)) {
-		$scan = & ssh-keyscan -T 20 -t rsa,ecdsa,ed25519 -H $deployHost 2>$null
-		if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace(($scan | Out-String))) {
-			Write-Error "ssh-keyscan failed for $deployHost"
+		# ssh-keyscan writes banners to stderr; with ErrorActionPreference=Stop that becomes NativeCommandError.
+		$sshKeyscan = Join-Path $env:SystemRoot 'System32\OpenSSH\ssh-keyscan.exe'
+		if (-not (Test-Path -LiteralPath $sshKeyscan)) { $sshKeyscan = 'ssh-keyscan' }
+		Write-Host ("[deploy] SSH_KNOWN_HOSTS empty; probing host keys via {0}" -f $sshKeyscan) -ForegroundColor Yellow
+		$prevEap = $ErrorActionPreference
+		$ErrorActionPreference = 'Continue'
+		try {
+			$scanRaw = & $sshKeyscan -T 20 -t rsa,ecdsa,ed25519 -H $deployHost 2>&1
+			$scanExit = $LASTEXITCODE
+		} finally {
+			$ErrorActionPreference = $prevEap
+		}
+		$scanLines = @(
+			$scanRaw |
+				ForEach-Object { "$_" } |
+				Where-Object { $_ -match '^\|1\||^[^\s#]+\s+(ssh-rsa|ssh-ed25519|ecdsa-sha2-)' }
+		)
+		if ($scanExit -ne 0 -or $scanLines.Count -eq 0) {
+			Write-Error ("ssh-keyscan failed for {0} (exit={1}). Set GitLab CI variable SSH_KNOWN_HOSTS_DEV to avoid auto scan.`n{2}" -f $deployHost, $scanExit, (($scanRaw | Out-String).Trim()))
 			exit 1
 		}
-		$scan | Set-Content -LiteralPath $knownHostsFile -Encoding ascii
+		$scanLines | Set-Content -LiteralPath $knownHostsFile -Encoding ascii
 	} else {
+		Write-Host '[deploy] using SSH_KNOWN_HOSTS from CI variables'
 		$kh | Set-Content -LiteralPath $knownHostsFile -Encoding ascii
 	}
 
