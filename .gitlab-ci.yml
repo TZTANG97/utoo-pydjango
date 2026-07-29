@@ -5,7 +5,7 @@
 # order / payment / admin_asset / admin_platform / gateway / frontend
 # 前四者按各自 upstream 的空闲蓝绿实例发布并切流；gateway 独立切公网入口。
 #
-# Runner shell 已是 powershell，脚本直接 & 调用，勿再嵌套 powershell.exe。
+# Runner shell 已是 powershell；用 CI_PROJECT_DIR 绝对路径调用脚本，避免相对路径找不到。
 # 禁止复用 emku-windows /opt/emku-* / emku_upstream_*
 stages:
   - deploy
@@ -25,6 +25,29 @@ variables:
   tags:
     - utoo-windows
 
+.utoo_run_deploy: &utoo_run_deploy |
+  $ErrorActionPreference = 'Stop'
+  $root = if (-not [string]::IsNullOrWhiteSpace($env:CI_PROJECT_DIR)) { $env:CI_PROJECT_DIR.Trim().TrimEnd('\','/') } else { (Get-Location).Path }
+  Set-Location -LiteralPath $root
+  $deployScript = Join-Path $root 'deploy\utoo-windows\ci-deploy-windows.ps1'
+  if (-not (Test-Path -LiteralPath $deployScript)) {
+    Write-Host ("[ci] cwd={0}" -f (Get-Location).Path)
+    Get-ChildItem -Name | Select-Object -First 30
+    throw ("Missing deploy script: {0}" -f $deployScript)
+  }
+  & $deployScript
+
+.utoo_run_frontend: &utoo_run_frontend |
+  $ErrorActionPreference = 'Stop'
+  $root = if (-not [string]::IsNullOrWhiteSpace($env:CI_PROJECT_DIR)) { $env:CI_PROJECT_DIR.Trim().TrimEnd('\','/') } else { (Get-Location).Path }
+  Set-Location -LiteralPath $root
+  $buildScript = Join-Path $root 'deploy\utoo-windows\ci-build-frontend.ps1'
+  $deployScript = Join-Path $root 'deploy\utoo-windows\ci-deploy-windows.ps1'
+  if (-not (Test-Path -LiteralPath $buildScript)) { throw ("Missing build script: {0}" -f $buildScript) }
+  if (-not (Test-Path -LiteralPath $deployScript)) { throw ("Missing deploy script: {0}" -f $deployScript) }
+  & $buildScript
+  & $deployScript
+
 # --- dev：6 个独立发布入口 ---
 
 deploy_order_dev:
@@ -41,7 +64,7 @@ deploy_order_dev:
   when: manual
   allow_failure: false
   script:
-    - '& .\deploy\utoo-windows\ci-deploy-windows.ps1'
+    - *utoo_run_deploy
 
 deploy_payment_dev:
   extends: .utoo_windows_runner
@@ -57,7 +80,7 @@ deploy_payment_dev:
   when: manual
   allow_failure: false
   script:
-    - '& .\deploy\utoo-windows\ci-deploy-windows.ps1'
+    - *utoo_run_deploy
 
 deploy_admin_asset_dev:
   extends: .utoo_windows_runner
@@ -73,7 +96,7 @@ deploy_admin_asset_dev:
   when: manual
   allow_failure: false
   script:
-    - '& .\deploy\utoo-windows\ci-deploy-windows.ps1'
+    - *utoo_run_deploy
 
 deploy_admin_platform_dev:
   extends: .utoo_windows_runner
@@ -89,7 +112,7 @@ deploy_admin_platform_dev:
   when: manual
   allow_failure: false
   script:
-    - '& .\deploy\utoo-windows\ci-deploy-windows.ps1'
+    - *utoo_run_deploy
 
 deploy_gateway_dev:
   extends: .utoo_windows_runner
@@ -105,7 +128,7 @@ deploy_gateway_dev:
   when: manual
   allow_failure: false
   script:
-    - '& .\deploy\utoo-windows\ci-deploy-windows.ps1'
+    - *utoo_run_deploy
 
 deploy_frontend_dev:
   extends: .utoo_windows_runner
@@ -121,8 +144,7 @@ deploy_frontend_dev:
   when: manual
   allow_failure: false
   script:
-    - '& .\deploy\utoo-windows\ci-build-frontend.ps1'
-    - '& .\deploy\utoo-windows\ci-deploy-windows.ps1'
+    - *utoo_run_frontend
 
 # --- prod：6 个独立发布入口 ---
 
@@ -140,7 +162,7 @@ deploy_order_prod:
   when: manual
   allow_failure: false
   script:
-    - '& .\deploy\utoo-windows\ci-deploy-windows.ps1'
+    - *utoo_run_deploy
 
 deploy_payment_prod:
   extends: .utoo_windows_runner
@@ -156,7 +178,7 @@ deploy_payment_prod:
   when: manual
   allow_failure: false
   script:
-    - '& .\deploy\utoo-windows\ci-deploy-windows.ps1'
+    - *utoo_run_deploy
 
 deploy_admin_asset_prod:
   extends: .utoo_windows_runner
@@ -172,7 +194,7 @@ deploy_admin_asset_prod:
   when: manual
   allow_failure: false
   script:
-    - '& .\deploy\utoo-windows\ci-deploy-windows.ps1'
+    - *utoo_run_deploy
 
 deploy_admin_platform_prod:
   extends: .utoo_windows_runner
@@ -188,7 +210,7 @@ deploy_admin_platform_prod:
   when: manual
   allow_failure: false
   script:
-    - '& .\deploy\utoo-windows\ci-deploy-windows.ps1'
+    - *utoo_run_deploy
 
 deploy_gateway_prod:
   extends: .utoo_windows_runner
@@ -204,7 +226,7 @@ deploy_gateway_prod:
   when: manual
   allow_failure: false
   script:
-    - '& .\deploy\utoo-windows\ci-deploy-windows.ps1'
+    - *utoo_run_deploy
 
 deploy_frontend_prod:
   extends: .utoo_windows_runner
@@ -220,5 +242,4 @@ deploy_frontend_prod:
   when: manual
   allow_failure: false
   script:
-    - '& .\deploy\utoo-windows\ci-build-frontend.ps1'
-    - '& .\deploy\utoo-windows\ci-deploy-windows.ps1'
+    - *utoo_run_frontend
