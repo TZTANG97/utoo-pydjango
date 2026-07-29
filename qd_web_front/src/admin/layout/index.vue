@@ -200,15 +200,21 @@ async function handleLogout() {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-height: 56px;
+  line-height: 1;
 }
 
 .page-title {
   font-size: 16px;
   font-weight: 600;
+  color: #1f2937;
+  line-height: 1.2;
 }
 
 .user-name {
-  color: #606266;
+  color: #4b5563;
+  font-size: 14px;
+  line-height: 1.2;
 }
 
 .app-main {

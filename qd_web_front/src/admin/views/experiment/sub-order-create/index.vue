@@ -363,7 +363,7 @@ function goBack() {
   if (saleOrderId) {
     router.push({ name: 'ExperimentOrderDetail', params: { id: saleOrderId } })
   } else {
-    router.push('/experiment/subcontract-orders')
+    router.push('/admin/experiment/subcontract-orders')
   }
 }
 

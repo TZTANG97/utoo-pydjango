@@ -43,6 +43,16 @@ def get_string(key: str) -> str | None:
         return None
 
 
+def key_exists(key: str) -> bool:
+    if not key:
+        return False
+    try:
+        return bool(get_redis().exists(key))
+    except Exception as exc:
+        logger.warning("redis exists failed: %s", exc)
+        return False
+
+
 def try_acquire_lock(key: str, *, ttl_sec: int = 120) -> str | None:
     token = uuid.uuid4().hex
     try:

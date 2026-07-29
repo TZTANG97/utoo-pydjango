@@ -248,9 +248,9 @@ const dynamicDomain = async function() {
 	if (env === 'release') {
 		Vue.prototype.$baseUrl = 'https://utootesting.com/console'
 	} else {
-		// 开发/体验：本机 Django 网关（路径仍用 /wx/*.ajax，前缀 /api）
-		// Vue.prototype.$baseUrl = 'https://uat.utoo.laide.tech/console'
-		Vue.prototype.$baseUrl = 'http://127.0.0.1:18083/api'
+		// 开发/体验：连 UAT 网关（暂不走本机后端）
+		// Vue.prototype.$baseUrl = 'http://127.0.0.1:18083/api'
+		Vue.prototype.$baseUrl = 'https://uat.utoodev.laide.tech/api'
 	}
 }
 

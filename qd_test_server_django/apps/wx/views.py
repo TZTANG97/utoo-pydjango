@@ -2,6 +2,7 @@ import logging
 from urllib.parse import unquote
 
 from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
@@ -12,6 +13,7 @@ from apps.core.pc_ajax import pc_ajax_view
 from apps.core.responses import api_fail, api_ok
 from apps.core.wx_forward import forward_wx_first
 from apps.wx.services import feedback as feedback_svc
+from apps.wx.services import gzh_callback as gzh_cb
 from apps.wx.services import qr_login as qr_svc
 from apps.wx.services import reservation_detail as reservation_svc
 
@@ -51,6 +53,12 @@ def qr_scan_status_check(request: Request):
     ticket = unquote(str(request.query_params.get("ticket") or ""))
     res, res_msg, obj = qr_svc.check_qr_scan_status(ticket)
     return Response(_legacy_ajax(res, res_msg, obj))
+
+
+@csrf_exempt
+def wechatconfig(request):
+    """公众号服务器 URL 回调（验签 + 扫码事件）。始终本地处理，不走 SVC_WX JSON 转发。"""
+    return gzh_cb.handle_wechatconfig(request)
 
 
 @forward_wx_first

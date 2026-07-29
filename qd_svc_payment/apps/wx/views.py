@@ -2,6 +2,7 @@ import logging
 from urllib.parse import unquote
 
 from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
@@ -9,6 +10,7 @@ from rest_framework.response import Response
 
 from apps.auth_support.helpers import get_current_user_from_request, is_exp_customer
 from apps.wx.services import feedback as feedback_svc
+from apps.wx.services import gzh_callback as gzh_cb
 from apps.wx.services import qr_login as qr_svc
 from apps.wx.services import reservation_detail as reservation_svc
 from qd_common.responses import api_fail, api_ok
@@ -47,6 +49,11 @@ def qr_scan_status_check(request: Request):
     ticket = unquote(str(request.query_params.get("ticket") or ""))
     res, res_msg, obj = qr_svc.check_qr_scan_status(ticket)
     return Response(_legacy_ajax(res, res_msg, obj))
+
+
+@csrf_exempt
+def wechatconfig(request):
+    return gzh_cb.handle_wechatconfig(request)
 
 
 @api_view(["GET"])

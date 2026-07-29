@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from apps.auth_support.services.customer import CustomerUserService
+from apps.auth_pc.services.customer import CustomerUserService
 from apps.core.db_utils import fetch_all, fetch_one, scalar
 from apps.core.services.sysconfig import get_config_row, image_web_server
 from apps.orders.constants import STATUS_STR

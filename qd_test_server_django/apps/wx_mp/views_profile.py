@@ -218,13 +218,70 @@ def secure_bind_stub(request: Request):
     return Response(ajax_fail("安全绑定尚未在 Django 网关实现"))
 
 
+def _param(request: Request, name: str, default: str = "") -> str:
+    q = request.query_params.get(name)
+    if q is not None and str(q) != "":
+        return str(q)
+    body = request.data if isinstance(request.data, dict) else {}
+    v = body.get(name)
+    return str(v) if v is not None else default
+
+
 @api_view(["GET", "POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
-def get_user_info_stub(request: Request):
-    """扫码登录一键授权：复杂依赖公众号 ticket，暂返回明确错误。"""
-    del request
-    return Response(ajax_fail("扫码 getUserInfo 尚未在 Django 网关实现，请使用手机号快捷登录"))
+def get_user_info(request: Request):
+    """扫码登录：小程序授权手机号 → 登录/注册。"""
+    from apps.wx_mp.services import qr_bind
+
+    code = _param(request, "code")
+    openid = _param(request, "openid")
+    ticket = _param(request, "ticket")
+    try:
+        ok, msg, obj = qr_bind.get_user_info(code=code, openid=openid, ticket=ticket)
+    except DatabaseError as exc:
+        logger.exception("getUserInfo db error: %s", exc)
+        return Response(ajax_fail("数据库不可用"))
+    if ok:
+        return Response(ajax_ok(obj, msg))
+    return Response(ajax_fail(msg))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def user_info_add(request: Request):
+    """扫码登录：补姓名/职位并绑定 wx_openid，供 PC 轮询登录。"""
+    from apps.wx_mp.services import qr_bind
+
+    token = (request.META.get("HTTP_TOKEN") or _param(request, "token") or "").strip()
+    try:
+        ok, msg = qr_bind.user_info_add(
+            openid=_param(request, "openid"),
+            name=_param(request, "name"),
+            work=_param(request, "work"),
+            mobile=_param(request, "mobile"),
+            ticket=_param(request, "ticket"),
+            token=token,
+        )
+    except DatabaseError as exc:
+        logger.exception("userInfoAdd db error: %s", exc)
+        return Response(ajax_fail("数据库不可用"))
+    if ok:
+        return Response(ajax_ok(None, msg))
+    return Response(ajax_fail(msg))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def ticket_is_exist(request: Request):
+    from apps.wx_mp.services import qr_bind
+
+    ok, msg = qr_bind.ticket_is_exist(_param(request, "ticket"))
+    if ok:
+        return Response(ajax_ok(None, msg))
+    return Response(ajax_fail(msg))
 
 
 @api_view(["GET", "POST"])

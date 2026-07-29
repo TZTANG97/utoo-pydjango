@@ -79,3 +79,17 @@ def find_user_by_wx_openid(openid: str) -> int | None:
         {"oid": openid},
     )
     return int(row["id"]) if row else None
+
+
+def find_user_brief_by_wx_openid(openid: str) -> dict[str, Any] | None:
+    if not openid:
+        return None
+    return fetch_one(
+        """
+        SELECT id, mobile, job, trueName, wx_openid
+        FROM exp_user
+        WHERE deleteStatus = 0 AND wx_openid = %(oid)s
+        LIMIT 1
+        """,
+        {"oid": openid},
+    )

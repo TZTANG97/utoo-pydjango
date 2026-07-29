@@ -67,7 +67,7 @@ def purchase_order_detail(request: Request):
 @permission_classes([AllowAny])
 def orders_by_sale_order_id(request: Request):
     """子订单列表 — 客户按归属过滤；员工走 dpt。返回顶层 DataTables。"""
-    from apps.auth_support.helpers import get_current_user_from_request, is_exp_customer
+    from apps.auth_pc.views import get_current_user_from_request, is_exp_customer
 
     q = request.query_params
     params = parse_ajax_params(request)

@@ -62,7 +62,9 @@ urlpatterns = [
     path("bindaccount.ajax", vp.bind_account_stub),
     path("bindaccountTZ.ajax", vp.bind_account_stub),
     path("securebind.ajax", vp.secure_bind_stub),
-    path("getUserInfo.ajax", vp.get_user_info_stub),
+    path("getUserInfo.ajax", vp.get_user_info),
+    path("userInfoAdd.ajax", vp.user_info_add),
+    path("ticketIsExist.ajax", vp.ticket_is_exist),
     path("TuZhebannerList.ajax", vp.tuzhe_banner_list),
     path("selFirAndSecClassListTuZhe.ajax", vp.sel_fir_and_sec_class_list_tuzhe),
     path("getOrderCount.ajax", views_order_count.get_order_count),
@@ -82,8 +84,6 @@ _STUBS = [
     "selBankList.ajax",
     "selSecondClassList.ajax",
     "signInIntegral.ajax",
-    "ticketIsExist.ajax",
-    "userInfoAdd.ajax",
 ]
 
 urlpatterns += [path(name, vp.not_implemented) for name in _STUBS]

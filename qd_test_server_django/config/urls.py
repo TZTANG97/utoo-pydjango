@@ -89,7 +89,7 @@ def _order_extra_patterns():
     ]
 
 
-# 仅这 4 个仍可转发到 payment；小程序其余 /api/wx/* 走网关 apps.wx_mp
+# 可转发到 payment 的扫码/预约/反馈接口；wechatconfig 始终网关本地（需纯文本/XML）
 _WX_PROXY_EXACT = (
     "WeChatQRCodeGenerator.ajax",
     "qrScanStatusCheck.ajax",
@@ -100,6 +100,10 @@ _WX_PROXY_EXACT = (
 
 def _wx_patterns():
     patterns = []
+    # 公众号服务器回调必须本地处理（echostr/XML），与 payment 共用 Redis
+    from apps.wx.views import wechatconfig
+
+    patterns.append(path("api/wx/wechatconfig.ajax", wechatconfig))
     if svc_wx_enabled():
         from apps.core.wx_forward import proxy_wx_request
 
