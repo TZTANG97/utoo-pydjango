@@ -139,13 +139,45 @@ if ($DeployPhase -eq 'static' -and $DeployService -notin @('frontend', 'all')) {
 Write-Host ("[deploy] target={0} host={1}@{2} phase={3} service={4}" -f $deployTarget, $DeployUser, $deployHost, $DeployPhase, $DeployService)
 
 # --- SSH key / known_hosts ---
-$keyFile = Join-Path $env:TEMP ("gitlab_ci_utoo_key_{0}" -f [Guid]::NewGuid().ToString('N'))
-$knownHostsFile = Join-Path $env:TEMP ("gitlab_ci_utoo_kh_{0}" -f [Guid]::NewGuid().ToString('N'))
+# Prefer job workspace over C:\Windows\TEMP so service-account ACL stays consistent.
+$sshWorkDir = Join-Path $env:TEMP 'utoo-ci-ssh'
+if (-not [string]::IsNullOrWhiteSpace($env:CI_PROJECT_DIR)) {
+	$ciDir = $env:CI_PROJECT_DIR.Trim().TrimEnd('\', '/')
+	if (Test-Path -LiteralPath $ciDir) {
+		$sshWorkDir = Join-Path $ciDir '.ci-ssh'
+	}
+}
+New-Item -ItemType Directory -Force -Path $sshWorkDir | Out-Null
+$keyFile = Join-Path $sshWorkDir ("gitlab_ci_utoo_key_{0}" -f [Guid]::NewGuid().ToString('N'))
+$knownHostsFile = Join-Path $sshWorkDir ("gitlab_ci_utoo_kh_{0}" -f [Guid]::NewGuid().ToString('N'))
+
+function Protect-UtooSshPrivateKeyFile([string]$Path) {
+	# OpenSSH on Windows rejects keys readable by other users.
+	# Do NOT use $env:USERNAME — GitLab Runner as a service often differs from that value.
+	$identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+	Write-Host ("[deploy] ssh key ACL owner: {0}" -f $identity.Name)
+	$acl = Get-Acl -LiteralPath $Path
+	$acl.SetAccessRuleProtection($true, $false)
+	foreach ($access in @($acl.Access)) {
+		[void]$acl.RemoveAccessRule($access)
+	}
+	$rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+		$identity.User,
+		[System.Security.AccessControl.FileSystemRights]::FullControl,
+		[System.Security.AccessControl.AccessControlType]::Allow
+	)
+	$acl.AddAccessRule($rule)
+	Set-Acl -LiteralPath $Path -AclObject $acl
+}
+
 try {
 	$normalizedKey = ($sshKey -replace "`r`n", "`n" -replace "`r", "`n").Trim() + "`n"
+	if ($normalizedKey -notmatch '(?m)^-----BEGIN .*PRIVATE KEY-----') {
+		Write-Error 'SSH_PRIVATE_KEY_DEV/SSH_PRIVATE_KEY does not look like a private key PEM. Check GitLab CI variable value (not .pub).'
+		exit 1
+	}
 	[IO.File]::WriteAllText($keyFile, $normalizedKey, [Text.UTF8Encoding]::new($false))
-	icacls $keyFile /inheritance:r | Out-Null
-	icacls $keyFile /grant:r "${env:USERNAME}:(R)" | Out-Null
+	Protect-UtooSshPrivateKeyFile -Path $keyFile
 
 	$kh = Get-BranchAwareEnv 'SSH_KNOWN_HOSTS'
 	if ([string]::IsNullOrWhiteSpace($kh)) {
