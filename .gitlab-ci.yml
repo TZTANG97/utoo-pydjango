@@ -5,7 +5,9 @@
 # order / payment / admin_asset / admin_platform / gateway / frontend
 # 前四者按各自 upstream 的空闲蓝绿实例发布并切流；gateway 独立切公网入口。
 #
-# Runner shell 已是 powershell；用 CI_PROJECT_DIR 绝对路径调用脚本，避免相对路径找不到。
+# Runner shell 已是 powershell。
+# 注意：勿写 $env:CI_*（GitLab 会先展开 $env 为空，导致 :CI_* / UnexpectedToken，并落到 Runner 安装目录）。
+# 用 '$CI_PROJECT_DIR' 让 GitLab 注入路径；其余 PowerShell 变量写成 $$xxx。
 # 禁止复用 emku-windows /opt/emku-* / emku_upstream_*
 stages:
   - deploy
@@ -25,28 +27,35 @@ variables:
   tags:
     - utoo-windows
 
+# $$ → 交给 PowerShell 的 $；'$CI_PROJECT_DIR' → GitLab 替换为真实仓库路径（单引号避免 \b 被 PowerShell 转义）
 .utoo_run_deploy: &utoo_run_deploy |
-  $ErrorActionPreference = 'Stop'
-  $root = if (-not [string]::IsNullOrWhiteSpace($env:CI_PROJECT_DIR)) { $env:CI_PROJECT_DIR.Trim().TrimEnd('\','/') } else { (Get-Location).Path }
-  Set-Location -LiteralPath $root
-  $deployScript = Join-Path $root 'deploy\utoo-windows\ci-deploy-windows.ps1'
-  if (-not (Test-Path -LiteralPath $deployScript)) {
+  $$ErrorActionPreference = 'Stop'
+  $$root = '$CI_PROJECT_DIR'
+  if ([string]::IsNullOrWhiteSpace($$root)) { throw 'CI_PROJECT_DIR is empty after GitLab expansion' }
+  $$root = $$root.Trim().TrimEnd('\')
+  Write-Host ("[ci] project_dir={0}" -f $$root)
+  Set-Location -LiteralPath $$root
+  $$deployScript = Join-Path $$root 'deploy\utoo-windows\ci-deploy-windows.ps1'
+  if (-not (Test-Path -LiteralPath $$deployScript)) {
     Write-Host ("[ci] cwd={0}" -f (Get-Location).Path)
-    Get-ChildItem -Name | Select-Object -First 30
-    throw ("Missing deploy script: {0}" -f $deployScript)
+    Get-ChildItem -Force -Name | Select-Object -First 40
+    throw ("Missing deploy script: {0}" -f $$deployScript)
   }
-  & $deployScript
+  & $$deployScript
 
 .utoo_run_frontend: &utoo_run_frontend |
-  $ErrorActionPreference = 'Stop'
-  $root = if (-not [string]::IsNullOrWhiteSpace($env:CI_PROJECT_DIR)) { $env:CI_PROJECT_DIR.Trim().TrimEnd('\','/') } else { (Get-Location).Path }
-  Set-Location -LiteralPath $root
-  $buildScript = Join-Path $root 'deploy\utoo-windows\ci-build-frontend.ps1'
-  $deployScript = Join-Path $root 'deploy\utoo-windows\ci-deploy-windows.ps1'
-  if (-not (Test-Path -LiteralPath $buildScript)) { throw ("Missing build script: {0}" -f $buildScript) }
-  if (-not (Test-Path -LiteralPath $deployScript)) { throw ("Missing deploy script: {0}" -f $deployScript) }
-  & $buildScript
-  & $deployScript
+  $$ErrorActionPreference = 'Stop'
+  $$root = '$CI_PROJECT_DIR'
+  if ([string]::IsNullOrWhiteSpace($$root)) { throw 'CI_PROJECT_DIR is empty after GitLab expansion' }
+  $$root = $$root.Trim().TrimEnd('\')
+  Write-Host ("[ci] project_dir={0}" -f $$root)
+  Set-Location -LiteralPath $$root
+  $$buildScript = Join-Path $$root 'deploy\utoo-windows\ci-build-frontend.ps1'
+  $$deployScript = Join-Path $$root 'deploy\utoo-windows\ci-deploy-windows.ps1'
+  if (-not (Test-Path -LiteralPath $$buildScript)) { throw ("Missing build script: {0}" -f $$buildScript) }
+  if (-not (Test-Path -LiteralPath $$deployScript)) { throw ("Missing deploy script: {0}" -f $$deployScript) }
+  & $$buildScript
+  & $$deployScript
 
 # --- dev：6 个独立发布入口 ---
 
