@@ -1,4 +1,4 @@
-# Resolve repo root in GitLab CI (Windows bash runner may set wrong CI_PROJECT_DIR).
+﻿# Resolve repo root in GitLab CI (Windows bash runner may set wrong CI_PROJECT_DIR).
 function Get-UtooCiProjectRoot {
 	$fromScript = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 	$cwd = (Get-Location).Path

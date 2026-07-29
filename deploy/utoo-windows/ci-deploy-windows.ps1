@@ -1,4 +1,4 @@
-# GitLab CI：Windows Shell Runner + OpenSSH → Linux 红绿双实例
+﻿# GitLab CI：Windows Shell Runner + OpenSSH → Linux 红绿双实例
 # 空闲槽发版 → health → Nginx 切网关 → 再发静态（对齐 EMKU 流程；路径/脚本与 EMKU 隔离）
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'ci-project-root.ps1')

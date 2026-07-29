@@ -5,6 +5,7 @@
 # order / payment / admin_asset / admin_platform / gateway / frontend
 # 前四者按各自 upstream 的空闲蓝绿实例发布并切流；gateway 独立切公网入口。
 #
+# Runner shell 已是 powershell，脚本直接 & 调用，勿再嵌套 powershell.exe。
 # 禁止复用 emku-windows /opt/emku-* / emku_upstream_*
 stages:
   - deploy
@@ -40,7 +41,7 @@ deploy_order_dev:
   when: manual
   allow_failure: false
   script:
-    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
+    - '& .\deploy\utoo-windows\ci-deploy-windows.ps1'
 
 deploy_payment_dev:
   extends: .utoo_windows_runner
@@ -56,7 +57,7 @@ deploy_payment_dev:
   when: manual
   allow_failure: false
   script:
-    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
+    - '& .\deploy\utoo-windows\ci-deploy-windows.ps1'
 
 deploy_admin_asset_dev:
   extends: .utoo_windows_runner
@@ -72,7 +73,7 @@ deploy_admin_asset_dev:
   when: manual
   allow_failure: false
   script:
-    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
+    - '& .\deploy\utoo-windows\ci-deploy-windows.ps1'
 
 deploy_admin_platform_dev:
   extends: .utoo_windows_runner
@@ -88,7 +89,7 @@ deploy_admin_platform_dev:
   when: manual
   allow_failure: false
   script:
-    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
+    - '& .\deploy\utoo-windows\ci-deploy-windows.ps1'
 
 deploy_gateway_dev:
   extends: .utoo_windows_runner
@@ -104,7 +105,7 @@ deploy_gateway_dev:
   when: manual
   allow_failure: false
   script:
-    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
+    - '& .\deploy\utoo-windows\ci-deploy-windows.ps1'
 
 deploy_frontend_dev:
   extends: .utoo_windows_runner
@@ -120,8 +121,8 @@ deploy_frontend_dev:
   when: manual
   allow_failure: false
   script:
-    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-build-frontend.ps1"
-    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
+    - '& .\deploy\utoo-windows\ci-build-frontend.ps1'
+    - '& .\deploy\utoo-windows\ci-deploy-windows.ps1'
 
 # --- prod：6 个独立发布入口 ---
 
@@ -139,7 +140,7 @@ deploy_order_prod:
   when: manual
   allow_failure: false
   script:
-    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
+    - '& .\deploy\utoo-windows\ci-deploy-windows.ps1'
 
 deploy_payment_prod:
   extends: .utoo_windows_runner
@@ -155,7 +156,7 @@ deploy_payment_prod:
   when: manual
   allow_failure: false
   script:
-    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
+    - '& .\deploy\utoo-windows\ci-deploy-windows.ps1'
 
 deploy_admin_asset_prod:
   extends: .utoo_windows_runner
@@ -171,7 +172,7 @@ deploy_admin_asset_prod:
   when: manual
   allow_failure: false
   script:
-    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
+    - '& .\deploy\utoo-windows\ci-deploy-windows.ps1'
 
 deploy_admin_platform_prod:
   extends: .utoo_windows_runner
@@ -187,7 +188,7 @@ deploy_admin_platform_prod:
   when: manual
   allow_failure: false
   script:
-    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
+    - '& .\deploy\utoo-windows\ci-deploy-windows.ps1'
 
 deploy_gateway_prod:
   extends: .utoo_windows_runner
@@ -203,7 +204,7 @@ deploy_gateway_prod:
   when: manual
   allow_failure: false
   script:
-    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
+    - '& .\deploy\utoo-windows\ci-deploy-windows.ps1'
 
 deploy_frontend_prod:
   extends: .utoo_windows_runner
@@ -219,5 +220,5 @@ deploy_frontend_prod:
   when: manual
   allow_failure: false
   script:
-    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-build-frontend.ps1"
-    - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "deploy/utoo-windows/ci-deploy-windows.ps1"
+    - '& .\deploy\utoo-windows\ci-build-frontend.ps1'
+    - '& .\deploy\utoo-windows\ci-deploy-windows.ps1'
