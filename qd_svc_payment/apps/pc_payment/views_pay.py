@@ -15,6 +15,11 @@ from apps.payments.services.pay_notify import (
     dispatch_pay_notify,
 )
 from apps.payments.services.recharge_apply import add_recharge
+from apps.payments.services.recharge_list import (
+    sel_default_account,
+    sel_recharge_list_for_user,
+    sel_recharge_status,
+)
 from apps.payments.services.wechat_prepay import WechatPrepayService
 from apps.payments.services.wx_native_client import parse_notify, query_by_transaction_id
 from apps.payments.services.wx_settings import wx_pay_configured
@@ -24,6 +29,43 @@ def _pay_form_params(request: Request) -> dict[str, str]:
     if request.method.upper() == "POST" and isinstance(request.data, dict):
         return {k: str(v) for k, v in request.data.items()}
     return {k: str(v) for k, v in request.query_params.items()}
+
+
+@api_view(["GET"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@pc_ajax_view(require_customer=True)
+def sel_recharge_status_view(request: Request, user=None):
+    pending = sel_recharge_status(int(user["user_id"]))
+    return Response({"res": pending})
+
+
+@api_view(["GET"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@pc_ajax_view(require_customer=True)
+def sel_recharge_list_view(request: Request, user=None):
+    params = _pay_form_params(request)
+    data = sel_recharge_list_for_user(
+        int(user["user_id"]),
+        start=params.get("start", "0"),
+        length=params.get("length", "10"),
+        draw=params.get("draw", "1"),
+        start_time=params.get("startTime", ""),
+        end_time=params.get("endTime", ""),
+        type_raw=params.get("type", "0"),
+    )
+    return Response(api_ok(data))
+
+
+@api_view(["GET"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@pc_ajax_view()
+def sel_default_account_view(request: Request, user=None):
+    del user
+    data = sel_default_account()
+    return Response(api_ok(data or {}))
 
 
 @api_view(["GET", "POST"])
