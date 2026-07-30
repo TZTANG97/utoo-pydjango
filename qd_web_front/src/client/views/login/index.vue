@@ -282,7 +282,13 @@ export default {
 
     // 查看状态
     check() {
-      const ticket = this.ticket.split("?")[1].replace("ticket=", "");
+      const q = (this.ticket || "").split("?")[1] || "";
+      const ticket = new URLSearchParams(q).get("ticket") || "";
+      if (!ticket) {
+        clearInterval(this.checkTimer);
+        this.qrcodeStatus = "EXPIRED";
+        return;
+      }
       getQrcodeStatusApi(ticket)
         .then((res) => {
           this.qrcodeStatus = res.obj;
@@ -315,6 +321,10 @@ export default {
     getQrcode() {
       this.loadingQrcode = true;
       this.qrcodeStatus = "NOT_SCAN";
+      if (this.checkTimer) {
+        clearInterval(this.checkTimer);
+        this.checkTimer = "";
+      }
       getQrcodeApi()
         .then((res) => {
           const url = res?.url || res?.obj?.url || res?.data?.url;
@@ -322,9 +332,10 @@ export default {
             this.ticket = url;
             this.loadingQrcode = false;
             this.qrcodeStatus = "NOT_SCAN";
+            // 与后端 QR_TTL_SEC=120 对齐：约 2 分钟内轮询
             this.checkTimer = setInterval(() => {
               this.check();
-            }, 1500);
+            }, 2000);
             return;
           }
           this.loadingQrcode = false;

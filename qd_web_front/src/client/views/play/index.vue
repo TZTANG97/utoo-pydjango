@@ -256,6 +256,10 @@ export default {
     getQrcode() {
       this.loadingQrcode = true
       this.qrcodeStatus = 'NOT_SCAN'
+      if (this.checkTimer) {
+        clearInterval(this.checkTimer)
+        this.checkTimer = ''
+      }
       getQrcodeApi()
         .then(res => {
           const url = res?.url || res?.obj?.url || res?.data?.url
@@ -265,7 +269,7 @@ export default {
             this.qrcodeStatus = 'NOT_SCAN'
             this.checkTimer = setInterval(() => {
               this.check()
-            }, 1500)
+            }, 2000)
             return
           }
           this.loadingQrcode = false

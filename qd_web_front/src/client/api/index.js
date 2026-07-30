@@ -39,7 +39,8 @@ export function getQrcodeApi() {
  */
 export function getQrcodeStatusApi(ticket) {
   return request({
-    url: `/wx/qrScanStatusCheck.ajax?ticket=${ticket}`,
+    url: '/wx/qrScanStatusCheck.ajax',
+    params: { ticket },
   })
 }
 

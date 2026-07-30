@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from urllib.parse import quote
 
 import httpx
@@ -18,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 QR_PLACEHOLDER = "已生成二维码"
 GZH_TOKEN_KEY = "gzh_access_token"
+# 与微信临时二维码、前端轮询窗口对齐（2 分钟）
+QR_TTL_SEC = 120
 
 STATUS_NOT_SCAN = "NOT_SCAN"
 STATUS_SCANNED = "SCANNED"
@@ -70,15 +73,27 @@ def _get_gzh_access_token(client: httpx.Client) -> tuple[str | None, str]:
 def _create_qr_ticket(client: httpx.Client, access_token: str) -> str | None:
     url = f"https://api.weixin.qq.com/cgi-bin/qrcode/create?access_token={access_token}"
     body = {
-        "expire_seconds": 120,
+        "expire_seconds": QR_TTL_SEC,
         "action_name": "QR_STR_SCENE",
-        "action_info": {"scene": {"scene_str": "pc_login"}},
+        "action_info": {"scene": {"scene_str": f"pc_login_{uuid.uuid4().hex[:16]}"}},
     }
     data = client.post(url, json=body, timeout=15.0).json()
     if data.get("errcode"):
         logger.warning("wechat qrcode create error: %s", data)
         return None
     return data.get("ticket")
+
+
+def _persist_qr_ticket(ticket: str) -> tuple[bool, str]:
+    """扫码状态依赖 Redis；写入失败必须显式失败，避免前端误判为「已过期」。"""
+    try:
+        redis_client.get_redis().set(ticket, QR_PLACEHOLDER, ex=QR_TTL_SEC)
+    except Exception as exc:
+        logger.warning("redis set qr ticket failed: %s", exc)
+        return False, "Redis 不可用，扫码登录无法保存状态（请确认本机/服务器 Redis 已启动）"
+    if redis_client.get_string(ticket) != QR_PLACEHOLDER:
+        return False, "Redis 写入扫码 ticket 失败，请检查 REDIS_* 配置"
+    return True, ""
 
 
 def generate_qrcode_url() -> tuple[bool, str, dict]:
@@ -101,12 +116,14 @@ def generate_qrcode_url() -> tuple[bool, str, dict]:
                     ticket = _create_qr_ticket(client, access_token)
             if not ticket:
                 return False, "生成二维码失败", {}
-            redis_client.set_string(ticket, QR_PLACEHOLDER, ex=120)
+            ok_redis, redis_err = _persist_qr_ticket(ticket)
+            if not ok_redis:
+                return False, redis_err, {}
             show_url = (
                 "https://mp.weixin.qq.com/cgi-bin/showqrcode?ticket="
                 + quote(ticket, safe="")
             )
-            return True, "ok", {"url": show_url}
+            return True, "ok", {"url": show_url, "expireSeconds": QR_TTL_SEC}
     except Exception as exc:
         logger.exception("generate_qrcode_url failed: %s", exc)
         return False, f"生成二维码失败：{exc}", {}
