@@ -27,32 +27,13 @@ variables:
   tags:
     - utoo-windows
 
-# $$ → 交给 PowerShell 的 $；'$CI_PROJECT_DIR' → GitLab 替换为真实仓库路径（单引号避免 \b 被 PowerShell 转义）
+# $$ -> PowerShell $ ; '$CI_PROJECT_DIR' injected by GitLab (keep single-quoted)
+# Keep these blocks ASCII + prefer few lines: WinPS may drop newlines / misread UTF-8 without BOM.
 .utoo_run_deploy: &utoo_run_deploy |
-  $$ErrorActionPreference = 'Stop'
-  $$root = '$CI_PROJECT_DIR'
-  if ([string]::IsNullOrWhiteSpace($$root)) { throw 'CI_PROJECT_DIR is empty after GitLab expansion' }
-  $$root = $$root.Trim().TrimEnd('\')
-  Write-Host ("[ci] project_dir={0}" -f $$root)
-  Set-Location -LiteralPath $$root
-  $$deployScript = Join-Path $$root 'deploy\utoo-windows\ci-deploy-windows.ps1'
-  if (-not (Test-Path -LiteralPath $$deployScript)) {
-    Write-Host ("[ci] cwd={0}" -f (Get-Location).Path)
-    Get-ChildItem -Force -Name | Select-Object -First 40
-    throw ("Missing deploy script: {0}" -f $$deployScript)
-  }
-  & $$deployScript
+  $$ErrorActionPreference = 'Stop'; $$root = '$CI_PROJECT_DIR'; if ([string]::IsNullOrWhiteSpace($$root)) { throw 'CI_PROJECT_DIR is empty' }; $$root = $$root.Trim().TrimEnd('\'); Set-Location -LiteralPath $$root; Write-Host ("[ci] project_dir={0}" -f $$root); $$deployScript = Join-Path $$root 'deploy\utoo-windows\ci-deploy-windows.ps1'; if (-not (Test-Path -LiteralPath $$deployScript)) { throw ("Missing deploy script: {0}" -f $$deployScript) }; & $$deployScript
 
 .utoo_run_frontend: &utoo_run_frontend |
-  $$ErrorActionPreference = 'Stop'
-  $$root = '$CI_PROJECT_DIR'
-  if ([string]::IsNullOrWhiteSpace($$root)) { throw 'CI_PROJECT_DIR is empty after GitLab expansion' }
-  $$root = $$root.Trim().TrimEnd('\')
-  Write-Host ("[ci] project_dir={0}" -f $$root)
-  Set-Location -LiteralPath $$root
-  $$runScript = Join-Path $$root 'deploy\utoo-windows\ci-run-frontend.ps1'
-  if (-not (Test-Path -LiteralPath $$runScript)) { throw ("Missing frontend runner: {0}" -f $$runScript) }
-  & $$runScript
+  $$ErrorActionPreference = 'Stop'; $$root = '$CI_PROJECT_DIR'; if ([string]::IsNullOrWhiteSpace($$root)) { throw 'CI_PROJECT_DIR is empty' }; $$root = $$root.Trim().TrimEnd('\'); Set-Location -LiteralPath $$root; Write-Host ("[ci] project_dir={0}" -f $$root); $$runScript = Join-Path $$root 'deploy\utoo-windows\ci-run-frontend.ps1'; if (-not (Test-Path -LiteralPath $$runScript)) { throw ("Missing frontend runner: {0}" -f $$runScript) }; & $$runScript
 
 # --- dev：6 个独立发布入口 ---
 

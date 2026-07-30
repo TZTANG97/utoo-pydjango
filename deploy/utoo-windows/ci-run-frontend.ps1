@@ -1,5 +1,9 @@
-# GitLab CI：前端构建 + 静态发布（单入口，避免 YAML 多行脚本在 Windows Runner 上丢换行）
+﻿# GitLab CI entry: build qd_web_front then publish static (ASCII-only for WinPS 5.1)
 $ErrorActionPreference = 'Stop'
+try {
+	[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+	$OutputEncoding = [Console]::OutputEncoding
+} catch { }
 . (Join-Path $PSScriptRoot 'ci-project-root.ps1')
 $root = Get-UtooCiProjectRoot
 Set-Location $root

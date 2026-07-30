@@ -1,4 +1,4 @@
-# GitLab CI：构建统一前端 qd_web_front（C 端 + 管理后台单 SPA）
+﻿# GitLab CI: build qd_web_front (C + admin SPA)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'ci-project-root.ps1')
 $jobCwd = (Get-Location).Path

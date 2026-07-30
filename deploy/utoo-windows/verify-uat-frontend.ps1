@@ -1,4 +1,4 @@
-# Read-only: fingerprint https://uat.utoodev.laide.tech/ against expected SPA markers.
+﻿# Read-only: fingerprint https://uat.utoodev.laide.tech/ against expected SPA markers.
 $ErrorActionPreference = 'Stop'
 $Base = if ($args[0]) { $args[0].TrimEnd('/') } else { 'https://uat.utoodev.laide.tech' }
 
