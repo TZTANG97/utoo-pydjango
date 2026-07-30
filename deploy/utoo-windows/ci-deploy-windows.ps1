@@ -506,8 +506,22 @@ try {
 	if ($doStatic) {
 		$webDist = Join-Path $root 'qd_web_front/dist'
 		if (-not (Test-Path -LiteralPath $webDist)) { Write-Error "Missing $webDist — run build_frontend_* first"; exit 1 }
-		Write-Host ("[deploy] sync unified front static -> {0} (after switch)" -f $StaticWeb)
+		$localIndex = Join-Path $webDist 'index.html'
+		if (-not (Test-Path -LiteralPath $localIndex)) { Write-Error "Missing $localIndex"; exit 1 }
+		$localIndexText = Get-Content -LiteralPath $localIndex -Raw -Encoding utf8
+		if ($localIndexText -notmatch 'src="/assets/(index-[^"]+\.js)"') {
+			Write-Error 'Local dist/index.html has no /assets/index-*.js entry'
+			exit 1
+		}
+		$expectedAsset = $Matches[1]
+		Write-Host ("[deploy] sync unified front static -> {0} (expect {1})" -f $StaticWeb, $expectedAsset)
 		Sync-DirToRemote -LocalDir $webDist -RemoteDir $StaticWeb -Exclude @() -PreserveNames @('.keep')
+		$remoteIndex = (Invoke-RemoteCapture ("cat {0}/index.html" -f $StaticWeb))
+		if ($remoteIndex -notmatch [regex]::Escape($expectedAsset)) {
+			Write-Error ("Remote {0}/index.html does not reference {1} after sync. Got:`n{2}" -f $StaticWeb, $expectedAsset, $remoteIndex)
+			exit 1
+		}
+		Write-Host ("[deploy] verified remote index.html -> {0}" -f $expectedAsset)
 		Write-Host '[deploy] phase static done.'
 	}
 
