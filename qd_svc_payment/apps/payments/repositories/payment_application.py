@@ -7,7 +7,7 @@ from apps.core.db_utils import execute, execute_insert, fetch_one
 from apps.payments.repositories.pay_order_code import gen_code
 
 
-def generate_pa_num() -> str:
+def generate_pa_num(_order_type: str | None = None) -> str:
     orderstr = "CZ" + datetime.now().strftime("%Y%m")
     row = fetch_one(
         """

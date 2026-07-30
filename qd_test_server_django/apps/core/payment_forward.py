@@ -13,14 +13,26 @@ from apps.core.svc_proxy import forward_payment, svc_payment_enabled
 
 
 def forward_payment_first(view_func):
-    """DRF 视图最外层：启用 SVC_PAYMENT_URL 时透明转发 request.path。"""
+    """DRF 视图最外层：启用 SVC_PAYMENT_URL 时透明转发 request.path。
+
+    上游 404 / 非 JSON（常见于支付服务尚未同步某接口）时回退到网关本地实现，
+    避免「我的资产」等页整页弹 502 提示。
+    """
 
     @wraps(view_func)
     def wrapper(request: Request, *args, **kwargs):
         if svc_payment_enabled():
-            return as_django_response(
-                forward_payment(as_drf_request(request), request.path)
-            )
+            upstream = forward_payment(as_drf_request(request), request.path)
+            data = upstream.data if isinstance(upstream, Response) else None
+            msg = ""
+            if isinstance(data, dict):
+                msg = str(data.get("message") or data.get("msg") or "")
+            # 上游路由缺失或返回 HTML 404/非 JSON 时，走本地兜底
+            if upstream.status_code in (404, 502) and (
+                "非 JSON" in msg or "Not Found" in msg or upstream.status_code == 404
+            ):
+                return view_func(request, *args, **kwargs)
+            return as_django_response(upstream)
         return view_func(request, *args, **kwargs)
 
     return wrapper
