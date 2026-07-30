@@ -261,3 +261,27 @@ def list_sample_export_rows(
         """,
         params,
     )
+
+
+def list_sample_order_logs(out_id: int) -> list[dict[str, Any]]:
+    """对齐 Java outInDepotLogService.getByOfId：详情页操作记录。"""
+    rows = fetch_all(
+        """
+        SELECT
+            log.id,
+            log.addTime,
+            log.log_info AS logInfo,
+            log.log_info AS operateInfo,
+            log.log_user_id AS logUserId,
+            COALESCE(NULLIF(u.true_name, ''), u.user_name, '') AS operateUser,
+            COALESCE(NULLIF(u.true_name, ''), u.user_name, '') AS logUserName
+        FROM exp_outin_depot_log log
+        LEFT JOIN sy_users u ON log.log_user_id = u.id
+        WHERE log.of_id = %(of_id)s
+          AND IFNULL(log.deleteStatus, 0) = 0
+          AND log.type IS NULL
+        ORDER BY log.addTime DESC
+        """,
+        {"of_id": out_id},
+    )
+    return rows or []

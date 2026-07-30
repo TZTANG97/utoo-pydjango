@@ -417,11 +417,43 @@
           <el-descriptions-item label="录入时间">{{ detail.addTime || '-' }}</el-descriptions-item>
           <el-descriptions-item label="下单时间">{{ detail.orderTime || '-' }}</el-descriptions-item>
           <el-descriptions-item label="预计收货">{{ detail.deliveryTime || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="!isChildKind" label="付款方式">
+            {{ detail.payWayName || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item v-if="!isChildKind" label="币种">
+            {{ detail.currencyLabel || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item v-if="!isChildKind" label="预计收款时间" :span="2">
+            {{ detail.collectionTime || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item v-if="!isChildKind" label="已开票金额">
+            {{ detail.invoiceAmount ?? '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item v-if="!isChildKind" label="已收款金额">
+            {{ detail.receiveAmount ?? '-' }}
+          </el-descriptions-item>
           <el-descriptions-item v-if="!isChildKind" label="是否开票">
             {{ detail.invoiceLabel || '-' }}
           </el-descriptions-item>
           <el-descriptions-item v-if="!isChildKind" label="成本结清">
             {{ detail.costSettleLabel || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item v-if="!isChildKind" label="预约单">
+            <template v-if="yydFiles.length">
+              <div v-for="f in yydFiles" :key="String(f.id)" class="yyd-file">
+                <a class="file-name" :href="fileUrl(f)" target="_blank" rel="noopener">
+                  {{ fileLabel(f) }}
+                </a>
+                <el-button type="success" size="small" @click="onDownloadFile(f)">下载</el-button>
+              </div>
+            </template>
+            <template v-else-if="detail.appointmentNo">
+              {{ detail.appointmentNo }}
+              <el-tag size="small" type="success" style="margin-left: 6px">已关联</el-tag>
+            </template>
+            <template v-else>
+              {{ detail.isYydLabel || '未生成' }}
+            </template>
           </el-descriptions-item>
           <el-descriptions-item label="云视频">{{ detail.isVideoLabel || '-' }}</el-descriptions-item>
           <el-descriptions-item label="收件人">{{ detail.shipUser || '-' }}</el-descriptions-item>
@@ -430,7 +462,7 @@
             {{ detail.shipAddress || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="备注" :span="3">
-            <span class="mark-text">{{ detail.mark || '-' }}</span>
+            <span class="mark-text">{{ detail.mark || detail.msg || '-' }}</span>
           </el-descriptions-item>
         </el-descriptions>
       </section>
@@ -680,6 +712,33 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="yydVisible" title="生成预约单" width="520px">
+      <el-form label-width="100px">
+        <el-form-item label="寄送地址" required>
+          <el-select
+            v-model="yydAddressId"
+            filterable
+            clearable
+            placeholder="请选择寄送地址"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="a in yydAddressOptions"
+              :key="String(a.id)"
+              :label="addressLabel(a)"
+              :value="String(a.id)"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="yydVisible = false">取消</el-button>
+        <el-button type="primary" :loading="acting" @click="onConfirmGenerateAppointment">
+          确定生成
+        </el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="subPayBillVisible" title="上传付款信息" width="420px">
       <el-form label-width="100px">
         <el-form-item label="付款金额" required>
@@ -860,6 +919,7 @@ import {
   withdrawExpOrderAudit,
 } from '@admin/api/experiment'
 import { fetchIncomeUsers, fetchSampleOrderOptions, fetchSampleStorePositions } from '@admin/api/inventory'
+import { fetchTestAddressList } from '@admin/api/system'
 import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
 type SampleAction =
@@ -939,7 +999,18 @@ const sampleMeeting = ref('')
 const sampleConfirmMark = ref('')
 const sampleRetainMode = ref<'retain' | 'scrap'>('retain')
 
+const yydVisible = ref(false)
+const yydAddressId = ref('')
+const yydAddressOptions = ref<Record<string, unknown>[]>([])
+
 const logs = computed(() => (detail.value?.logs as Record<string, unknown>[]) || [])
+const yydFiles = computed(() => {
+  const fromDetail = detail.value?.yydFiles
+  if (Array.isArray(fromDetail) && fromDetail.length) {
+    return fromDetail as Record<string, unknown>[]
+  }
+  return (orderFiles.value || []).filter((f) => String(f.type || '') === '6')
+})
 const linkedOrders = computed(
   () => (detail.value?.linkedOrders as Record<string, unknown>[]) || []
 )
@@ -1587,14 +1658,40 @@ async function onConfirmCustomer() {
 }
 
 async function onGenerateAppointment() {
-  await ElMessageBox.confirm('确认生成预约单？', '生成预约单', { type: 'warning' })
+  yydAddressId.value = ''
+  yydAddressOptions.value = []
+  yydVisible.value = true
+  try {
+    const res = await fetchTestAddressList({ start: 0, length: 200, draw: 1 })
+    yydAddressOptions.value = (res.data || []) as Record<string, unknown>[]
+  } catch {
+    yydAddressOptions.value = []
+  }
+}
+
+function addressLabel(a: Record<string, unknown>) {
+  const name = String(a.true_name || a.trueName || '')
+  const mobile = String(a.mobile || '')
+  const addr = String(a.address || '')
+  return [name, mobile, addr].filter(Boolean).join(' / ') || String(a.id)
+}
+
+async function onConfirmGenerateAppointment() {
+  if (!yydAddressId.value) {
+    ElMessage.warning('请选择寄送地址')
+    return
+  }
   await runAction(async () => {
-    const res = await generateExpOrderAppointment({ id: props.orderId })
+    const res = await generateExpOrderAppointment({
+      id: props.orderId,
+      testAddressId: yydAddressId.value,
+    })
     if (!isAjaxOk(res)) {
       ElMessage.error(ajaxErrorMessage(res, '生成失败'))
       return
     }
     ElMessage.success(String(res.resMsg || '已生成预约单'))
+    yydVisible.value = false
     await load()
     emit('refreshed')
   })
@@ -1921,6 +2018,12 @@ defineExpose({ reload: load })
 }
 .file-name:hover {
   text-decoration: underline;
+}
+.yyd-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
 }
 .remark-row :deep(.el-textarea) {
   flex: 1;

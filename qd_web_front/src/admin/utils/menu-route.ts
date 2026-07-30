@@ -34,6 +34,7 @@ const MENU_ROUTE_MAP: Record<string, string> = {
   'caliOrder/list.htm': '/service-platform/service-apply',
   'apply/device_back_manage.htm': '/service-platform/buyback',
   'consult/ListPage.htm': '/service-platform/consult',
+  'consult/consultDetail.htm': '/service-platform/consult',
   'consult/serviceSetting.htm': '/service-platform/consult-message',
   'records/problemlistPage.htm': '/service-platform/faq',
   'experimentSubOrder/suborderList.htm': '/service-platform/evaluated-sub-orders',

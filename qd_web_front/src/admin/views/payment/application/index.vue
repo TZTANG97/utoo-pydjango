@@ -109,7 +109,8 @@ async function handleRefuse(row: Record<string, unknown>) {
   const { value } = await ElMessageBox.prompt('请输入驳回原因', '拒绝付款', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
-  })
+  }).catch(() => ({ value: null as string | null }))
+  if (value === null) return
   const res = await refusePaymentApply(String(row.id), value || '')
   if (!isAjaxOk(res)) {
     ElMessage.error(ajaxErrorMessage(res, '操作失败'))

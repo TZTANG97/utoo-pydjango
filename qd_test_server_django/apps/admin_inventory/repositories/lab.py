@@ -149,6 +149,15 @@ def get_lab(lab_id: int) -> dict[str, Any] | None:
     )
     if row:
         row["userName"] = _user_names(str(row.get("labUserid") or ""))
+        sy_id = str(row.get("syuserId") or "").strip()
+        if sy_id:
+            su = fetch_one(
+                "SELECT user_name AS userName FROM sy_users WHERE id = %(id)s LIMIT 1",
+                {"id": sy_id},
+            )
+            row["syUserName"] = str((su or {}).get("userName") or "")
+        else:
+            row["syUserName"] = ""
     return row
 
 

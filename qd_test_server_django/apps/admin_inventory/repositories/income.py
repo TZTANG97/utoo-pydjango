@@ -314,8 +314,9 @@ def list_invest_users(*, account_type: int = 1) -> list[dict[str, Any]]:
 
 
 def list_all_users(keyword: str = "") -> list[dict[str, Any]]:
-    where = "WHERE user_status = 1"
-    params: dict[str, Any] = {}
+    # 对齐后台员工选择：仅启用且 pt_type 含后台身份
+    where = "WHERE user_status = 1 AND pt_type LIKE %(pt)s"
+    params: dict[str, Any] = {"pt": "%2%"}
     if keyword:
         where += " AND (user_name LIKE %(kw)s OR true_name LIKE %(kw)s)"
         params["kw"] = f"%{keyword}%"
@@ -325,7 +326,7 @@ def list_all_users(keyword: str = "") -> list[dict[str, Any]]:
         FROM sy_users
         {where}
         ORDER BY user_name ASC
-        LIMIT 200
+        LIMIT 500
         """,
         params,
     )

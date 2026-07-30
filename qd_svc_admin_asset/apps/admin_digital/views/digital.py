@@ -72,12 +72,14 @@ def sale_user_list(request: Request, user=None):
     del user
     data = merge_payload(request)
     draw, page, page_size = parse_datatable_params(request)
-    # 销售计划页 Java 不限 utoo_type；这里仍优先销售相关，空结果时前端可放宽
+    # 对齐 Java getuserinfoMapSTP：user_status=1 且 pt_type like '%2%'，不过滤 utoo_type
     rows, total = user_repo.list_staff_users(
         dept_id=str(data.get("deptId") or data.get("dept_id") or ""),
         user_name=(data.get("userName") or data.get("user_name") or "").strip(),
         true_name=(data.get("trueName") or data.get("true_name") or "").strip(),
         utoo_types=None,
+        require_pt_type_staff=True,
+        include_helpers=True,
         page=page,
         page_size=page_size,
     )

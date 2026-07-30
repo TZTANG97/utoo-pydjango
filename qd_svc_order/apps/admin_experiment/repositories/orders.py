@@ -203,7 +203,11 @@ def list_orders(
     page_size: int,
 ) -> tuple[list[dict[str, Any]], int]:
     """实验订单列表（对齐 Java list_dpt / listPagesdpt 主字段）。"""
-    where = "WHERE IFNULL(t.deleteStatus, 0) = 0 AND t.order_type = %(order_type)s"
+    where = (
+        "WHERE IFNULL(t.deleteStatus, 0) = 0"
+        " AND t.order_type = %(order_type)s"
+        " AND t.order_status > 0"
+    )
     params: dict[str, Any] = {"order_type": str(order_type)}
     if order_id:
         where += " AND t.order_id LIKE %(order_id)s"
@@ -224,6 +228,9 @@ def list_orders(
         where += " AND IFNULL(t.is_evaluate, 0) = 1"
     elif order_status == "70":
         where += " AND t.invoiceType = 1"
+    elif order_status == "0":
+        # 显式查已取消：去掉默认 order_status > 0
+        where = where.replace(" AND t.order_status > 0", " AND t.order_status = 0")
     elif order_status:
         where += " AND t.order_status = %(order_status)s"
         params["order_status"] = order_status
@@ -672,6 +679,7 @@ def get_order(order_id: int) -> dict[str, Any] | None:
             t.is_video AS isVideo, t.cost_settle AS costSettle,
             t.is_online AS isOnline, t.is_yyd AS isYyd, t.is_evaluate AS isEvaluate,
             t.reverso_context AS reversoContext,
+            t.consultid AS consultId,
             t.sale_scale AS saleScale,
             t.test_manager AS testManagerId,
             IFNULL(bill_cnt.kpCnt, 0) AS invoiceBillCount,
@@ -763,6 +771,35 @@ def get_order(order_id: int) -> dict[str, Any] | None:
         ).strip() or "-"
     row["testName"] = str(row.get("testTrueName") or row.get("testName") or "").strip()
     row["payWayName"] = str(row.get("payWayName") or "").strip() or "-"
+    try:
+        is_yyd_flag = int(row.get("isYyd") or 0)
+    except (TypeError, ValueError):
+        is_yyd_flag = 0
+    row["isYydLabel"] = "已生成" if is_yyd_flag == 1 else "未生成"
+    # 预约单（ServiceConsult）
+    row["appointmentNo"] = ""
+    row["appointmentId"] = None
+    consult_id = row.get("consultId")
+    if consult_id not in (None, "", 0, "0"):
+        try:
+            consult = fetch_one(
+                """
+                SELECT id, order_id AS appointmentNo, status AS appointmentStatus,
+                       addTime, mobile AS appointmentMobile, company_name AS appointmentCompany
+                FROM service_consult
+                WHERE id = %(id)s
+                LIMIT 1
+                """,
+                {"id": consult_id},
+            )
+            if consult:
+                row["appointmentId"] = consult.get("id")
+                row["appointmentNo"] = str(consult.get("appointmentNo") or consult.get("id") or "")
+                row["appointmentStatus"] = consult.get("appointmentStatus")
+                row["appointmentMobile"] = consult.get("appointmentMobile") or ""
+                row["appointmentCompany"] = consult.get("appointmentCompany") or ""
+        except Exception:
+            pass
     parent = row.get("parentOrderId")
     if not parent and _is_child_order_type(ot):
         pt = str(row.get("purchaseType") or "")
@@ -1330,6 +1367,7 @@ def get_order_detail_bundle(order_id: int) -> dict[str, Any] | None:
         linked = list_linked_child_orders(order_id, child_order_type="9")
     related = list_related_orders(row.get("relatedOrderNum"))
     files = list_order_files(order_id)
+    yyd_files = [f for f in files if str(f.get("type") or "") == "6"]
     return {
         **row,
         "children": children,
@@ -1337,6 +1375,7 @@ def get_order_detail_bundle(order_id: int) -> dict[str, Any] | None:
         "linkedOrders": linked,
         "relatedOrders": related,
         "files": files,
+        "yydFiles": yyd_files,
         "detailKind": {
             "6": "experiment",
             "10": "experiment_sub",
@@ -1346,17 +1385,27 @@ def get_order_detail_bundle(order_id: int) -> dict[str, Any] | None:
     }
 
 
-def _write_order_log(order_id: int, info: str) -> None:
+def _write_order_log(order_id: int, info: str, user_id: str | int | None = None) -> None:
+    uid = str(user_id).strip() if user_id not in (None, "") else None
     try:
         execute(
             """
             INSERT INTO experiment_order_log (addTime, deleteStatus, of_id, log_info, log_user_id)
-            VALUES (NOW(), 0, %(oid)s, %(info)s, NULL)
+            VALUES (NOW(), 0, %(oid)s, %(info)s, %(uid)s)
             """,
-            {"oid": order_id, "info": info},
+            {"oid": order_id, "info": info, "uid": uid},
         )
     except Exception:
-        pass
+        try:
+            execute(
+                """
+                INSERT INTO experiment_order_log (addTime, deleteStatus, of_id, log_info)
+                VALUES (NOW(), 0, %(oid)s, %(info)s)
+                """,
+                {"oid": order_id, "info": info},
+            )
+        except Exception:
+            pass
 
 
 def _set_order_status(order_id: int, status: int) -> None:
@@ -1366,7 +1415,9 @@ def _set_order_status(order_id: int, status: int) -> None:
     )
 
 
-def audit_order(*, order_id: int, pass_: bool, remark: str = "") -> tuple[bool, str]:
+def audit_order(
+    *, order_id: int, pass_: bool, remark: str = "", staff_user_id: str | int | None = None
+) -> tuple[bool, str]:
     row = get_order(order_id)
     if not row:
         return False, "订单不存在"
@@ -1381,11 +1432,14 @@ def audit_order(*, order_id: int, pass_: bool, remark: str = "") -> tuple[bool, 
     _write_order_log(
         order_id,
         ("审核通过" if pass_ else "审核驳回") + (f"：{remark}" if remark else ""),
+        user_id=staff_user_id,
     )
     return True, "审核成功" if pass_ else "已驳回"
 
 
-def cancel_order(*, order_id: int, remark: str = "") -> tuple[bool, str]:
+def cancel_order(
+    *, order_id: int, remark: str = "", staff_user_id: str | int | None = None
+) -> tuple[bool, str]:
     """对齐 Java customeOperateCancel：主单取消并同步取消下属采购子单。"""
     row = get_order(order_id)
     if not row:
@@ -1399,7 +1453,11 @@ def cancel_order(*, order_id: int, remark: str = "") -> tuple[bool, str]:
     if st == 0:
         return False, "该订单已取消，请刷新页面！"
     _set_order_status(order_id, 0)
-    _write_order_log(order_id, "取消订单" + (f"：{remark}" if remark else ""))
+    _write_order_log(
+        order_id,
+        "取消订单" + (f"：{remark}" if remark else ""),
+        user_id=staff_user_id,
+    )
     ot = str(row.get("orderType") or "")
     if ot in ("6", "8"):
         child_ot = "10" if ot == "6" else "9"
@@ -1732,10 +1790,9 @@ def save_invoice_bill(
     execute(
         """
         INSERT INTO qd_bill
-            (add_time, delete_status, exp_of_id, money, type, is_split,
-             bill_date, log_info, log_user_id)
+            (add_time, add_user_id, exp_of_id, money, type, is_split, bill_date, mark)
         VALUES
-            (NOW(), 0, %(oid)s, %(money)s, 1, 0, NOW(), %(log_info)s, %(uid)s)
+            (NOW(), %(uid)s, %(oid)s, %(money)s, 1, 0, NOW(), %(log_info)s)
         """,
         {
             "oid": order_id,
@@ -1744,7 +1801,7 @@ def save_invoice_bill(
             "uid": staff_user_id or None,
         },
     )
-    _write_order_log(order_id, f"开票 {amt}")
+    _write_order_log(order_id, f"开票 {amt}", user_id=staff_user_id)
     return True, "开票成功"
 
 
@@ -1785,23 +1842,148 @@ def confirm_online_pay(*, order_id: int, staff_user_id: str = "") -> tuple[bool,
     )
 
 
-def generate_appointment(*, order_id: int, test_address_id: str = "") -> tuple[bool, str]:
-    """对齐 Java geranateYydForm：标记已生成预约单。"""
+def generate_appointment(
+    *, order_id: int, test_address_id: str = "", staff_user_id: str | int | None = None
+) -> tuple[bool, str]:
+    """对齐 Java geranateYydForm：写地址、标记 is_yyd、生成预约单 PDF(type=6)。"""
     row = get_order(order_id)
     if not row:
         return False, "订单不存在"
     if not row.get("canGenerateAppointment"):
         return False, "当前不可生成预约单"
+    addr = (test_address_id or "").strip()
+    if not addr:
+        return False, "请选择寄送地址"
+    try:
+        addr_id = int(addr)
+    except (TypeError, ValueError):
+        return False, "寄送地址无效"
     try:
         execute(
-            "UPDATE experiment_order SET is_yyd = 1 WHERE id = %(id)s",
-            {"id": order_id},
+            """
+            UPDATE experiment_order
+            SET is_yyd = 1, test_address_id = %(tid)s
+            WHERE id = %(id)s
+            """,
+            {"id": order_id, "tid": addr_id},
         )
     except Exception:
-        return False, "更新预约标志失败"
-    addr = (test_address_id or "").strip()
-    _write_order_log(order_id, f"生成预约单{(' 地址:' + addr) if addr else ''}")
+        try:
+            execute(
+                "UPDATE experiment_order SET is_yyd = 1 WHERE id = %(id)s",
+                {"id": order_id},
+            )
+        except Exception:
+            return False, "更新预约标志失败"
+
+    pdf_ok, pdf_msg = _build_appointment_pdf(order_id=order_id, test_address_id=addr_id)
+    _write_order_log(
+        order_id,
+        f"生成预约单 地址:{addr_id}" + ("" if pdf_ok else f"（PDF:{pdf_msg}）"),
+        user_id=staff_user_id,
+    )
+    if not pdf_ok:
+        return True, f"已标记预约单，但 PDF 生成失败：{pdf_msg}"
     return True, "已生成预约单"
+
+
+def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool, str]:
+    """生成简易预约单 PDF 并写入 accessory type=6。"""
+    try:
+        from io import BytesIO
+
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+        from reportlab.pdfgen import canvas
+
+        from apps.orders.repositories import print_pdf as print_pdf_repo
+        from apps.orders.services.accessory_upload import save_order_attachment
+    except Exception as exc:
+        return False, f"缺少 PDF 依赖: {exc}"
+
+    order = fetch_one(
+        """
+        SELECT id, order_id AS orderNo, customer_name AS customerName,
+               supplier_name AS supplierName, addTime, send_address AS sendAddress,
+               addressee_name AS shipUser, addressee_mobile AS shipPhone
+        FROM experiment_order WHERE id = %(id)s LIMIT 1
+        """,
+        {"id": order_id},
+    )
+    if not order:
+        return False, "订单不存在"
+    addr_row = print_pdf_repo.get_test_address(test_address_id) or {}
+    address_text = str(addr_row.get("address") or order.get("sendAddress") or "")
+    children = fetch_all(
+        """
+        SELECT
+            order_id AS childOrderId, goods_name AS goodsName, goods_spec AS goodsSpec,
+            goods_brand_name AS goodsBrand, goods_nums AS goodsCount,
+            experiment_project_name AS projectName, experiment_class_name AS className
+        FROM experiment_order_child
+        WHERE order_form_id = %(oid)s AND IFNULL(delete_status, 2) <> 1
+        ORDER BY id ASC
+        LIMIT 100
+        """,
+        {"oid": order_id},
+    )
+    try:
+        pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
+        font_name = "STSong-Light"
+    except Exception:
+        font_name = "Helvetica"
+
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+    y = height - 40
+    c.setFont(font_name, 16)
+    c.drawString(40, y, "实验预约单")
+    y -= 28
+    c.setFont(font_name, 10)
+    lines = [
+        f"订单编号：{order.get('orderNo') or order_id}",
+        f"客户名称：{order.get('customerName') or '-'}",
+        f"所属公司：{order.get('supplierName') or '-'}",
+        f"收件人：{order.get('shipUser') or '-'}",
+        f"联系电话：{order.get('shipPhone') or '-'}",
+        f"寄送地址：{address_text or '-'}",
+        f"制单时间：{str(order.get('addTime') or '')[:19]}",
+        "",
+        "产品明细：",
+    ]
+    for line in lines:
+        c.drawString(40, y, str(line)[:90])
+        y -= 16
+        if y < 60:
+            c.showPage()
+            c.setFont(font_name, 10)
+            y = height - 40
+    for idx, ch in enumerate(children, 1):
+        text = (
+            f"{idx}. {ch.get('childOrderId') or ''} "
+            f"{ch.get('goodsName') or ''} / {ch.get('goodsSpec') or ''} "
+            f"x{ch.get('goodsCount') or ''} "
+            f"{ch.get('projectName') or ''} ({ch.get('className') or ''})"
+        )
+        c.drawString(40, y, text[:95])
+        y -= 14
+        if y < 60:
+            c.showPage()
+            c.setFont(font_name, 10)
+            y = height - 40
+    c.save()
+    pdf_bytes = buf.getvalue()
+    order_no = str(order.get("orderNo") or order_id)
+    ok_flag, msg, _meta = save_order_attachment(
+        data=pdf_bytes,
+        orig_name=f"{order_no}预约单.pdf",
+        content_type="application/pdf",
+        acc_type=6,
+        exp_of_id=order_id,
+    )
+    return (True, "ok") if ok_flag else (False, msg)
 
 
 def update_order_basic(
@@ -1812,6 +1994,7 @@ def update_order_basic(
     ship_phone: str = "",
     ship_address: str = "",
     total_price: Any = None,
+    delivery_time: str = "",
 ) -> tuple[bool, str]:
     """编辑订单主字段（精简版 editPage）。"""
     row = get_order(order_id)
@@ -1823,6 +2006,7 @@ def update_order_basic(
     params: dict[str, Any] = {"id": order_id}
     if mark is not None:
         sets.append("mark = %(mark)s")
+        sets.append("msg = %(mark)s")
         params["mark"] = mark[:1000]
     if ship_user is not None:
         sets.append("addressee_name = %(ship_user)s")
@@ -1833,6 +2017,9 @@ def update_order_basic(
     if ship_address is not None:
         sets.append("send_address = %(ship_address)s")
         params["ship_address"] = ship_address[:500]
+    if delivery_time is not None and str(delivery_time).strip():
+        sets.append("delivery_time = %(delivery_time)s")
+        params["delivery_time"] = str(delivery_time).strip()[:19]
     if total_price is not None and str(total_price) != "":
         try:
             params["tp"] = float(total_price)
@@ -1841,8 +2028,13 @@ def update_order_basic(
             pass
     if not sets:
         return False, "无变更"
+    # mark/msg 可能重复；去重保留顺序
+    uniq: list[str] = []
+    for s in sets:
+        if s not in uniq:
+            uniq.append(s)
     execute(
-        f"UPDATE experiment_order SET {', '.join(sets)} WHERE id = %(id)s",
+        f"UPDATE experiment_order SET {', '.join(uniq)} WHERE id = %(id)s",
         params,
     )
     _write_order_log(order_id, "编辑订单信息")
@@ -1958,10 +2150,9 @@ def upload_sub_pay_bill(
     execute(
         """
         INSERT INTO qd_bill
-            (add_time, delete_status, exp_of_id, money, type, is_split,
-             bill_date, log_info, log_user_id)
+            (add_time, add_user_id, exp_of_id, money, type, is_split, bill_date, mark)
         VALUES
-            (NOW(), 0, %(oid)s, %(money)s, 2, 0, NOW(), %(log_info)s, %(uid)s)
+            (NOW(), %(uid)s, %(oid)s, %(money)s, 2, 0, NOW(), %(log_info)s)
         """,
         {
             "oid": order_id,
@@ -2015,10 +2206,9 @@ def upload_sub_invoice_bill(
     execute(
         """
         INSERT INTO qd_bill
-            (add_time, delete_status, exp_of_id, money, type, is_split,
-             bill_date, log_info, log_user_id)
+            (add_time, add_user_id, exp_of_id, money, type, is_split, bill_date, mark)
         VALUES
-            (NOW(), 0, %(oid)s, %(money)s, 1, 0, NOW(), %(log_info)s, %(uid)s)
+            (NOW(), %(uid)s, %(oid)s, %(money)s, 1, 0, NOW(), %(log_info)s)
         """,
         {
             "oid": order_id,
@@ -2084,8 +2274,10 @@ def create_sub_order_from_parent(
 
     test_user_ids: list[str] = []
     cost_prices: list[str] = []
+    finish_times: list[str] = []
     raw_tu = form.get("testUserIds") or form.get("test_user_ids") or []
     raw_cp = form.get("costPrices") or form.get("cost_prices") or []
+    raw_ft = form.get("finishTimes") or form.get("finish_times") or []
     if isinstance(raw_tu, str):
         test_user_ids = [x.strip() for x in raw_tu.split(",")]
     elif isinstance(raw_tu, (list, tuple)):
@@ -2094,6 +2286,10 @@ def create_sub_order_from_parent(
         cost_prices = [x.strip() for x in raw_cp.split(",")]
     elif isinstance(raw_cp, (list, tuple)):
         cost_prices = [str(x).strip() for x in raw_cp]
+    if isinstance(raw_ft, str):
+        finish_times = [x.strip() for x in raw_ft.split(",")]
+    elif isinstance(raw_ft, (list, tuple)):
+        finish_times = [str(x).strip() for x in raw_ft]
 
     if child_ot == "9":
         if len(test_user_ids) != len(ids) or any(not t for t in test_user_ids):
@@ -2238,10 +2434,11 @@ def create_sub_order_from_parent(
                 )
             except Exception:
                 pass
-        # 更新测试员 / 分包单价
+        # 更新测试员 / 分包单价 / 预计完成
         tu = test_user_ids[i] if i < len(test_user_ids) else ""
         cp = cost_prices[i] if i < len(cost_prices) else ""
-        if tu or cp:
+        ft = finish_times[i] if i < len(finish_times) else ""
+        if tu or cp or ft:
             try:
                 execute(
                     """
@@ -2249,16 +2446,25 @@ def create_sub_order_from_parent(
                     SET test_user_id = COALESCE(NULLIF(%(tu)s, ''), test_user_id),
                         cost_price = COALESCE(NULLIF(%(cp)s, ''), cost_price),
                         reference_price = COALESCE(NULLIF(%(cp)s, ''), reference_price),
-                        op_status = 2
+                        expect_finishtime = COALESCE(NULLIF(%(ft)s, ''), expect_finishtime),
+                        op_status = 2,
+                        order_status = CASE
+                            WHEN IFNULL(order_status, 0) < 2 THEN 2
+                            ELSE order_status
+                        END
                     WHERE id = %(cid)s AND order_form_id = %(oid)s
                     """,
-                    {"tu": tu, "cp": cp, "cid": cid, "oid": parent_id},
+                    {"tu": tu, "cp": cp, "ft": ft[:19] if ft else "", "cid": cid, "oid": parent_id},
                 )
             except Exception:
                 execute(
                     """
                     UPDATE experiment_order_child
-                    SET op_status = 2
+                    SET op_status = 2,
+                        order_status = CASE
+                            WHEN IFNULL(order_status, 0) < 2 THEN 2
+                            ELSE order_status
+                        END
                     WHERE id = %(cid)s AND order_form_id = %(oid)s
                     """,
                     {"cid": cid, "oid": parent_id},
@@ -2267,7 +2473,11 @@ def create_sub_order_from_parent(
             execute(
                 """
                 UPDATE experiment_order_child
-                SET op_status = 2
+                SET op_status = 2,
+                    order_status = CASE
+                        WHEN IFNULL(order_status, 0) < 2 THEN 2
+                        ELSE order_status
+                    END
                 WHERE id = %(cid)s AND order_form_id = %(oid)s
                 """,
                 {"cid": cid, "oid": parent_id},

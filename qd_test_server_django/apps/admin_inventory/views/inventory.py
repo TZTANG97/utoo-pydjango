@@ -11,6 +11,7 @@ from apps.admin_inventory.repositories import device_booking as booking_repo
 from apps.admin_inventory.repositories import income as income_repo
 from apps.admin_inventory.repositories import inventory as inv_repo
 from apps.admin_inventory.repositories import lab as lab_repo
+from apps.admin_inventory.repositories import line as line_repo
 from apps.admin_inventory.repositories import sample_order as sample_repo
 from apps.admin_system.views.common import merge_payload
 from apps.core.responses import ajax_fail, ajax_ok
@@ -267,6 +268,99 @@ def lab_del(request: Request, user=None):
     return Response(ajax_ok(msg="删除成功"))
 
 
+# ---- 实验线（实验室查看页） ----
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def lab_line_list(request: Request, user=None):
+    """对齐 Java /lab/lineList.ajax。"""
+    del user
+    data = merge_payload(request)
+    draw, page, page_size = parse_datatable_params(request)
+    lab_id = str(data.get("lab_id") or data.get("labId") or "").strip()
+    if not lab_id:
+        return Response(ajax_fail("参数错误"))
+    rows, total = line_repo.list_lines_by_lab(lab_id=lab_id, page=page, page_size=page_size)
+    return Response(datatable_payload(draw=draw, total=total, rows=rows))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def lab_line_class_options(request: Request, user=None):
+    """对齐 Java experimentManage/queryAll2.ajax?type=2。"""
+    del user, request
+    return Response(ajax_ok(obj=line_repo.list_line_class_options()))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def lab_line_get(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    row_id = _to_int(data.get("id"))
+    if not row_id:
+        return Response(ajax_fail("参数错误"))
+    row = line_repo.get_line(row_id)
+    if not row:
+        return Response(ajax_fail("实验线不存在"))
+    return Response(ajax_ok(obj=row))
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def lab_line_submit(request: Request, user=None):
+    """对齐 Java /lab/submitLine.ajax。"""
+    del user
+    data = merge_payload(request)
+    lab_id = _to_int(data.get("lab_id") or data.get("labId"))
+    line_num = str(data.get("line_num") or data.get("lineNum") or "").strip()
+    class_id = _to_int(data.get("class_id") or data.get("classId"))
+    if not lab_id or not line_num or not class_id:
+        return Response(ajax_fail("请填写实验线编号和类型"))
+    new_id = line_repo.insert_line(lab_id=lab_id, line_num=line_num, class_id=class_id)
+    return Response(ajax_ok(msg=str(new_id), obj={"id": new_id}))
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def lab_line_update(request: Request, user=None):
+    """对齐 Java /lab/updateLine.ajax。"""
+    del user
+    data = merge_payload(request)
+    row_id = _to_int(data.get("id"))
+    line_num = str(data.get("line_num") or data.get("lineNum") or "").strip()
+    class_id = _to_int(data.get("class_id") or data.get("classId"))
+    if not row_id or not line_num or not class_id:
+        return Response(ajax_fail("请填写实验线编号和类型"))
+    line_repo.update_line(row_id, line_num=line_num, class_id=class_id)
+    return Response(ajax_ok(msg=str(row_id), obj={"id": row_id}))
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def lab_line_status(request: Request, user=None):
+    """对齐 Java /lab/updateLineStatus.ajax。"""
+    del user
+    data = merge_payload(request)
+    row_id = _to_int(data.get("id"))
+    status = _to_int(data.get("status") if data.get("status") is not None else data.get("shstatus"))
+    if not row_id or status is None:
+        return Response(ajax_fail("参数错误"))
+    line_repo.set_line_status(row_id, status)
+    return Response(ajax_ok(msg="操作成功!"))
+
+
 # ---- 样品管理单 ----
 @api_view(["GET", "POST"])
 @authentication_classes([])
@@ -329,7 +423,8 @@ def sample_order_detail(request: Request, user=None):
     if not row:
         return Response(ajax_fail("单据不存在"))
     items = sample_repo.list_sample_order_items(row_id)
-    return Response(ajax_ok(obj={**row, "items": items}))
+    logs = sample_repo.list_sample_order_logs(row_id)
+    return Response(ajax_ok(obj={**row, "items": items, "logs": logs}))
 
 
 @api_view(["GET", "POST"])

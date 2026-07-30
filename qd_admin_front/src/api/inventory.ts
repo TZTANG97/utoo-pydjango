@@ -24,10 +24,9 @@ async function fetchDatatable<T>(
   params: Record<string, unknown>
 ): Promise<DataTableResult<T>> {
   const res = await postAjax(url, params)
-  // 业务失败（如未登录）不要当成空表，否则页面会静默显示「暂无数据」
-  if (typeof res.res === 'boolean' || typeof res.res === 'number') {
+  // ?????????????????????????????????  if (typeof res.res === 'boolean' || typeof res.res === 'number') {
     if (!isAjaxOk(res)) {
-      throw new Error(ajaxErrorMessage(res, '加载失败'))
+      throw new Error(ajaxErrorMessage(res, '????'))
     }
     const wrapped = (res.obj as DataTableResult<T> | undefined) || {}
     return {
@@ -58,7 +57,7 @@ async function fetchDatatable<T>(
   }
 }
 
-// 仓库管理
+// ????
 export const fetchStorehouseList = (p: Record<string, unknown>) =>
   fetchDatatable('/storeHouse/list.ajax', p)
 export const getStorehouse = (id: string | number) => postAjax('/storeHouse/get.ajax', { id })
@@ -68,7 +67,7 @@ export const updateStorehouseStatus = (id: string | number, status: number) =>
   postAjax('/storeHouse/updateStatus.ajax', { id, shstatus: status })
 export const deleteStorehouse = (id: string | number) => postAjax('/storeHouse/del.ajax', { id })
 
-// 样品仓库 / 留存仓库
+// ???? / ????
 function samplePrefix(retain: boolean) {
   return retain ? '/sampleremainstoreHouse' : '/samplestoreHouse'
 }
@@ -89,7 +88,38 @@ export const updateSampleStorehouseStatus = (
 export const deleteSampleStorehouse = (retain: boolean, id: string | number) =>
   postAjax(`${samplePrefix(retain)}/del.ajax`, { id })
 
-// 库存
+/** ???? API ???goods / sample / retain */
+function storeConfigPrefix(mode: 'goods' | 'sample' | 'retain') {
+  if (mode === 'goods') return '/storeHouse'
+  if (mode === 'retain') return '/sampleremainstoreHouse'
+  return '/samplestoreHouse'
+}
+export const fetchStoreBlockList = (
+  mode: 'goods' | 'sample' | 'retain',
+  p: Record<string, unknown>
+) => fetchDatatable(`${storeConfigPrefix(mode)}/storeBlockList.ajax`, p)
+export const fetchStoreBlockOptions = (mode: 'goods' | 'sample' | 'retain', storeId: string | number) =>
+  postAjax(`${storeConfigPrefix(mode)}/queryStoreBlock.ajax`, { store_id: storeId })
+export const addStoreBlock = (
+  mode: 'goods' | 'sample' | 'retain',
+  data: Record<string, unknown>
+) => postAjax(`${storeConfigPrefix(mode)}/addStoreBlock.ajax`, data)
+export const fetchStorePositionList = (
+  mode: 'goods' | 'sample' | 'retain',
+  p: Record<string, unknown>
+) => fetchDatatable(`${storeConfigPrefix(mode)}/storePositionList.ajax`, p)
+export const addStorePosition = (
+  mode: 'goods' | 'sample' | 'retain',
+  data: Record<string, unknown>
+) => postAjax(`${storeConfigPrefix(mode)}/addStorePos.ajax`, data)
+export const deleteStorePosition = (mode: 'goods' | 'sample' | 'retain', id: string | number) =>
+  postAjax(`${storeConfigPrefix(mode)}/delStorePos.ajax`, { id })
+export const clearSampleStoreGoods = (mode: 'sample' | 'retain', id: string | number) =>
+  postAjax(`${storeConfigPrefix(mode)}/delSamplegoods.ajax`, { id })
+export const fetchStorePositionQr = (mode: 'goods' | 'sample' | 'retain', id: string | number) =>
+  postAjax(`${storeConfigPrefix(mode)}/genQrcode.ajax`, { id })
+
+// ??
 export const fetchInventoryList = (p: Record<string, unknown>) =>
   fetchDatatable('/inventory/list.ajax', p)
 export const fetchInventoryChildren = (p: Record<string, unknown>) =>
@@ -99,8 +129,7 @@ export const getInventory = (id: string | number) => postAjax('/inventory/get.aj
 export const updateInventory = (data: Record<string, unknown>) =>
   postAjax('/inventory/update.ajax', data)
 
-// 实验室
-export const fetchLabList = (p: Record<string, unknown>) => fetchDatatable('/lab/list.ajax', p)
+// ????export const fetchLabList = (p: Record<string, unknown>) => fetchDatatable('/lab/list.ajax', p)
 export const fetchLabOptions = () => postAjax('/lab/options.ajax')
 export const getLab = (id: string | number) => postAjax('/lab/get.ajax', { id })
 export const saveLab = (data: Record<string, unknown>) => postAjax('/lab/save.ajax', data)
@@ -108,8 +137,18 @@ export const updateLabStatus = (id: string | number, status: number) =>
   postAjax('/lab/updateStatus.ajax', { id, status, shstatus: status })
 export const deleteLab = (id: string | number) => postAjax('/lab/del.ajax', { id })
 
-// 样品管理单
-export const fetchSampleOrderList = (p: Record<string, unknown>) =>
+// ????????????export const fetchLabLineList = (p: Record<string, unknown>) =>
+  fetchDatatable('/lab/lineList.ajax', p)
+export const fetchLabLineClassOptions = () => postAjax('/lab/lineClassOptions.ajax')
+export const getLabLine = (id: string | number) => postAjax('/lab/getLine.ajax', { id })
+export const submitLabLine = (data: Record<string, unknown>) =>
+  postAjax('/lab/submitLine.ajax', data)
+export const updateLabLine = (data: Record<string, unknown>) =>
+  postAjax('/lab/updateLine.ajax', data)
+export const updateLabLineStatus = (id: string | number, status: number) =>
+  postAjax('/lab/updateLineStatus.ajax', { id, status, shstatus: status })
+
+// ??????export const fetchSampleOrderList = (p: Record<string, unknown>) =>
   fetchDatatable('/inTreasury/list.ajax', p)
 export const fetchSampleOrderOptions = () => postAjax('/inTreasury/options.ajax')
 export const fetchSampleStorePositions = (storeId: string | number, type: 0 | 1 = 0) =>
@@ -119,14 +158,14 @@ export const getSampleOrderDetail = (id: string | number) =>
 export const exportSampleOrders = (p: Record<string, unknown>) =>
   postAjax('/inTreasury/export.ajax', p)
 
-// 设备预约
+// ????
 export const fetchDeviceBookingList = (p: Record<string, unknown>) =>
   fetchDatatable('/expLog/list.ajax', p)
 export const getDeviceBookingDetail = (id: string | number, p: Record<string, unknown> = {}) =>
   postAjax('/expLog/logDetail.ajax', { id, ...p })
 export const fetchDeviceBookingOptions = () => postAjax('/expLog/options.ajax')
 
-// 内部收益
+// ????
 export const fetchIncomeOverview = () => postAjax('/inIncome/overview.ajax')
 export const fetchIncomeList = (p: Record<string, unknown>) =>
   fetchDatatable('/inIncome/costList.ajax', p)

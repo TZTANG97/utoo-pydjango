@@ -11,26 +11,33 @@
       </div>
     </section>
 
-    <div class="quick-row">
-      <button type="button" class="quick-card quick-card--fund" @click="goFundAccount">
-        <span class="quick-card__icon" aria-hidden="true">¥</span>
+    <div v-if="quickCards.length" class="quick-row" :style="quickRowStyle">
+      <button
+        v-for="card in quickCards"
+        :key="card.key"
+        type="button"
+        class="quick-card"
+        :class="card.tone"
+        @click="card.onClick"
+      >
+        <span class="quick-card__icon" aria-hidden="true">{{ card.icon }}</span>
         <span class="quick-card__body">
-          <strong>资金账户</strong>
-          <em>账户余额 · 收支明细</em>
-        </span>
-        <span class="quick-card__arrow">→</span>
-      </button>
-      <button type="button" class="quick-card quick-card--digital" @click="goDigitalCenter">
-        <span class="quick-card__icon" aria-hidden="true">◈</span>
-        <span class="quick-card__body">
-          <strong>数字化中心</strong>
-          <em>运营看板 · 绩效统计</em>
+          <strong>{{ card.title }}</strong>
+          <em>{{ card.desc }}</em>
         </span>
         <span class="quick-card__arrow">→</span>
       </button>
     </div>
+    <el-alert
+      v-else
+      class="role-hint"
+      type="info"
+      :closable="false"
+      show-icon
+      title="当前账号类型在欢迎页无快捷入口，请从左侧菜单进入业务模块"
+    />
 
-    <div class="main-row">
+    <div v-if="showChartAndLogs" class="main-row">
       <el-card class="panel-card chart-card" shadow="never">
         <template #header>
           <div class="panel-head">
@@ -76,6 +83,15 @@ import { useUserStore } from '@admin/stores/user'
 import type { WelcomeLogItem } from '@admin/types/admin'
 import { isAjaxOk } from '@admin/utils/request'
 
+type QuickCard = {
+  key: string
+  title: string
+  desc: string
+  icon: string
+  tone: string
+  onClick: () => void
+}
+
 const router = useRouter()
 const userStore = useUserStore()
 const chartRef = ref<HTMLDivElement>()
@@ -84,6 +100,74 @@ let chart: ECharts | null = null
 const xdate = computed(() => userStore.welcome?.xdate || [])
 const ydata = computed(() => (userStore.welcome?.ydata || []).map((v) => Number(v) || 0))
 const logs = computed<WelcomeLogItem[]>(() => userStore.welcome?.newlogs || [])
+
+/** 对齐 Java welcome.html：1管理员 2公司 3销售主管 4销售 5制单 6投资 7仓库+销售 14=H类 */
+const welcomeUserType = computed(() =>
+  Number(userStore.welcome?.userType ?? userStore.userType ?? 0),
+)
+
+const showChartAndLogs = computed(() => welcomeUserType.value === 1)
+
+const quickCards = computed<QuickCard[]>(() => {
+  const t = welcomeUserType.value
+  const cards: QuickCard[] = []
+  const showFundDigital = [1, 2, 3, 4, 7, 14].includes(t)
+  if (showFundDigital) {
+    cards.push({
+      key: 'fund',
+      title: '资金账户',
+      desc: '账户余额 · 收支明细',
+      icon: '¥',
+      tone: 'quick-card--fund',
+      onClick: goFundAccount,
+    })
+    cards.push({
+      key: 'digital',
+      title: '数字化中心',
+      desc: '运营看板 · 绩效统计',
+      icon: '◈',
+      tone: 'quick-card--digital',
+      onClick: goDigitalCenter,
+    })
+  }
+  if (t === 2) {
+    cards.push({
+      key: 'company-pay',
+      title: '公司资金支出',
+      desc: '各公司支出明细',
+      icon: '企',
+      tone: 'quick-card--company',
+      onClick: goCompanyPay,
+    })
+    cards.push({
+      key: 'personal-pay',
+      title: '个人资金支出',
+      desc: '个人支出明细',
+      icon: '人',
+      tone: 'quick-card--personal',
+      onClick: goPersonalPay,
+    })
+  }
+  if ([3, 4, 7].includes(t)) {
+    cards.push({
+      key: 'create-order',
+      title: '新增实验订单',
+      desc: '创建实验销售订单',
+      icon: '+',
+      tone: 'quick-card--order',
+      onClick: goCreateExpOrder,
+    })
+  }
+  return cards
+})
+
+const quickRowStyle = computed(() => {
+  const n = quickCards.value.length
+  if (n <= 1) return { gridTemplateColumns: '1fr' }
+  if (n === 3) return { gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }
+  if (n >= 4) return { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }
+  return { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }
+})
 
 const displayName = computed(
   () => userStore.userName || userStore.loginName || '管理员',
@@ -103,15 +187,27 @@ const todayLabel = computed(() => {
 })
 
 function goFundAccount() {
-  router.push('/admin/fund/account')
+  router.push({ name: 'FundAccount' })
 }
 
 function goDigitalCenter() {
-  router.push('/admin/fund/digital-center')
+  router.push({ name: 'FundDigitalCenter' })
+}
+
+function goCompanyPay() {
+  router.push({ name: 'FundCompanyPay' })
+}
+
+function goPersonalPay() {
+  router.push({ name: 'FundPersonalPay' })
+}
+
+function goCreateExpOrder() {
+  router.push({ name: 'ExperimentOrders' })
 }
 
 function goMoreLogs() {
-  router.push('/admin/system/ops-logs')
+  router.push({ name: 'SystemOpsLogs' })
 }
 
 function renderChart() {
@@ -204,7 +300,8 @@ async function ensureWelcomeData() {
   }
 }
 
-watch([xdate, ydata], async () => {
+watch([xdate, ydata, showChartAndLogs], async () => {
+  if (!showChartAndLogs.value) return
   await nextTick()
   renderChart()
 })
@@ -212,7 +309,9 @@ watch([xdate, ydata], async () => {
 onMounted(async () => {
   await ensureWelcomeData()
   await nextTick()
-  renderChart()
+  if (showChartAndLogs.value) {
+    renderChart()
+  }
   window.addEventListener('resize', onResize)
 })
 
@@ -306,6 +405,18 @@ onBeforeUnmount(() => {
   &--digital:hover {
     border-color: #5eead4;
   }
+
+  &--company:hover {
+    border-color: #93c5fd;
+  }
+
+  &--personal:hover {
+    border-color: #c4b5fd;
+  }
+
+  &--order:hover {
+    border-color: #86efac;
+  }
 }
 
 .quick-card__icon {
@@ -327,6 +438,25 @@ onBeforeUnmount(() => {
 .quick-card--digital .quick-card__icon {
   background: rgba(20, 184, 166, 0.12);
   color: #0f766e;
+}
+
+.quick-card--company .quick-card__icon {
+  background: rgba(59, 130, 246, 0.12);
+  color: #2563eb;
+}
+
+.quick-card--personal .quick-card__icon {
+  background: rgba(139, 92, 246, 0.12);
+  color: #7c3aed;
+}
+
+.quick-card--order .quick-card__icon {
+  background: rgba(34, 197, 94, 0.12);
+  color: #16a34a;
+}
+
+.role-hint {
+  border-radius: 12px;
 }
 
 .quick-card__body {

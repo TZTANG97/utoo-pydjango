@@ -1,6 +1,7 @@
 from django.urls import path
 
 from apps.admin_inventory.views import inventory as inv
+from apps.admin_inventory.views import store_config as cfg
 from apps.admin_inventory.views import storehouse as sh
 
 urlpatterns = [
@@ -11,6 +12,14 @@ urlpatterns = [
     path("storeHouse/updateStoreHouse.ajax", sh.storehouse_save),
     path("storeHouse/updateStatus.ajax", sh.storehouse_status),
     path("storeHouse/del.ajax", sh.storehouse_del),
+    # 仓库配置（地块/库位）
+    path("storeHouse/storeBlockList.ajax", cfg.goods_store_block_list),
+    path("storeHouse/queryStoreBlock.ajax", cfg.goods_query_store_block),
+    path("storeHouse/addStoreBlock.ajax", cfg.goods_add_store_block),
+    path("storeHouse/storePositionList.ajax", cfg.goods_store_position_list),
+    path("storeHouse/addStorePos.ajax", cfg.goods_add_store_pos),
+    path("storeHouse/delStorePos.ajax", cfg.goods_del_store_pos),
+    path("storeHouse/genQrcode.ajax", cfg.goods_gen_qrcode),
     # 样品仓库 type=1
     path("samplestoreHouse/list.ajax", sh.sample_storehouse_list),
     path("samplestoreHouse/get.ajax", sh.sample_storehouse_get),
@@ -18,6 +27,14 @@ urlpatterns = [
     path("samplestoreHouse/updateStoreHouse.ajax", sh.sample_storehouse_save),
     path("samplestoreHouse/updateStatus.ajax", sh.sample_storehouse_status),
     path("samplestoreHouse/del.ajax", sh.sample_storehouse_del),
+    path("samplestoreHouse/storeBlockList.ajax", cfg.sample_store_block_list),
+    path("samplestoreHouse/queryStoreBlock.ajax", cfg.sample_query_store_block),
+    path("samplestoreHouse/addStoreBlock.ajax", cfg.sample_add_store_block),
+    path("samplestoreHouse/storePositionList.ajax", cfg.sample_store_position_list),
+    path("samplestoreHouse/addStorePos.ajax", cfg.sample_add_store_pos),
+    path("samplestoreHouse/delStorePos.ajax", cfg.sample_del_store_pos),
+    path("samplestoreHouse/delSamplegoods.ajax", cfg.sample_del_sample_goods),
+    path("samplestoreHouse/genQrcode.ajax", cfg.sample_gen_qrcode),
     # 样品留存仓库 type=2
     path("sampleremainstoreHouse/list.ajax", sh.sample_remain_storehouse_list),
     path("sampleremainstoreHouse/get.ajax", sh.sample_storehouse_get),
@@ -25,6 +42,14 @@ urlpatterns = [
     path("sampleremainstoreHouse/updateStoreHouse.ajax", sh.sample_remain_storehouse_save),
     path("sampleremainstoreHouse/updateStatus.ajax", sh.sample_storehouse_status),
     path("sampleremainstoreHouse/del.ajax", sh.sample_storehouse_del),
+    path("sampleremainstoreHouse/storeBlockList.ajax", cfg.remain_store_block_list),
+    path("sampleremainstoreHouse/queryStoreBlock.ajax", cfg.remain_query_store_block),
+    path("sampleremainstoreHouse/addStoreBlock.ajax", cfg.remain_add_store_block),
+    path("sampleremainstoreHouse/storePositionList.ajax", cfg.remain_store_position_list),
+    path("sampleremainstoreHouse/addStorePos.ajax", cfg.remain_add_store_pos),
+    path("sampleremainstoreHouse/delStorePos.ajax", cfg.remain_del_store_pos),
+    path("sampleremainstoreHouse/delSamplegoods.ajax", cfg.remain_del_sample_goods),
+    path("sampleremainstoreHouse/genQrcode.ajax", cfg.remain_gen_qrcode),
     # 库存管理
     path("inventory/list.ajax", inv.inventory_list),
     path("inventory/inventoryList.ajax", inv.inventory_list),
@@ -41,6 +66,13 @@ urlpatterns = [
     path("lab/save.ajax", inv.lab_save),
     path("lab/updateStatus.ajax", inv.lab_status),
     path("lab/del.ajax", inv.lab_del),
+    # 实验线（实验室查看页）
+    path("lab/lineList.ajax", inv.lab_line_list),
+    path("lab/lineClassOptions.ajax", inv.lab_line_class_options),
+    path("lab/getLine.ajax", inv.lab_line_get),
+    path("lab/submitLine.ajax", inv.lab_line_submit),
+    path("lab/updateLine.ajax", inv.lab_line_update),
+    path("lab/updateLineStatus.ajax", inv.lab_line_status),
     # 样品管理单
     path("inTreasury/list.ajax", inv.sample_order_list),
     path("inTreasury/options.ajax", inv.sample_order_options),

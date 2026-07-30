@@ -103,15 +103,15 @@ const todayLabel = computed(() => {
 })
 
 function goFundAccount() {
-  router.push('/admin/fund/account')
+  router.push({ name: 'FundAccount' })
 }
 
 function goDigitalCenter() {
-  router.push('/admin/fund/digital-center')
+  router.push({ name: 'FundDigitalCenter' })
 }
 
 function goMoreLogs() {
-  router.push('/admin/system/ops-logs')
+  router.push({ name: 'SystemOpsLogs' })
 }
 
 function renderChart() {

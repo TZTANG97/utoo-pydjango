@@ -9,26 +9,39 @@ from apps.core.db_utils import fetch_all, scalar
 
 
 def _resolve_welcome_user_type(utoo_type: str | None) -> int:
-    """对齐 Java IndexViewController.welcome.htm 的 userType 粗分。"""
+    """对齐 Java IndexViewController.welcome.ajax 的 userType。"""
     role = (utoo_type or "").strip()
     if not role:
         return 0
-    if "系统管理员" in role or role.upper() == "ADMIN":
+    upper = role.upper()
+    if "系统管理员" in role or upper == "ADMIN" or role == "admin":
         return 1
-    if "公司" in role:
+    if "公司基金" in role or "公司账号" in role or role == "公司":
         return 2
     if "销售主管" in role:
         return 3
-    if "销售" in role or "原厂" in role:
-        return 4
     if "制单" in role:
         return 5
-    if "投资" in role:
+    if "外部投资" in role or "投资" in role:
         return 6
     if "仓库" in role:
         return 7
-    if role.startswith("H") or "H类" in role:
+    if "H类" in role or role.startswith("H类") or upper.startswith("H_"):
         return 14
+    if "销售" in role or "原厂" in role or "C类" in role:
+        return 4
+    return 0
+
+
+def _resolve_welcome_user_type2(utoo_type: str | None, user_type: int) -> int:
+    """对齐 welcome.ajax 的 userType2（粗分销售/测试相关）。"""
+    role = (utoo_type or "").strip()
+    if user_type == 1:
+        return 1
+    if "测试人员" in role:
+        return 3
+    if user_type in (3, 4, 14) or "销售" in role or "H类" in role:
+        return 2
     return 0
 
 
@@ -198,7 +211,9 @@ def list_sys_logs_page(
 def build_welcome_payload(user: dict[str, Any]) -> dict[str, Any]:
     user_id = str(user.get("user_id") or "")
     utoo_type = user.get("utoo_type") or user.get("type")
-    user_type = _resolve_welcome_user_type(str(utoo_type) if utoo_type else None)
+    role_text = str(utoo_type) if utoo_type else ""
+    user_type = _resolve_welcome_user_type(role_text)
+    user_type2 = _resolve_welcome_user_type2(role_text, user_type)
     dept_name = staff_repo.find_dept_name(user.get("dept_id"))
     xdate = previous_six_months()
     ydata = _chart_y_datas(xdate)
@@ -206,7 +221,8 @@ def build_welcome_payload(user: dict[str, Any]) -> dict[str, Any]:
         "userName": user.get("true_name") or user.get("user_name") or "",
         "loginName": user.get("user_name") or "",
         "userType": user_type,
-        "roleName": user.get("type") or user.get("utoo_type") or "",
+        "userType2": user_type2,
+        "roleName": role_text,
         "deptName": dept_name or "",
         "email": user.get("email") or "",
         "mobilePhoneNumber": user.get("mobile_phone_number") or "",

@@ -16,7 +16,13 @@ export interface DataTableResult<T = Record<string, unknown>> {
 }
 
 async function postAjax(url: string, data?: Record<string, unknown>, config?: RequestConfig) {
-  return (await request.post(url, data, config)) as unknown as AjaxBody
+  return (await request.post(url, data, {
+    ...config,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(config?.headers || {}),
+    },
+  })) as unknown as AjaxBody
 }
 
 async function fetchDatatable<T>(

@@ -16,7 +16,11 @@ urlpatterns = [
     # Consult
     path("consult/list.ajax", consult_views.consult_list),
     path("consult/consultDetail.ajax", consult_views.consult_detail),
+    path("consult/consultDetailxq.ajax", consult_views.consult_detail_xq),
     path("consult/cancelConsult.ajax", consult_views.cancel_consult),
+    path("consult/updateConsult.ajax", consult_views.update_consult),
+    path("consult/saveOrder.ajax", consult_views.save_order),
+    path("consult/querySampleList.ajax", consult_views.query_sample_list),
     path("consult/settingGet.ajax", consult_views.setting_get),
     path("consult/settingSave.ajax", consult_views.setting_save),
     path("consult/isshowGet.ajax", consult_views.isshow_get),

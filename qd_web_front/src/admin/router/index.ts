@@ -187,6 +187,12 @@ export const constantRoutes: RouteRecordRaw[] = [
         meta: { title: '咨询消息设置' },
       },
       {
+        path: 'service-platform/consult/:id',
+        name: 'ServiceConsultDetail',
+        component: () => import('@admin/views/service-platform/consult/detail.vue'),
+        meta: { title: '咨询详情', hidden: true },
+      },
+      {
         path: 'service-platform/faq',
         name: 'ServiceFaq',
         component: () => import('@admin/views/service-platform/faq/index.vue'),
@@ -404,6 +410,12 @@ export const constantRoutes: RouteRecordRaw[] = [
         name: 'InventoryWarehouses',
         component: () => import('@admin/views/inventory/warehouses/index.vue'),
         meta: { title: '仓库管理' },
+      },
+      {
+        path: 'inventory/warehouse-config',
+        name: 'InventoryWarehouseConfig',
+        component: () => import('@admin/views/inventory/warehouse-config/index.vue'),
+        meta: { title: '仓库配置' },
       },
       {
         path: 'inventory/income',

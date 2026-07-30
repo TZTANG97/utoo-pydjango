@@ -8,7 +8,7 @@
       <el-form-item label="仓库名称">
         <el-input v-model="filters.storeName" clearable style="width: 160px" />
       </el-form-item>
-      <el-form-item label="负责人">
+      <el-form-item label="负责�?>
         <el-input v-model="filters.trueName" clearable style="width: 140px" />
       </el-form-item>
       <el-form-item label="手机">
@@ -22,12 +22,12 @@
     <el-table v-loading="loading" :data="rows" border stripe>
       <el-table-column prop="storeNum" label="仓库编号" min-width="120" />
       <el-table-column prop="storeName" label="仓库名称" min-width="140" />
-      <el-table-column prop="trueName" label="负责人" min-width="100">
+      <el-table-column prop="trueName" label="负责�? min-width="100">
         <template #default="{ row }">{{ row.trueName || row.userName || '-' }}</template>
       </el-table-column>
       <el-table-column prop="moblie" label="手机" min-width="120" />
       <el-table-column prop="address" label="地址" min-width="180" show-overflow-tooltip />
-      <el-table-column label="状态" width="90">
+      <el-table-column label="状�? width="90">
         <template #default="{ row }">
           <el-tag :type="Number(row.status) === 1 ? 'success' : 'info'" size="small">
             {{ Number(row.status) === 1 ? '启用' : '停用' }}
@@ -35,13 +35,14 @@
         </template>
       </el-table-column>
       <el-table-column prop="addTime" label="创建时间" min-width="160" />
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
           <el-button link type="warning" @click="toggleStatus(row)">
             {{ Number(row.status) === 1 ? '停用' : '启用' }}
           </el-button>
           <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+          <el-button link type="primary" @click="openConfig(row)">配置</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -64,7 +65,7 @@
         <el-form-item label="手机"><el-input v-model="form.moblie" /></el-form-item>
         <el-form-item label="地址"><el-input v-model="form.address" /></el-form-item>
         <el-form-item label="备注"><el-input v-model="form.mark" type="textarea" :rows="2" /></el-form-item>
-        <el-form-item label="状态">
+        <el-form-item label="状�?>
           <el-select v-model="form.status" style="width: 120px">
             <el-option :value="1" label="启用" />
             <el-option :value="0" label="停用" />
@@ -81,6 +82,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminPageCard from '@/components/AdminPageCard.vue'
 import {
@@ -100,6 +102,8 @@ const props = withDefaults(
   defineProps<{ mode?: 'goods' | 'sample' | 'retain'; title?: string }>(),
   { mode: 'goods', title: '仓库管理' }
 )
+
+const router = useRouter()
 
 const filters = reactive({ storeName: '', trueName: '', mobile: '' })
 const dialogVisible = ref(false)
@@ -160,7 +164,7 @@ function openEdit(row: Record<string, unknown>) {
 
 async function handleSubmit() {
   if (!form.storeName.trim()) {
-    ElMessage.warning('请填写仓库名称')
+    ElMessage.warning('请填写仓库名�?)
     return
   }
   saving.value = true
@@ -205,8 +209,15 @@ async function handleDelete(row: Record<string, unknown>) {
     ElMessage.error(String(res.msg || '删除失败'))
     return
   }
-  ElMessage.success('已删除')
+  ElMessage.success('已删�?)
   load()
+}
+
+function openConfig(row: Record<string, unknown>) {
+  router.push({
+    name: 'InventoryWarehouseConfig',
+    query: { mode: props.mode, id: String(row.id) },
+  })
 }
 </script>
 

@@ -13,7 +13,8 @@ from apps.core.responses import ajax_fail, ajax_ok
 
 
 def _staff_id(user: dict | None) -> str:
-    return str((user or {}).get("user_id") or "")
+    u = user or {}
+    return str(u.get("user_id") or u.get("id") or u.get("userId") or "")
 
 
 @api_view(["GET", "POST"])
@@ -68,6 +69,50 @@ def invoice_reject(request: Request, user=None):
     if not apply_id:
         return Response(ajax_fail("缺少 id"))
     ok, msg = billing_service.reject_invoice(apply_id=int(apply_id), staff_user_id=_staff_id(user))
+    return Response(ajax_ok(res_msg=msg) if ok else ajax_fail(msg))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view(require_staff=True)
+def invoice_open_preview(request: Request, user=None):
+    del user
+    apply_id = request.query_params.get("id") or request.data.get("id")
+    if not apply_id:
+        return Response(ajax_fail("缺少 id"))
+    row = billing_service.get_invoice_open_preview(int(apply_id))
+    if not row:
+        return Response(ajax_fail("发票申请不存在"))
+    return Response(ajax_ok(obj=row))
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view(require_staff=True)
+def invoice_agree(request: Request, user=None):
+    """对齐 Java addBillDataInvoice / 开票。"""
+    apply_id = request.data.get("id") or request.query_params.get("id")
+    if not apply_id:
+        return Response(ajax_fail("缺少 id"))
+    items = request.data.get("items") or request.data.get("list") or []
+    if isinstance(items, str):
+        import json
+
+        try:
+            items = json.loads(items)
+        except Exception:
+            items = []
+    if not isinstance(items, list):
+        items = []
+    mark = str(request.data.get("mark") or "")
+    ok, msg = billing_service.agree_invoice(
+        apply_id=int(apply_id),
+        staff_user_id=_staff_id(user),
+        items=items,
+        mark=mark,
+    )
     return Response(ajax_ok(res_msg=msg) if ok else ajax_fail(msg))
 
 

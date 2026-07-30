@@ -15,8 +15,9 @@ def list_users(
     page: int,
     page_size: int,
 ) -> tuple[list[dict[str, Any]], int]:
-    where = "WHERE 1=1"
-    params: dict[str, Any] = {}
+    # 对齐 Java UserMapper.getuserinfoMap：仅后台员工且启用
+    where = "WHERE u.user_status = 1 AND u.pt_type LIKE %(pt_type)s"
+    params: dict[str, Any] = {"pt_type": "%2%"}
     if dept_id and dept_id != "0":
         where += " AND u.dept_id = %(dept_id)s"
         params["dept_id"] = dept_id

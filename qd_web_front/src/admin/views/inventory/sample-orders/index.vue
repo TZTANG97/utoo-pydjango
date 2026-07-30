@@ -96,6 +96,29 @@
           <el-table-column prop="storePosition" label="入库位置" min-width="100" />
           <el-table-column prop="gotStatusLabel" label="状态" width="80" />
         </el-table>
+
+        <h4 class="section-title">操作记录</h4>
+        <el-table
+          :data="(detail.logs as Record<string, unknown>[]) || []"
+          border
+          size="small"
+          empty-text="暂无操作记录"
+          stripe
+        >
+          <el-table-column label="操作时间" min-width="160">
+            <template #default="{ row }">{{ formatTime(row.addTime) }}</template>
+          </el-table-column>
+          <el-table-column label="操作人员" min-width="120" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ row.operateUser || row.logUserName || '-' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" min-width="200" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ row.operateInfo || row.logInfo || '-' }}
+            </template>
+          </el-table-column>
+        </el-table>
       </template>
     </el-drawer>
 

@@ -33,6 +33,8 @@ export interface WelcomeData {
   userName?: string
   loginName?: string
   userType?: number
+  /** 对齐 Java welcome.ajax userType2 */
+  userType2?: number
   roleName?: string
   deptName?: string
   email?: string

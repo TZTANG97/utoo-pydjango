@@ -615,7 +615,6 @@ def order_detail(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_audit(request: Request, user=None):
-    del user
     data = merge_payload(request)
     order_id = to_int(data.get("id") or data.get("ofId"))
     if not order_id:
@@ -628,7 +627,12 @@ def order_audit(request: Request, user=None):
     else:
         pass_ = bool(pass_raw) if pass_raw is not None else True
     remark = (data.get("remark") or data.get("mark") or "").strip()
-    ok_flag, msg = order_repo.audit_order(order_id=order_id, pass_=pass_, remark=remark)
+    staff = ""
+    if isinstance(user, dict):
+        staff = str(user.get("id") or user.get("userId") or "")
+    ok_flag, msg = order_repo.audit_order(
+        order_id=order_id, pass_=pass_, remark=remark, staff_user_id=staff
+    )
     if not ok_flag:
         return fail(msg)
     return ok(res_msg=msg)
@@ -639,14 +643,17 @@ def order_audit(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_cancel(request: Request, user=None):
-    del user
     data = merge_payload(request)
     order_id = to_int(data.get("id") or data.get("ofId"))
     if not order_id:
         return fail("参数错误")
+    staff = ""
+    if isinstance(user, dict):
+        staff = str(user.get("id") or user.get("userId") or "")
     ok_flag, msg = order_repo.cancel_order(
         order_id=order_id,
         remark=(data.get("remark") or data.get("mark") or "").strip(),
+        staff_user_id=staff,
     )
     if not ok_flag:
         return fail(msg)
@@ -816,6 +823,17 @@ def order_save_finish(request: Request, user=None):
     if not order_id:
         return fail("参数错误")
     items = data.get("items") or data.get("children") or []
+    if isinstance(items, str):
+        import json
+
+        text = items.strip()
+        if text:
+            try:
+                items = json.loads(text)
+            except Exception:
+                return fail("明细格式错误")
+        else:
+            items = []
     if not isinstance(items, list):
         return fail("明细格式错误")
     ok_flag, msg = order_repo.save_finish_times(order_id=order_id, items=items)
@@ -1146,14 +1164,17 @@ def order_confirm_pay(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_generate_appointment(request: Request, user=None):
-    del user
     data = merge_payload(request)
     oid = _order_id_from(data)
     if not oid:
         return fail("参数错误")
+    staff = ""
+    if isinstance(user, dict):
+        staff = str(user.get("id") or user.get("userId") or "")
     ok_flag, msg = order_repo.generate_appointment(
         order_id=oid,
         test_address_id=str(data.get("testAddressId") or data.get("test_address_id") or ""),
+        staff_user_id=staff,
     )
     return ok(res_msg=msg) if ok_flag else fail(msg)
 
@@ -1175,6 +1196,7 @@ def order_update_basic(request: Request, user=None):
         ship_phone=str(data.get("shipPhone") or data.get("ship_phone") or ""),
         ship_address=str(data.get("shipAddress") or data.get("ship_address") or ""),
         total_price=data.get("totalPrice") if "totalPrice" in data or "total_price" in data else None,
+        delivery_time=str(data.get("deliveryTime") or data.get("delivery_time") or ""),
     )
     return ok(res_msg=msg) if ok_flag else fail(msg)
 

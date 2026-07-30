@@ -607,11 +607,9 @@ def save_receive_bill(
         execute(
             """
             INSERT INTO qd_bill
-                (add_time, delete_status, exp_of_id, money, type, is_split,
-                 bill_date, log_info, log_user_id)
+                (add_time, add_user_id, exp_of_id, money, type, is_split, bill_date, mark)
             VALUES
-                (NOW(), 0, %(oid)s, %(money)s, 2, 0,
-                 %(bdate)s, %(log_info)s, %(uid)s)
+                (NOW(), %(uid)s, %(oid)s, %(money)s, 2, 0, %(bdate)s, %(log_info)s)
             """,
             {**params, "bdate": bill_date},
         )
@@ -619,11 +617,9 @@ def save_receive_bill(
         execute(
             """
             INSERT INTO qd_bill
-                (add_time, delete_status, exp_of_id, money, type, is_split,
-                 bill_date, log_info, log_user_id)
+                (add_time, add_user_id, exp_of_id, money, type, is_split, bill_date, mark)
             VALUES
-                (NOW(), 0, %(oid)s, %(money)s, 2, 0,
-                 NOW(), %(log_info)s, %(uid)s)
+                (NOW(), %(uid)s, %(oid)s, %(money)s, 2, 0, NOW(), %(log_info)s)
             """,
             params,
         )

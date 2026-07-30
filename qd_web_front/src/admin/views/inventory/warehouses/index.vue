@@ -35,13 +35,14 @@
         </template>
       </el-table-column>
       <el-table-column prop="addTime" label="创建时间" min-width="160" />
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
           <el-button link type="warning" @click="toggleStatus(row)">
             {{ Number(row.status) === 1 ? '停用' : '启用' }}
           </el-button>
           <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+          <el-button link type="primary" @click="openConfig(row)">配置</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -81,6 +82,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminPageCard from '@admin/components/AdminPageCard.vue'
 import {
@@ -100,6 +102,8 @@ const props = withDefaults(
   defineProps<{ mode?: 'goods' | 'sample' | 'retain'; title?: string }>(),
   { mode: 'goods', title: '仓库管理' }
 )
+
+const router = useRouter()
 
 const filters = reactive({ storeName: '', trueName: '', mobile: '' })
 const dialogVisible = ref(false)
@@ -207,6 +211,13 @@ async function handleDelete(row: Record<string, unknown>) {
   }
   ElMessage.success('已删除')
   load()
+}
+
+function openConfig(row: Record<string, unknown>) {
+  router.push({
+    name: 'InventoryWarehouseConfig',
+    query: { mode: props.mode, id: String(row.id) },
+  })
 }
 </script>
 

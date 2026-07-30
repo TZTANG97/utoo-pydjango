@@ -286,6 +286,12 @@ export const useUserStore = defineStore('admin-user', {
 
         }
 
+        if (this.welcome?.userType != null) {
+
+          this.userType = Number(this.welcome.userType) || 0
+
+        }
+
       }
 
       this.loaded = true

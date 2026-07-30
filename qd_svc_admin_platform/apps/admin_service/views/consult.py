@@ -109,3 +109,93 @@ def isshow_save(request: Request, user=None):
     data = merge_payload(request)
     consult_repo.save_is_show(_truthy_flag(data.get("is_show") or data.get("isShow")))
     return ajax_response(True, res_msg="操作成功")
+
+
+def _parse_payload_list(request: Request) -> list:
+    """解析 updateConsult/saveOrder 的 JSON 数组 body。"""
+    raw = request.data
+    if isinstance(raw, list):
+        return raw
+    if isinstance(raw, (bytes, bytearray, memoryview)):
+        import json
+
+        try:
+            parsed = json.loads(bytes(raw).decode("utf-8"))
+            if isinstance(parsed, list):
+                return parsed
+        except Exception:
+            return []
+    if isinstance(raw, str):
+        import json
+
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                return parsed
+        except Exception:
+            return []
+    if isinstance(raw, dict):
+        for key in ("list", "data", "payload", "rows"):
+            val = raw.get(key)
+            if isinstance(val, list):
+                return val
+    return []
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def consult_detail_xq(request: Request, user=None):
+    """后台咨询详情（xq）— 与 consultDetail 同形。"""
+    del user
+    data = merge_payload(request)
+    consult_id = data.get("id")
+    if not consult_id:
+        return Response(ajax_fail("数据错误"))
+    row = consult_repo.get_consult_detail(int(consult_id))
+    if not row:
+        return Response(ajax_fail("咨询不存在"))
+    return Response(ajax_ok(obj=row))
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def update_consult(request: Request, user=None):
+    del user
+    payload = _parse_payload_list(request)
+    ok, msg = consult_repo.update_consult(payload)
+    if not ok:
+        return Response(ajax_fail(msg))
+    return Response(ajax_ok(res_msg=msg))
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def save_order(request: Request, user=None):
+    staff_id = ""
+    if isinstance(user, dict):
+        staff_id = str(user.get("user_id") or user.get("id") or "")
+    payload = _parse_payload_list(request)
+    ok, msg, order_pk = consult_repo.save_order_from_consult(payload, staff_user_id=staff_id)
+    if not ok:
+        return Response(ajax_fail(msg))
+    return Response(ajax_ok(obj=order_pk, res_msg=msg or "生成成功"))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def query_sample_list(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    consult_id = data.get("consultId") or data.get("consult_id") or data.get("id")
+    if not consult_id:
+        return Response(ajax_fail("咨询 ID 为空"))
+    rows = consult_repo.list_sample_options(int(consult_id))
+    return Response(ajax_ok(obj=rows))

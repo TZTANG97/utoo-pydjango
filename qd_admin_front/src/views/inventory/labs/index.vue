@@ -169,21 +169,107 @@
       />
     </div>
 
-    <el-dialog v-model="detailVisible" title="查看实验室" width="560px">
-      <el-descriptions :column="1" border>
+    <!-- 查看实验室 + 实验线管理（对齐 Java labDetail） -->
+    <el-dialog
+      v-model="detailVisible"
+      title="查看实验室"
+      width="920px"
+      destroy-on-close
+      @closed="onDetailClosed"
+    >
+      <el-descriptions :column="2" border>
         <el-descriptions-item label="实验室编号">{{ detail.labNum }}</el-descriptions-item>
         <el-descriptions-item label="实验室名称">{{ detail.labName }}</el-descriptions-item>
-        <el-descriptions-item label="负责人">{{ detail.userName }}</el-descriptions-item>
-        <el-descriptions-item label="注册地址">{{ detail.address }}</el-descriptions-item>
+        <el-descriptions-item label="注册地址" :span="2">{{ detail.address }}</el-descriptions-item>
         <el-descriptions-item label="国家">{{ detail.countryName }}</el-descriptions-item>
         <el-descriptions-item label="省/市">{{ detail.provinceName }}</el-descriptions-item>
         <el-descriptions-item label="市">{{ detail.cityName }}</el-descriptions-item>
         <el-descriptions-item label="县/区">{{ detail.areaName }}</el-descriptions-item>
-        <el-descriptions-item label="状态">
-          {{ Number(detail.status) === 1 ? '启用' : '禁用' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="创建时间">{{ detail.addTime }}</el-descriptions-item>
+        <el-descriptions-item label="负责人">{{ detail.userName }}</el-descriptions-item>
+        <el-descriptions-item label="关联账号">{{ detail.syUserName || '-' }}</el-descriptions-item>
       </el-descriptions>
+
+      <div class="line-toolbar">
+        <el-button type="primary" @click="openLineCreate">添加实验线</el-button>
+        <el-button @click="openQrcode">生成二维码</el-button>
+      </div>
+
+      <el-table
+        v-loading="lineLoading"
+        :data="lineRows"
+        border
+        stripe
+        @selection-change="onLineSelectionChange"
+      >
+        <el-table-column type="selection" width="48" align="center" />
+        <el-table-column type="index" width="55" label="#" align="center" />
+        <el-table-column prop="lineNum" label="实验线编号" min-width="140" />
+        <el-table-column prop="className" label="实验线类型" min-width="160" show-overflow-tooltip />
+        <el-table-column label="状态" width="100" align="center">
+          <template #default="{ row }">
+            {{ lineStatusLabel(row.lineStatus ?? row.line_status) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="160" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openLineEdit(row)">编辑</el-button>
+            <el-button link type="warning" @click="toggleLineStatus(row)">
+              {{ Number(row.status) === 1 ? '禁用' : '启用' }}
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div class="pager">
+        <el-pagination
+          v-model:current-page="linePagination.page"
+          v-model:page-size="linePagination.pageSize"
+          :page-sizes="[10, 20, 50]"
+          layout="total, prev, pager, next"
+          :total="lineTotal"
+          @size-change="reloadLines"
+          @current-change="loadLines"
+        />
+      </div>
+    </el-dialog>
+
+    <el-dialog
+      v-model="lineDialogVisible"
+      :title="lineEditingId ? '编辑实验线' : '添加实验线'"
+      width="480px"
+      append-to-body
+    >
+      <el-form label-width="110px">
+        <el-form-item label="实验线编号" required>
+          <el-input v-model="lineForm.lineNum" placeholder="请输入实验线编号" />
+        </el-form-item>
+        <el-form-item label="实验线类型" required>
+          <el-select
+            v-model="lineForm.classId"
+            filterable
+            clearable
+            placeholder="请选择"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="o in lineClassOptions"
+              :key="String(o.id)"
+              :label="String(o.name)"
+              :value="String(o.id)"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="lineDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="lineSaving" @click="handleLineSubmit">确认</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="qrVisible" title="生成二维码" width="360px" append-to-body @opened="renderQr">
+      <div class="qr-wrap">
+        <canvas ref="qrCanvas" />
+        <p class="qr-text">{{ qrText }}</p>
+      </div>
     </el-dialog>
 
     <el-dialog v-model="dialogVisible" :title="editingId ? '编辑实验室' : '新增实验室'" width="560px">
@@ -283,14 +369,20 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import QRCode from 'qrcode'
 import AdminPageCard from '@/components/AdminPageCard.vue'
 import {
   fetchLabList,
+  fetchLabLineClassOptions,
+  fetchLabLineList,
   fetchLabOptions,
   getLab,
   saveLab,
+  submitLabLine,
+  updateLabLine,
+  updateLabLineStatus,
   updateLabStatus,
 } from '@/api/inventory'
 import { fetchDistrictChildren } from '@/api/system'
@@ -338,6 +430,21 @@ const form = reactive({
   status: 1,
 })
 
+const lineLoading = ref(false)
+const lineRows = ref<Record<string, unknown>[]>([])
+const lineTotal = ref(0)
+const linePagination = reactive({ page: 1, pageSize: 10 })
+const lineSelected = ref<Record<string, unknown>[]>([])
+const lineDialogVisible = ref(false)
+const lineEditingId = ref<string | null>(null)
+const lineSaving = ref(false)
+const lineClassOptions = ref<{ id: string | number; name: string }[]>([])
+const lineForm = reactive({ lineNum: '', classId: '' })
+
+const qrVisible = ref(false)
+const qrText = ref('')
+const qrCanvas = ref<HTMLCanvasElement | null>(null)
+
 function listParams() {
   const p: Record<string, string> = {}
   if (filters.labNum) p.labNum = String(filters.labNum).trim()
@@ -357,6 +464,12 @@ const { loading, rows, total, pagination, load } = useDataTable((p) =>
 function reload() {
   pagination.page = 1
   return load(listParams())
+}
+
+function lineStatusLabel(v: unknown) {
+  const n = Number(v)
+  if (n === 1) return '进行中'
+  return '空闲中'
 }
 
 async function loadOptions() {
@@ -480,7 +593,147 @@ async function openEdit(row: Record<string, unknown>) {
 async function openDetail(row: Record<string, unknown>) {
   const res = await getLab(String(row.id))
   detail.value = isAjaxOk(res) && res.obj ? (res.obj as Record<string, unknown>) : row
+  linePagination.page = 1
+  lineSelected.value = []
   detailVisible.value = true
+  await ensureLineClassOptions()
+  await reloadLines()
+}
+
+function onDetailClosed() {
+  lineRows.value = []
+  lineSelected.value = []
+  lineTotal.value = 0
+}
+
+async function ensureLineClassOptions() {
+  if (lineClassOptions.value.length) return
+  try {
+    const res = await fetchLabLineClassOptions()
+    if (isAjaxOk(res) && Array.isArray(res.obj)) {
+      lineClassOptions.value = res.obj as { id: string | number; name: string }[]
+    }
+  } catch {
+    lineClassOptions.value = []
+  }
+}
+
+async function loadLines() {
+  const labId = detail.value?.id
+  if (!labId) return
+  lineLoading.value = true
+  try {
+    const res = await fetchLabLineList({
+      lab_id: labId,
+      page: linePagination.page,
+      pageSize: linePagination.pageSize,
+      length: linePagination.pageSize,
+      start: (linePagination.page - 1) * linePagination.pageSize,
+    })
+    lineRows.value = Array.isArray(res.data) ? res.data : []
+    lineTotal.value = Number(res.recordsTotal || 0)
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '加载实验线失败')
+    lineRows.value = []
+    lineTotal.value = 0
+  } finally {
+    lineLoading.value = false
+  }
+}
+
+function reloadLines() {
+  linePagination.page = 1
+  return loadLines()
+}
+
+function onLineSelectionChange(rows: Record<string, unknown>[]) {
+  lineSelected.value = rows
+}
+
+function openLineCreate() {
+  lineEditingId.value = null
+  lineForm.lineNum = ''
+  lineForm.classId = ''
+  void ensureLineClassOptions()
+  lineDialogVisible.value = true
+}
+
+function openLineEdit(row: Record<string, unknown>) {
+  lineEditingId.value = String(row.id)
+  lineForm.lineNum = String(row.lineNum || row.line_num || '')
+  lineForm.classId = String(row.classId || row.class_id || '')
+  void ensureLineClassOptions()
+  lineDialogVisible.value = true
+}
+
+async function handleLineSubmit() {
+  if (!lineForm.lineNum.trim()) {
+    ElMessage.warning('请填写实验线编号')
+    return
+  }
+  if (!lineForm.classId) {
+    ElMessage.warning('请选择实验线类型')
+    return
+  }
+  lineSaving.value = true
+  try {
+    const payload = {
+      id: lineEditingId.value || undefined,
+      lab_id: detail.value.id,
+      line_num: lineForm.lineNum.trim(),
+      class_id: lineForm.classId,
+    }
+    const res = lineEditingId.value
+      ? await updateLabLine(payload)
+      : await submitLabLine(payload)
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '保存失败'))
+      return
+    }
+    ElMessage.success(lineEditingId.value ? '编辑成功' : '添加成功')
+    lineDialogVisible.value = false
+    await loadLines()
+  } finally {
+    lineSaving.value = false
+  }
+}
+
+async function toggleLineStatus(row: Record<string, unknown>) {
+  const next = Number(row.status) === 1 ? 2 : 1
+  const res = await updateLabLineStatus(String(row.id), next)
+  if (!isAjaxOk(res)) {
+    ElMessage.error(ajaxErrorMessage(res, '操作失败'))
+    return
+  }
+  ElMessage.success('操作成功')
+  await loadLines()
+}
+
+function openQrcode() {
+  if (lineSelected.value.length !== 1) {
+    ElMessage.warning('只能选择一条数据!')
+    return
+  }
+  const row = lineSelected.value[0]
+  const id = row.id
+  const lineNum = row.lineNum || row.line_num || ''
+  qrText.value = `lineId_${id};${lineNum}`
+  qrVisible.value = true
+}
+
+async function renderQr() {
+  await nextTick()
+  const canvas = qrCanvas.value
+  if (!canvas || !qrText.value) return
+  try {
+    await QRCode.toCanvas(canvas, qrText.value, {
+      width: 228,
+      margin: 1,
+      errorCorrectionLevel: 'H',
+    })
+  } catch {
+    ElMessage.error('二维码生成失败')
+  }
 }
 
 async function handleSubmit() {
@@ -540,5 +793,24 @@ onMounted(() => {
   margin-top: 12px;
   display: flex;
   justify-content: flex-end;
+}
+.line-toolbar {
+  margin: 16px 0 12px;
+  display: flex;
+  gap: 8px;
+}
+.qr-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0 4px;
+}
+.qr-text {
+  margin: 0;
+  font-size: 12px;
+  color: #666;
+  word-break: break-all;
+  text-align: center;
 }
 </style>

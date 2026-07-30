@@ -406,6 +406,12 @@ export const constantRoutes: RouteRecordRaw[] = [
         meta: { title: '仓库管理' },
       },
       {
+        path: 'inventory/warehouse-config',
+        name: 'InventoryWarehouseConfig',
+        component: () => import('@/views/inventory/warehouse-config/index.vue'),
+        meta: { title: '仓库配置' },
+      },
+      {
         path: 'inventory/income',
         name: 'InventoryIncome',
         component: () => import('@/views/inventory/income/index.vue'),

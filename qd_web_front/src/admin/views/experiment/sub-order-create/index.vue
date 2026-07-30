@@ -207,6 +207,56 @@
         title="仅显示主单中待处理（op_status=1）的产品行。创建后将生成子订单并挂接所选行。"
       />
 
+      <section v-if="!isSubcontract" class="form-card" style="margin-bottom: 12px">
+        <el-form label-width="120px" class="create-form">
+          <el-row :gutter="16">
+            <el-col :span="12">
+              <el-form-item label="来源单号">
+                <strong class="mono">{{ parent.orderId }}</strong>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="客户名称">
+                {{ parent.customerName || parent.companyName || '-' }}
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="销售主管">
+                <el-select
+                  v-model="form.saleManager"
+                  filterable
+                  clearable
+                  placeholder="请选择"
+                  style="width: 100%"
+                >
+                  <el-option
+                    v-for="u in userOptions"
+                    :key="String(u.id)"
+                    :label="userLabel(u)"
+                    :value="String(u.id)"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="预计完成时间">
+                <el-date-picker
+                  v-model="form.deliveryTime"
+                  type="date"
+                  value-format="YYYY-MM-DD"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :span="24">
+              <el-form-item label="备注">
+                <el-input v-model="form.msg" type="textarea" :rows="2" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </el-form>
+      </section>
+
       <el-table
         :data="pendingRows"
         border
@@ -218,22 +268,11 @@
         <el-table-column prop="childOrderId" label="子订单编号" min-width="150" show-overflow-tooltip />
         <el-table-column prop="goodsName" label="产品名称" min-width="120" show-overflow-tooltip />
         <el-table-column prop="goodsSpec" label="产品型号" min-width="100" show-overflow-tooltip />
-        <el-table-column
-          v-if="isSubcontract"
-          prop="goodsBrand"
-          label="产品品牌"
-          min-width="90"
-          show-overflow-tooltip
-        />
-        <el-table-column
-          v-if="isSubcontract"
-          prop="goodsCount"
-          label="数量"
-          width="70"
-          align="center"
-        />
+        <el-table-column prop="goodsBrand" label="产品品牌" min-width="90" show-overflow-tooltip />
+        <el-table-column prop="goodsCount" label="数量" width="70" align="center" />
         <el-table-column prop="projectName" label="实验测试项目" min-width="120" show-overflow-tooltip />
-        <el-table-column v-if="isSubcontract" label="测试人员" width="150">
+        <el-table-column prop="className" label="实验分类" min-width="100" show-overflow-tooltip />
+        <el-table-column label="测试人员" width="150">
           <template #default="{ row }">
             <el-select
               v-model="row._testUserId"
@@ -262,6 +301,16 @@
           </template>
         </el-table-column>
         <el-table-column v-if="!isSubcontract" prop="price" label="单价" width="90" align="right" />
+        <el-table-column label="预计完成" width="150">
+          <template #default="{ row }">
+            <el-date-picker
+              v-model="row._finishTime"
+              type="date"
+              value-format="YYYY-MM-DD"
+              style="width: 130px"
+            />
+          </template>
+        </el-table-column>
         <el-table-column v-if="!isSubcontract" prop="orderStatusLabel" label="状态" width="100" />
       </el-table>
 
@@ -431,15 +480,13 @@ async function load() {
       ...c,
       _testUserId: '',
       _costPrice: c.price != null ? String(c.price) : '',
+      _finishTime: '',
     }))
+    await loadOptions()
     if (String(obj.orderType || '') === '8') {
-      await loadOptions()
       const now = new Date()
       const pad = (n: number) => String(n).padStart(2, '0')
       form.orderTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
-      if (obj.saleManagerName || obj.saleManager) {
-        // 详情返回的是姓名，表单需要 id；从选项里尽量匹配
-      }
     }
   } finally {
     loading.value = false
@@ -506,6 +553,12 @@ async function onCreate() {
       payload.testUserIds = selected.value.map((r) => String(r._testUserId || ''))
       payload.costPrices = selected.value.map((r) => String(r._costPrice || ''))
       payload.totalPrice = Number(totalCostText.value)
+    } else {
+      payload.saleManager = form.saleManager
+      payload.deliveryTime = form.deliveryTime
+      payload.msg = form.msg
+      payload.testUserIds = selected.value.map((r) => String(r._testUserId || ''))
+      payload.finishTimes = selected.value.map((r) => String(r._finishTime || ''))
     }
     const res = await createExpSubOrder(payload)
     if (!isAjaxOk(res)) {

@@ -9,25 +9,84 @@
       </p>
     </header>
 
-    <el-form v-if="detail" label-width="110px" class="form-card" @submit.prevent>
-      <el-form-item label="客户名称">
-        <el-input :model-value="String(detail.customerName || detail.companyName || '')" disabled />
-      </el-form-item>
-      <el-form-item label="总价">
-        <el-input v-model="form.totalPrice" placeholder="订单总价" clearable />
-      </el-form-item>
-      <el-form-item label="收件人">
-        <el-input v-model="form.shipUser" clearable />
-      </el-form-item>
-      <el-form-item label="联系电话">
-        <el-input v-model="form.shipPhone" clearable />
-      </el-form-item>
-      <el-form-item label="寄回地址">
-        <el-input v-model="form.shipAddress" type="textarea" :rows="2" clearable />
-      </el-form-item>
-      <el-form-item label="备注">
-        <el-input v-model="form.mark" type="textarea" :rows="3" clearable />
-      </el-form-item>
+    <el-form v-if="detail" label-width="120px" class="form-card" @submit.prevent>
+      <el-row :gutter="16">
+        <el-col :span="12">
+          <el-form-item label="订单编号">
+            <el-input :model-value="String(detail.orderId || '')" disabled />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="制单人员">
+            <el-input :model-value="String(detail.addUser || '')" disabled />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="客户名称">
+            <el-input :model-value="String(detail.customerName || detail.companyName || '')" disabled />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="所属公司">
+            <el-input :model-value="String(detail.supplierName || '')" disabled />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="销售主管">
+            <el-input :model-value="String(detail.saleManager || '')" disabled />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="销售人员">
+            <el-input :model-value="String(detail.saleUser || '')" disabled />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="订单总价">
+            <el-input v-model="form.totalPrice" placeholder="订单总价" clearable />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="付款方式">
+            <el-input :model-value="String(detail.payWayName || '')" disabled />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="预计收货时间">
+            <el-date-picker
+              v-model="form.deliveryTime"
+              type="date"
+              value-format="YYYY-MM-DD"
+              style="width: 100%"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="币种">
+            <el-input :model-value="String(detail.currencyLabel || '')" disabled />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="收件人">
+            <el-input v-model="form.shipUser" clearable />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="联系电话">
+            <el-input v-model="form.shipPhone" clearable />
+          </el-form-item>
+        </el-col>
+        <el-col :span="24">
+          <el-form-item label="寄回地址">
+            <el-input v-model="form.shipAddress" type="textarea" :rows="2" clearable />
+          </el-form-item>
+        </el-col>
+        <el-col :span="24">
+          <el-form-item label="备注">
+            <el-input v-model="form.mark" type="textarea" :rows="3" clearable />
+          </el-form-item>
+        </el-col>
+      </el-row>
       <el-form-item>
         <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
         <el-button @click="goBack">取消</el-button>
@@ -57,6 +116,7 @@ const form = reactive({
   shipPhone: '',
   shipAddress: '',
   mark: '',
+  deliveryTime: '',
 })
 
 function goBack() {
@@ -79,7 +139,8 @@ async function load() {
     form.shipUser = String(obj.shipUser || '')
     form.shipPhone = String(obj.shipPhone || '')
     form.shipAddress = String(obj.shipAddress || '')
-    form.mark = String(obj.mark || '')
+    form.mark = String(obj.mark || obj.msg || '')
+    form.deliveryTime = String(obj.deliveryTime || '').slice(0, 10)
   } finally {
     loading.value = false
   }
@@ -95,54 +156,56 @@ async function onSave() {
       shipPhone: form.shipPhone,
       shipAddress: form.shipAddress,
       mark: form.mark,
+      deliveryTime: form.deliveryTime,
     })
     if (!isAjaxOk(res)) {
       ElMessage.error(ajaxErrorMessage(res, '保存失败'))
       return
     }
-    ElMessage.success(String(res.resMsg || '保存成功'))
+    ElMessage.success('保存成功')
     goBack()
   } finally {
     saving.value = false
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  void load()
+})
 </script>
 
-<style scoped lang="scss">
+<style scoped>
 .edit-page {
-  max-width: 720px;
-  padding: 8px 4px 32px;
+  padding: 8px 4px 24px;
 }
 .page-head {
   margin-bottom: 16px;
 }
-.page-head h2 {
-  margin: 0;
-  font-size: 20px;
-}
-.sub {
-  margin: 6px 0 0;
-  color: #5f7068;
-  font-size: 13px;
-}
-.mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
 .back-link {
   border: 0;
   background: transparent;
-  color: #1f6f5b;
+  color: #409eff;
+  cursor: pointer;
   padding: 0;
   margin-bottom: 8px;
-  cursor: pointer;
+}
+.page-head h2 {
+  margin: 0 0 4px;
+  font-size: 20px;
+}
+.sub {
+  margin: 0;
+  color: #909399;
   font-size: 13px;
 }
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
 .form-card {
-  padding: 18px 20px;
-  border-radius: 14px;
   background: #fff;
-  border: 1px solid #d7e0db;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  padding: 20px 20px 8px;
+  max-width: 960px;
 }
 </style>
