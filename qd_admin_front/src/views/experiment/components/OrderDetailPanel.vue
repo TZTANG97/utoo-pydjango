@@ -47,18 +47,19 @@
         </div>
       </header>
 
-      <section class="action-bar">
+      <!-- 抢单详情：仅查看 + 子单抢单，不展示顶部操作按钮 -->
+      <section v-if="!isGrabMode" class="action-bar">
         <el-button
-          v-if="!isGrabMode && detail.canCancel"
+          v-if="detail.canCancel"
           class="btn-warn"
           :loading="acting"
           @click="onCancel"
         >
           取消订单
         </el-button>
-        <el-button v-if="!isGrabMode && detail.canEdit" plain @click="onEditOrder">编辑订单</el-button>
+        <el-button v-if="detail.canEdit" plain @click="onEditOrder">编辑订单</el-button>
         <el-button
-          v-if="!isGrabMode && detail.canWithdrawAudit"
+          v-if="detail.canWithdrawAudit"
           plain
           :loading="acting"
           @click="onWithdrawAudit"
@@ -66,7 +67,7 @@
           取消审核申请
         </el-button>
         <el-button
-          v-if="!isGrabMode && detail.canSubmitAudit"
+          v-if="detail.canSubmitAudit"
           type="warning"
           :loading="acting"
           @click="onSubmitAudit"
@@ -75,14 +76,14 @@
         </el-button>
         <!-- Java 主单：创建子单在审核通过/驳回之前 -->
         <el-button
-          v-if="!isGrabMode && detail.canCreateChild"
+          v-if="detail.canCreateChild"
           class="btn-accent"
           @click="onCreateChild"
         >
           {{ orderType === '8' ? '创建实验分包子订单' : '创建实验子订单' }}
         </el-button>
         <el-button
-          v-if="!isGrabMode && detail.canAudit"
+          v-if="detail.canAudit"
           type="success"
           :loading="acting"
           @click="doAudit(true)"
@@ -90,7 +91,7 @@
           审核通过
         </el-button>
         <el-button
-          v-if="!isGrabMode && detail.canAudit"
+          v-if="detail.canAudit"
           type="danger"
           :loading="acting"
           @click="doAudit(false)"
@@ -102,7 +103,7 @@
           保存
         </el-button>
         <el-button
-          v-if="!isGrabMode && detail.canConfirmOrdered"
+          v-if="detail.canConfirmOrdered"
           type="warning"
           :loading="acting"
           @click="onConfirmOrdered"
@@ -110,7 +111,7 @@
           确认已下单
         </el-button>
         <el-button
-          v-if="!isGrabMode && detail.canAskPay"
+          v-if="detail.canAskPay"
           type="warning"
           :loading="acting"
           @click="onSubPay('1')"
@@ -118,7 +119,7 @@
           申请付款
         </el-button>
         <el-button
-          v-if="!isGrabMode && detail.canAuditPay"
+          v-if="detail.canAuditPay"
           type="success"
           :loading="acting"
           @click="onSubPay('2')"
@@ -126,7 +127,7 @@
           付款审核通过
         </el-button>
         <el-button
-          v-if="!isGrabMode && detail.canAuditPay"
+          v-if="detail.canAuditPay"
           type="danger"
           :loading="acting"
           @click="onSubPay('3')"
@@ -134,7 +135,7 @@
           付款申请驳回
         </el-button>
         <el-button
-          v-if="!isGrabMode && detail.canReAskPay"
+          v-if="detail.canReAskPay"
           type="warning"
           :loading="acting"
           @click="onSubPay('1')"
@@ -142,7 +143,7 @@
           重新发起付款申请
         </el-button>
         <el-button
-          v-if="!isGrabMode && detail.canUploadPay"
+          v-if="detail.canUploadPay"
           type="warning"
           :loading="acting"
           @click="subPayBillVisible = true"
@@ -150,7 +151,7 @@
           上传付款信息
         </el-button>
         <el-button
-          v-if="!isGrabMode && detail.canUploadInvoice"
+          v-if="detail.canUploadInvoice"
           type="warning"
           :loading="acting"
           @click="subInvoiceVisible = true"
@@ -159,7 +160,7 @@
         </el-button>
         <!-- Java 主单：开票 → 收款 → 确认付款 → 沟通确认 → 分成 → 结清 → 关联 -->
         <el-button
-          v-if="!isGrabMode && detail.canInvoice"
+          v-if="detail.canInvoice"
           type="warning"
           :loading="acting"
           @click="invoiceVisible = true"
@@ -167,7 +168,7 @@
           开票
         </el-button>
         <el-button
-          v-if="!isGrabMode && detail.canReceiveBill"
+          v-if="detail.canReceiveBill"
           type="warning"
           :loading="acting"
           @click="receiveVisible = true"
@@ -175,7 +176,7 @@
           收款
         </el-button>
         <el-button
-          v-if="!isGrabMode && detail.canConfirmPay"
+          v-if="detail.canConfirmPay"
           type="success"
           :loading="acting"
           @click="onConfirmPay"
@@ -183,7 +184,7 @@
           确认付款
         </el-button>
         <el-button
-          v-if="!isGrabMode && detail.canConfirmCustomer"
+          v-if="detail.canConfirmCustomer"
           type="primary"
           :loading="acting"
           @click="onConfirmCustomer"
@@ -191,14 +192,14 @@
           已和客户沟通确认
         </el-button>
         <el-button
-          v-if="!isGrabMode && detail.canShareRatio"
+          v-if="detail.canShareRatio"
           class="btn-accent"
           @click="openShareDialog"
         >
           调整分成比例
         </el-button>
         <el-button
-          v-if="!isGrabMode && detail.canCostSettle"
+          v-if="detail.canCostSettle"
           class="btn-accent"
           :loading="acting"
           @click="onCostSettle"
@@ -206,15 +207,15 @@
           所有成本已结清
         </el-button>
         <el-button
-          v-if="!isGrabMode && detail.canAddRelated"
+          v-if="detail.canAddRelated"
           class="btn-accent"
           @click="relatedVisible = true"
         >
           增加关联订单
         </el-button>
-        <el-button v-if="!isGrabMode && detail.canMoreInfo" @click="onMoreInfo">更多信息</el-button>
+        <el-button v-if="detail.canMoreInfo" @click="onMoreInfo">更多信息</el-button>
         <el-button
-          v-if="!isGrabMode && detail.canGenerateAppointment"
+          v-if="detail.canGenerateAppointment"
           class="btn-accent"
           :loading="acting"
           @click="onGenerateAppointment"
@@ -656,7 +657,7 @@
         </el-table>
       </section>
 
-      <section class="card">
+      <section v-if="!isGrabMode" class="card">
         <h3 class="card-title">操作日志</h3>
         <el-table :data="logs" border stripe class="detail-table" max-height="360">
           <el-table-column prop="addTime" label="时间" width="170" />
