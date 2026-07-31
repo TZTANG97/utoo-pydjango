@@ -544,6 +544,26 @@ try {
 		}
 		Write-Host ("[deploy] verified remote index.html -> {0}" -f $expectedAsset)
 		Write-Host ("[deploy] verified remote build-info.json -> {0}" -f $expectedCommit)
+		# Extra gate: public HTTPS must serve the same entry JS (catches wrong nginx root / CDN / failed sync).
+		$publicBase = (Get-CiEnv 'UTOO_PUBLIC_WEB_BASE')
+		if ([string]::IsNullOrWhiteSpace($publicBase)) { $publicBase = 'https://uat.utoodev.laide.tech' }
+		$publicBase = $publicBase.TrimEnd('/')
+		try {
+			$tmpIdx = Join-Path $env:TEMP ("utoo_pub_idx_{0}.html" -f [Guid]::NewGuid().ToString('N'))
+			& curl.exe -sS -o $tmpIdx --max-time 30 -H 'Cache-Control: no-cache' ("{0}/index.html?t={1}" -f $publicBase, [DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+			if ($LASTEXITCODE -ne 0) { throw "curl index failed exit=$LASTEXITCODE" }
+			$pubHtml = Get-Content -LiteralPath $tmpIdx -Raw -Encoding utf8
+			if ($pubHtml -notmatch [regex]::Escape($expectedAsset)) {
+				Write-Error ("Public {0}/index.html does not reference {1} after deploy. Got:`n{2}" -f $publicBase, $expectedAsset, $pubHtml.Substring(0, [Math]::Min(500, $pubHtml.Length)))
+				exit 1
+			}
+			Write-Host ("[deploy] verified public site {0} -> {1}" -f $publicBase, $expectedAsset)
+		} catch {
+			Write-Error ("Public site verification failed: {0}" -f $_.Exception.Message)
+			exit 1
+		} finally {
+			Remove-Item -LiteralPath $tmpIdx -Force -ErrorAction SilentlyContinue
+		}
 		Write-Host '[deploy] phase static done.'
 	}
 

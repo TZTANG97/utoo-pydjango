@@ -69,9 +69,15 @@ $buildInfoPath = Join-Path $distDir 'build-info.json'
 [IO.File]::WriteAllText($buildInfoPath, $buildInfo, [Text.UTF8Encoding]::new($false))
 Write-Host ("[ci] wrote {0}" -f $buildInfoPath)
 
-# Keep a couple of long-lived markers, plus commit SHA, so stale dist cannot pass.
-$markerNeedles = @('ServiceConsultDetail', 'warehouse-config', 'InventoryWarehouseConfig', 'fetchUserAccessRights')
-if ($commitSha -ne 'unknown') { $markerNeedles += $commitSha }
+# Keep markers that survive Vite minify (prefer URL/path string literals, not exported fn names).
+$markerNeedles = @(
+	'ServiceConsultDetail',
+	'warehouse-config',
+	'InventoryWarehouseConfig',
+	'updateAccessRightsQuery.ajax',
+	'addUserExpManage.ajax',
+	'grab-orders'
+)
 $assetFiles = Get-ChildItem -LiteralPath (Join-Path $distDir 'assets') -Filter '*.js' -ErrorAction Stop
 $joined = ''
 foreach ($f in $assetFiles) {
@@ -84,6 +90,11 @@ foreach ($needle in $markerNeedles) {
 		Write-Error ("Frontend dist missing expected marker '{0}' — refusing to publish stale/wrong build (root={1})" -f $needle, $root)
 		exit 1
 	}
+}
+# Commit stamp lives in build-info.json (already included above).
+if ($commitSha -ne 'unknown' -and $buildInfo.IndexOf($commitSha, [StringComparison]::OrdinalIgnoreCase) -lt 0) {
+	Write-Error ("build-info.json missing CI_COMMIT_SHA {0}" -f $commitSha)
+	exit 1
 }
 Write-Host '[ci] dist marker check OK'
 
