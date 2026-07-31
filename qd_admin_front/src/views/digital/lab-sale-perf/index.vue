@@ -114,8 +114,9 @@ function openOrders(row: Record<string, unknown>, type: 1 | 2 | 3) {
   }
   const monthNum = Number(row.monthIndex || 0)
   const month = `${year.value}-${String(monthNum).padStart(2, '0')}`
+  // 统一前端 admin 挂在 /admin 下，须用 name 跳转，避免落到 C 端 404
   router.push({
-    path: '/digital/lab-sale-perf/orders',
+    name: 'DigitalLabSalePerfOrders',
     query: {
       sale_user_id: userId.value,
       year: year.value,

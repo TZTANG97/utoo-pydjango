@@ -116,11 +116,11 @@ function reload() {
 }
 
 function goBack() {
-  router.push('/digital/lab-sale-perf')
+  router.push({ name: 'DigitalLabSalePerf' })
 }
 
 function viewOrder(row: Record<string, unknown>) {
-  router.push(`/experiment/order-detail/${row.id}`)
+  router.push({ name: 'ExperimentOrderDetail', params: { id: String(row.id) } })
 }
 
 onMounted(() => reload())
