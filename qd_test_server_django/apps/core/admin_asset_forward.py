@@ -28,7 +28,10 @@ def _upstream_missing(upstream: Response) -> bool:
 def _local_asset_fallback(request: Request):
     """Asset 缺路由时回退到网关本地实现。"""
     path = (getattr(request, "path", "") or "").split("?")[0].rstrip("/")
-    if path == "/api/labPerformanceSaleuser/expOrderList.ajax":
+    if path in (
+        "/api/labPerformanceSaleuser/expOrderList.ajax",
+        "/api/adminLabSale/expOrderList.ajax",
+    ):
         # 该 view 不挂 forward_*，可直接调用，避免循环转发
         from apps.admin_digital.views.digital import lab_sale_order_list
 

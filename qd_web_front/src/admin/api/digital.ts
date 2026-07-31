@@ -120,5 +120,6 @@ export function fetchLabSalePerf(params: Record<string, unknown>) {
 }
 
 export function fetchLabSalePerfOrders(params: Record<string, unknown>) {
-  return fetchDatatable('/labPerformanceSaleuser/expOrderList.ajax', params)
+  // 走网关独占路径，避免被 SVC_ADMIN_ASSET 前缀代理打到未同步的 Asset
+  return fetchDatatable('/adminLabSale/expOrderList.ajax', params)
 }

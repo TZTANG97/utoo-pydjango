@@ -300,19 +300,22 @@ def list_lab_sale_perf_orders(
     page: int,
     page_size: int,
 ) -> tuple[list[dict[str, Any]], int]:
-    """对齐 Java ExperimentOrderMapper#explistPages_labPerSaleUser。"""
+    """对齐 Java ExperimentOrderMapper#explistPages_labPerSaleUser。
+
+    表别名用 eo（勿用 of：MySQL 8 保留字，会导致 SQL 失败）。
+    """
     where = [
-        "(of.order_type = 6 OR of.order_type = 8)",
-        "of.sale_user = %(sale_user_id)s",
-        "DATE_FORMAT(of.order_time, '%%Y-%%m') = %(month)s",
+        "(eo.order_type = 6 OR eo.order_type = 8)",
+        "eo.sale_user = %(sale_user_id)s",
+        "DATE_FORMAT(eo.order_time, '%%Y-%%m') = %(month)s",
     ]
     params: dict[str, Any] = {
         "sale_user_id": sale_user_id,
         "month": month,
     }
-    joins = ["LEFT JOIN qd_user_company quc ON of.customer_name = quc.id"]
+    joins = ["LEFT JOIN qd_user_company quc ON eo.customer_name = quc.id"]
     if int(type_) == 1:
-        where.append("of.order_status >= 30")
+        where.append("eo.order_status >= 30")
     elif int(type_) == 2:
         joins.append(
             """
@@ -320,10 +323,10 @@ def list_lab_sale_perf_orders(
                 SELECT qb.exp_of_id, SUM(qb.money) kpje
                 FROM qd_bill qb WHERE qb.type = 1
                 GROUP BY qb.exp_of_id
-            ) qdtab1 ON of.id = qdtab1.exp_of_id
+            ) qdtab1 ON eo.id = qdtab1.exp_of_id
             """
         )
-        where.append("of.order_status != 0")
+        where.append("eo.order_status != 0")
         where.append("IFNULL(qdtab1.kpje, 0) > 0")
     elif int(type_) == 3:
         joins.append(
@@ -332,31 +335,31 @@ def list_lab_sale_perf_orders(
                 SELECT qb.exp_of_id, SUM(qb.money) kpje
                 FROM qd_bill qb WHERE qb.type = 2
                 GROUP BY qb.exp_of_id
-            ) qdtab1 ON of.id = qdtab1.exp_of_id
+            ) qdtab1 ON eo.id = qdtab1.exp_of_id
             """
         )
-        where.append("of.order_status != 0")
+        where.append("eo.order_status != 0")
         where.append("IFNULL(qdtab1.kpje, 0) > 0")
     if customer_name:
         where.append("quc.name LIKE %(customer_name)s")
         params["customer_name"] = f"%{customer_name.strip('%')}%"
     if order_id:
-        where.append("of.order_id LIKE %(order_id)s")
+        where.append("eo.order_id LIKE %(order_id)s")
         params["order_id"] = f"%{order_id}%"
     if goods_name:
-        joins.append("JOIN experiment_order_child ocf ON of.id = ocf.order_form_id")
+        joins.append("JOIN experiment_order_child ocf ON eo.id = ocf.order_form_id")
         where.append(
             "(ocf.goods_name LIKE %(goods_name)s OR ocf.goods_spec LIKE %(goods_name)s)"
         )
         params["goods_name"] = f"%{goods_name}%"
     if supplier_name:
-        where.append("of.supplier_name = %(supplier_name)s")
+        where.append("eo.supplier_name = %(supplier_name)s")
         params["supplier_name"] = supplier_name
     if sale_manager:
-        where.append("of.sale_manager = %(sale_manager)s")
+        where.append("eo.sale_manager = %(sale_manager)s")
         params["sale_manager"] = sale_manager
     if order_status != "":
-        where.append("of.order_status = %(order_status)s")
+        where.append("eo.order_status = %(order_status)s")
         params["order_status"] = order_status
 
     where_sql = " AND ".join(where)
@@ -364,8 +367,8 @@ def list_lab_sale_perf_orders(
     total = int(
         scalar(
             f"""
-            SELECT COUNT(DISTINCT of.id)
-            FROM experiment_order of
+            SELECT COUNT(DISTINCT eo.id)
+            FROM experiment_order eo
             {join_sql}
             WHERE {where_sql}
             """,
@@ -393,8 +396,8 @@ def list_lab_sale_perf_orders(
             su.true_name AS saleUserTrueName
         FROM experiment_order t
         INNER JOIN (
-            SELECT DISTINCT of.id
-            FROM experiment_order of
+            SELECT DISTINCT eo.id
+            FROM experiment_order eo
             {join_sql}
             WHERE {where_sql}
         ) ids ON t.id = ids.id

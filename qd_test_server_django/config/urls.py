@@ -200,16 +200,9 @@ _ADMIN_ASSET_PREFIXES = (
 
 def _admin_asset_patterns():
     if svc_admin_asset_enabled():
-        from apps.admin_digital.views import digital as digital_views
         from apps.core.admin_asset_forward import proxy_admin_asset_request
 
-        # 精确本地路由优先于 prefix 代理：Asset 未同步接口时可走网关兜底
-        patterns = [
-            path(
-                "api/labPerformanceSaleuser/expOrderList.ajax",
-                digital_views.lab_sale_order_list,
-            ),
-        ]
+        patterns = []
         for prefix in _ADMIN_ASSET_PREFIXES:
             if "/" in prefix or prefix.endswith(".ajax"):
                 patterns.append(path(f"api/{prefix}", proxy_admin_asset_request))
@@ -375,6 +368,23 @@ def _experiment_order_patterns():
     ]
 
 
+def _lab_sale_perf_local_patterns():
+    """销售绩效订单明细：始终挂网关本地，且排在 Asset 前缀代理之前。"""
+    from apps.admin_digital.views import digital as digital_views
+
+    return [
+        path(
+            "api/labPerformanceSaleuser/expOrderList.ajax",
+            digital_views.lab_sale_order_list,
+        ),
+        # 非 Asset 前缀，避免旧网关/代理误转发
+        path(
+            "api/adminLabSale/expOrderList.ajax",
+            digital_views.lab_sale_order_list,
+        ),
+    ]
+
+
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("", core_views.root),
@@ -389,6 +399,7 @@ urlpatterns = [
     path("api/pc/", include("apps.pc_compat.urls")),
     # 小程序登录后拉取用户类型/权限 map（原 Java /index/userRoles.ajax）
     path("api/index/userRoles.ajax", wx_index_views.user_roles),
+    *_lab_sale_perf_local_patterns(),
     *_admin_asset_patterns(),
     *_admin_platform_patterns(),
     *_invoice_patterns(),

@@ -53,5 +53,9 @@ def test_proxy_falls_back_to_local_exp_order_list():
 def test_exp_order_list_url_binds_local_view():
     from django.urls import resolve
 
-    match = resolve("/api/labPerformanceSaleuser/expOrderList.ajax")
-    assert "lab_sale_order_list" in repr(match)
+    for path in (
+        "/api/labPerformanceSaleuser/expOrderList.ajax",
+        "/api/adminLabSale/expOrderList.ajax",
+    ):
+        match = resolve(path)
+        assert "lab_sale_order_list" in repr(match)

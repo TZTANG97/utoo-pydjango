@@ -30,4 +30,5 @@ urlpatterns = [
     path("labPerformanceSaleuser/selUsersByDeptId.ajax", views.lab_sale_users),
     path("labPerformanceSaleuser/selByYear.ajax", views.lab_sale_perf),
     path("labPerformanceSaleuser/expOrderList.ajax", views.lab_sale_order_list),
+    path("adminLabSale/expOrderList.ajax", views.lab_sale_order_list),
 ]
