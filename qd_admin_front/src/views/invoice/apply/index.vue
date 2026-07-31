@@ -4,6 +4,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   fetchInvoiceList,
   fetchInvoiceDetail,
+  fetchInvoiceOpenPreview,
+  agreeInvoice,
   rejectInvoice,
 } from '@/api/billing'
 import {
@@ -21,6 +23,12 @@ const page = ref(1)
 const pageSize = ref(10)
 const detailVisible = ref(false)
 const detail = ref<Record<string, unknown> | null>(null)
+const openVisible = ref(false)
+const openLoading = ref(false)
+const openSaving = ref(false)
+const openLines = ref<Record<string, unknown>[]>([])
+const openMark = ref('')
+const openApplyId = ref('')
 
 const filters = reactive({
   order_startime: '',
@@ -103,7 +111,76 @@ async function handleReject(row: Record<string, unknown>) {
   }
   ElMessage.success(res.resMsg || '驳回成功')
   detailVisible.value = false
+  openVisible.value = false
   loadData()
+}
+
+async function openInvoice(row: Record<string, unknown>) {
+  openApplyId.value = String(row.id)
+  openMark.value = ''
+  openLines.value = []
+  openVisible.value = true
+  openLoading.value = true
+  try {
+    const res = await fetchInvoiceOpenPreview(String(row.id))
+    if (!isAjaxOk(res) || !res.obj) {
+      ElMessage.error(ajaxErrorMessage(res, '加载开票信息失败'))
+      openVisible.value = false
+      return
+    }
+    const obj = res.obj as Record<string, unknown>
+    const lines = Array.isArray(obj.orderLines) ? (obj.orderLines as Record<string, unknown>[]) : []
+    openLines.value = lines.map((l) => ({
+      ...l,
+      amount: String(l.amount ?? ''),
+      mark: String(l.mark || ''),
+    }))
+    if (!openLines.value.length) {
+      openLines.value = [
+        {
+          of_id: '',
+          orderNo: String(obj.order_id || '-'),
+          amount: String(obj.invoice_money || ''),
+          mark: '',
+        },
+      ]
+    }
+  } finally {
+    openLoading.value = false
+  }
+}
+
+async function submitInvoice() {
+  if (!openApplyId.value) return
+  const items = openLines.value
+    .filter((l) => l.of_id != null && String(l.of_id) !== '')
+    .map((l) => ({
+      of_id: Number(l.of_id),
+      amount: String(l.amount || '').trim(),
+      mark: String(l.mark || openMark.value || ''),
+    }))
+  if (!items.length) {
+    ElMessage.warning('没有可开票的订单行')
+    return
+  }
+  if (items.some((it) => !it.amount || Number(it.amount) <= 0)) {
+    ElMessage.warning('请填写有效开票金额')
+    return
+  }
+  openSaving.value = true
+  try {
+    const res = await agreeInvoice(openApplyId.value, items, openMark.value)
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '开票失败'))
+      return
+    }
+    ElMessage.success(res.resMsg || '开票成功')
+    openVisible.value = false
+    detailVisible.value = false
+    loadData()
+  } finally {
+    openSaving.value = false
+  }
 }
 
 loadData()
@@ -245,10 +322,18 @@ loadData()
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="160" fixed="right" align="center">
+        <el-table-column label="操作" width="220" fixed="right" align="center">
           <template #default="{ row }">
             <div class="op-group">
               <el-button link type="primary" @click="openDetail(row)">查看</el-button>
+              <el-button
+                v-if="Number(row.status) === 1"
+                link
+                type="warning"
+                @click="openInvoice(row)"
+              >
+                开票
+              </el-button>
               <el-button
                 v-if="Number(row.status) === 1"
                 link
@@ -308,8 +393,36 @@ loadData()
         </el-descriptions>
 
         <div v-if="Number(detail.status) === 1" class="detail-actions">
+          <el-button type="warning" @click="openInvoice(detail)">开票</el-button>
           <el-button type="danger" @click="handleReject(detail)">驳回申请</el-button>
         </div>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="openVisible" title="开票" width="720px" destroy-on-close>
+      <div v-loading="openLoading">
+        <el-table :data="openLines" border stripe>
+          <el-table-column prop="orderNo" label="订单编号" min-width="150" show-overflow-tooltip />
+          <el-table-column label="开票金额" width="160">
+            <template #default="{ row }">
+              <el-input v-model="row.amount" placeholder="金额" clearable />
+            </template>
+          </el-table-column>
+          <el-table-column label="备注" min-width="160">
+            <template #default="{ row }">
+              <el-input v-model="row.mark" placeholder="可选" clearable />
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-form label-width="80px" style="margin-top: 14px">
+          <el-form-item label="统一备注">
+            <el-input v-model="openMark" type="textarea" :rows="2" placeholder="可选" />
+          </el-form-item>
+        </el-form>
+      </div>
+      <template #footer>
+        <el-button @click="openVisible = false">取消</el-button>
+        <el-button type="primary" :loading="openSaving" @click="submitInvoice">确认开票</el-button>
       </template>
     </el-dialog>
   </div>

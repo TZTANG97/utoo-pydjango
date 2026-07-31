@@ -851,6 +851,7 @@ def get_order(order_id: int) -> dict[str, Any] | None:
         rev = row.get("reversoContext")
         row["reversoLabel"] = "是" if str(rev or "") == "1" else "否"
         row["contactPhone"] = str(row.get("mobile") or row.get("shipPhone") or "").strip() or "-"
+    row["customMobile"] = str(row.get("mobile") or "").strip() or row.get("contactPhone") or "-"
     row["msg"] = str(row.get("msg") or row.get("mark") or "").strip()
     # 预计付款时间/金额（对齐 Java collectionTimes）
     expect_pay: list[dict[str, Any]] = []
@@ -902,7 +903,9 @@ def get_order(order_id: int) -> dict[str, Any] | None:
     edit_allowed_by_bill = inv_bill_cnt <= 0 and recv_bill_cnt <= 0
     can_edit = False
     if parent_kind:
-        can_edit = st in (5, 10, 20) and edit_allowed_by_bill
+        # 对齐 Java：普通角色 status∈{5,10,20}；管理员/销售主管 status>0 且无票时可编
+        # 后台详情统一按「status≠0 且无票」放开编辑按钮（权限在保存侧再约束）
+        can_edit = st != 0 and edit_allowed_by_bill
     elif ot == "9":
         # experimentsub/purchase_order_detail：status!=0 && isDisabled
         can_edit = st != 0 and edit_allowed_by_bill
@@ -991,8 +994,15 @@ def get_order(order_id: int) -> dict[str, Any] | None:
     except (TypeError, ValueError):
         pay_times = 0
     row["payStatusLabel"] = _pay_status_label(pay_st)
-    # Java：开票/收款仅 status∈{30,50}（模板硬条件，不含 is_evaluate）
-    status_ok_bill = st in (30, 50)
+    # Java type6：status==30 || is_evaluate==1；type8：status∈{30,50}
+    try:
+        is_evaluate = int(row.get("isEvaluate") or 0)
+    except (TypeError, ValueError):
+        is_evaluate = 0
+    if ot == "6":
+        status_ok_bill = st == 30 or is_evaluate == 1
+    else:
+        status_ok_bill = st in (30, 50)
     collection_time = str(row.get("collectionTime") or "").strip()
     pay_way_raw = row.get("payWay")
     has_paytype = pay_way_raw is not None and str(pay_way_raw).strip() not in ("", "0", "None")
@@ -1131,14 +1141,17 @@ def list_order_children(order_id: int) -> list[dict[str, Any]]:
             c.experiment_project_name AS projectName,
             c.experiment_class_name AS className, c.goods_price AS price,
             c.reference_price AS referencePrice,
+            c.cost_price AS costPrice,
             IFNULL(c.expect_finishtime, c.finish_time) AS finishTime,
             c.is_confirm AS isConfirm, c.op_status AS opStatus,
             c.is_meeting AS isMeeting, c.meeting_num AS meetingNum,
             c.line_id AS lineId, c.sample_id AS sampleId,
             c.test_user_id AS testUserId, u.user_name AS testUserName,
-            u.true_name AS testUserTrueName, c.add_time AS addTime
+            u.true_name AS testUserTrueName, c.add_time AS addTime,
+            ln.line_num AS platformName, '' AS deviceName
         FROM experiment_order_child c
         LEFT JOIN sy_users u ON c.test_user_id = u.id
+        LEFT JOIN experiment_line ln ON c.line_id = ln.id
         WHERE c.order_form_id = %(oid)s AND IFNULL(c.delete_status, 2) <> 1
         ORDER BY c.id ASC
         """,
@@ -1154,15 +1167,18 @@ def list_order_children(order_id: int) -> list[dict[str, Any]]:
                 c.experiment_project_name AS projectName,
                 c.experiment_class_name AS className, c.goods_price AS price,
                 c.reference_price AS referencePrice,
+                c.cost_price AS costPrice,
                 IFNULL(c.expect_finishtime, c.finish_time) AS finishTime,
                 c.is_confirm AS isConfirm, c.op_status AS opStatus,
                 c.is_meeting AS isMeeting, c.meeting_num AS meetingNum,
                 c.line_id AS lineId, c.sample_id AS sampleId,
                 c.test_user_id AS testUserId, u.user_name AS testUserName,
-                u.true_name AS testUserTrueName, c.add_time AS addTime
+                u.true_name AS testUserTrueName, c.add_time AS addTime,
+                ln.line_num AS platformName, '' AS deviceName
             FROM exp_qd_purchase_order_child poc
             JOIN experiment_order_child c ON poc.order_child_id = c.id
             LEFT JOIN sy_users u ON c.test_user_id = u.id
+            LEFT JOIN experiment_line ln ON c.line_id = ln.id
             WHERE poc.purchase_order_id = %(oid)s AND IFNULL(c.delete_status, 2) <> 1
             ORDER BY c.id ASC
             """,
@@ -1196,9 +1212,10 @@ def list_order_logs(order_id: int) -> list[dict[str, Any]]:
         """
         SELECT
             l.id, l.addTime, l.log_info AS logInfo, l.log_user_id AS logUserId,
-            u.user_name AS logUserName, u.true_name AS logUserTrueName
+            COALESCE(u.true_name, u.user_name, eu.trueName, eu.userName) AS logUserName
         FROM experiment_order_log l
-        LEFT JOIN sy_users u ON l.log_user_id = u.id
+        LEFT JOIN sy_users u ON CAST(l.log_user_id AS CHAR) = CAST(u.id AS CHAR)
+        LEFT JOIN exp_user eu ON CAST(l.log_user_id AS CHAR) = CAST(eu.id AS CHAR)
         WHERE l.of_id = %(oid)s AND IFNULL(l.deleteStatus, 0) = 0
         ORDER BY l.addTime DESC
         LIMIT 200
@@ -1206,7 +1223,7 @@ def list_order_logs(order_id: int) -> list[dict[str, Any]]:
         {"oid": order_id},
     )
     for r in rows:
-        r["logUser"] = str(r.get("logUserTrueName") or r.get("logUserName") or "-")
+        r["logUser"] = str(r.get("logUserName") or "-")
         at = r.get("addTime")
         r["addTime"] = str(at)[:19] if at else ""
         r["logInfo"] = r.get("logInfo") or ""
@@ -1490,25 +1507,25 @@ def cancel_order(
     return True, "订单已取消"
 
 
-def submit_audit(*, order_id: int) -> tuple[bool, str]:
+def submit_audit(*, order_id: int, staff_user_id: str | int | None = None) -> tuple[bool, str]:
     row = get_order(order_id)
     if not row:
         return False, "订单不存在"
     if not row.get("canSubmitAudit"):
         return False, "当前状态不可提交审核"
     _set_order_status(order_id, 20)
-    _write_order_log(order_id, "提交审核")
+    _write_order_log(order_id, "提交审核", user_id=staff_user_id)
     return True, "已提交审核"
 
 
-def withdraw_audit(*, order_id: int) -> tuple[bool, str]:
+def withdraw_audit(*, order_id: int, staff_user_id: str | int | None = None) -> tuple[bool, str]:
     row = get_order(order_id)
     if not row:
         return False, "订单不存在"
     if not row.get("canWithdrawAudit"):
         return False, "当前状态不可取消审核申请"
     _set_order_status(order_id, 5)
-    _write_order_log(order_id, "取消审核申请")
+    _write_order_log(order_id, "取消审核申请", user_id=staff_user_id)
     return True, "已取消审核申请"
 
 
@@ -1730,7 +1747,9 @@ def del_related_order(*, of_order_no: str, related_order_no: str) -> tuple[bool,
     return True, "删除成功"
 
 
-def save_finish_times(*, order_id: int, items: list[dict[str, Any]]) -> tuple[bool, str]:
+def save_finish_times(
+    *, order_id: int, items: list[dict[str, Any]], staff_user_id: str | int | None = None
+) -> tuple[bool, str]:
     row = get_order(order_id)
     if not row:
         return False, "订单不存在"
@@ -1758,7 +1777,9 @@ def save_finish_times(*, order_id: int, items: list[dict[str, Any]]) -> tuple[bo
                 {"id": cid_i, "ft": ft[:19]},
             )
         updated += 1
-    _write_order_log(order_id, f"保存预计完成时间（{updated} 行）")
+    if updated <= 0:
+        return False, "没有可保存的明细"
+    _write_order_log(order_id, f"保存预计完成时间（{updated} 行）", user_id=staff_user_id)
     return True, "保存成功"
 
 
@@ -2006,8 +2027,9 @@ def update_order_basic(
     ship_address: str = "",
     total_price: Any = None,
     delivery_time: str = "",
+    staff_user_id: str | int | None = None,
 ) -> tuple[bool, str]:
-    """编辑订单主字段（精简版 editPage）。"""
+    """编辑订单主字段；对齐 Java：编辑后按原状态回退以便再次审核，日志追加不清空。"""
     row = get_order(order_id)
     if not row:
         return False, "订单不存在"
@@ -2037,6 +2059,21 @@ def update_order_basic(
             sets.append("totalPrice = %(tp)s")
         except (TypeError, ValueError):
             pass
+    # 对齐 Java update：status==10→5；status==66→67；status>=30→20（可再次审核）
+    try:
+        st = int(row.get("orderStatus") or 0)
+    except (TypeError, ValueError):
+        st = 0
+    next_st = None
+    if st == 10:
+        next_st = 5
+    elif st == 66:
+        next_st = 67
+    elif st >= 30:
+        next_st = 20
+    if next_st is not None:
+        sets.append("order_status = %(next_st)s")
+        params["next_st"] = next_st
     if not sets:
         return False, "无变更"
     # mark/msg 可能重复；去重保留顺序
@@ -2048,7 +2085,7 @@ def update_order_basic(
         f"UPDATE experiment_order SET {', '.join(uniq)} WHERE id = %(id)s",
         params,
     )
-    _write_order_log(order_id, "编辑订单信息")
+    _write_order_log(order_id, "编辑订单", user_id=staff_user_id)
     return True, "保存成功"
 
 
@@ -2420,6 +2457,43 @@ def create_sub_order_from_parent(
                         "dt": delivery_time[:19] if delivery_time else "",
                         "mk": msg[:500] if msg else None,
                     },
+                )
+            except Exception:
+                pass
+    elif child_ot == "10":
+        # 对齐 Java experimentChildOrder/submitOrder：实验室主管/销售/仓库/预计收货等
+        sale_user = str(form.get("saleUser") or form.get("sale_user") or "").strip()
+        stock_user = str(
+            form.get("stockUser") or form.get("stock_user") or form.get("warehouseUser") or ""
+        ).strip()
+        try:
+            execute(
+                """
+                UPDATE experiment_order
+                SET sale_manager = COALESCE(NULLIF(%(sm)s, ''), sale_manager),
+                    sale_user = COALESCE(NULLIF(%(su)s, ''), sale_user),
+                    order_time = NULLIF(%(otm)s, ''),
+                    delivery_time = NULLIF(%(dt)s, ''),
+                    mark = NULLIF(%(mk)s, ''),
+                    msg = NULLIF(%(mk)s, '')
+                WHERE id = %(id)s
+                """,
+                {
+                    "id": new_id,
+                    "sm": sale_manager or "",
+                    "su": sale_user or "",
+                    "otm": order_time[:19] if order_time else "",
+                    "dt": delivery_time[:19] if delivery_time else "",
+                    "mk": msg[:500] if msg else None,
+                },
+            )
+        except Exception:
+            pass
+        if stock_user:
+            try:
+                execute(
+                    "UPDATE experiment_order SET stock_user = %(su)s WHERE id = %(id)s",
+                    {"su": stock_user, "id": new_id},
                 )
             except Exception:
                 pass

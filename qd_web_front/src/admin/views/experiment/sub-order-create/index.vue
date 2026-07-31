@@ -40,7 +40,7 @@
                   style="width: 100%"
                 >
                   <el-option
-                    v-for="u in userOptions"
+                    v-for="u in managerOptions"
                     :key="String(u.id)"
                     :label="userLabel(u)"
                     :value="String(u.id)"
@@ -69,7 +69,7 @@
                   style="width: 100%"
                 >
                   <el-option
-                    v-for="u in userOptions"
+                    v-for="u in testManagerOptions"
                     :key="String(u.id)"
                     :label="userLabel(u)"
                     :value="String(u.id)"
@@ -199,7 +199,7 @@
       </section>
 
       <el-alert
-        v-else
+        v-else-if="!isExperiment"
         type="info"
         :closable="false"
         show-icon
@@ -207,7 +207,8 @@
         title="仅显示主单中待处理（op_status=1）的产品行。创建后将生成子订单并挂接所选行。"
       />
 
-      <section v-if="!isSubcontract" class="form-card" style="margin-bottom: 12px">
+      <!-- 实验子订单：对齐 Java purchase_create_orders -->
+      <section v-if="isExperiment" class="form-card">
         <el-form label-width="120px" class="create-form">
           <el-row :gutter="16">
             <el-col :span="12">
@@ -216,12 +217,18 @@
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="客户名称">
-                {{ parent.customerName || parent.companyName || '-' }}
+              <el-form-item label="下单时间" required>
+                <el-date-picker
+                  v-model="form.orderTime"
+                  type="datetime"
+                  value-format="YYYY-MM-DD HH:mm:ss"
+                  placeholder="yyyy-mm-dd HH:mm:ss"
+                  style="width: 100%"
+                />
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="销售主管">
+              <el-form-item label="实验室主管" required>
                 <el-select
                   v-model="form.saleManager"
                   filterable
@@ -230,7 +237,7 @@
                   style="width: 100%"
                 >
                   <el-option
-                    v-for="u in userOptions"
+                    v-for="u in managerOptions"
                     :key="String(u.id)"
                     :label="userLabel(u)"
                     :value="String(u.id)"
@@ -239,18 +246,55 @@
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="预计完成时间">
+              <el-form-item label="销售人员" required>
+                <el-select
+                  v-model="form.saleUser"
+                  filterable
+                  clearable
+                  placeholder="请选择"
+                  style="width: 100%"
+                >
+                  <el-option
+                    v-for="u in staffOptions"
+                    :key="String(u.id)"
+                    :label="userLabel(u)"
+                    :value="String(u.id)"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="仓库管理员" required>
+                <el-select
+                  v-model="form.stockUser"
+                  filterable
+                  clearable
+                  placeholder="请选择"
+                  style="width: 100%"
+                >
+                  <el-option
+                    v-for="u in staffOptions"
+                    :key="'w-' + String(u.id)"
+                    :label="userLabel(u)"
+                    :value="String(u.id)"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="预计收货时间" required>
                 <el-date-picker
                   v-model="form.deliveryTime"
                   type="date"
                   value-format="YYYY-MM-DD"
+                  placeholder="YYYY-MM-DD"
                   style="width: 100%"
                 />
               </el-form-item>
             </el-col>
             <el-col :span="24">
               <el-form-item label="备注">
-                <el-input v-model="form.msg" type="textarea" :rows="2" />
+                <el-input v-model="form.msg" type="textarea" :rows="3" placeholder="请输入内容" />
               </el-form-item>
             </el-col>
           </el-row>
@@ -268,11 +312,22 @@
         <el-table-column prop="childOrderId" label="子订单编号" min-width="150" show-overflow-tooltip />
         <el-table-column prop="goodsName" label="产品名称" min-width="120" show-overflow-tooltip />
         <el-table-column prop="goodsSpec" label="产品型号" min-width="100" show-overflow-tooltip />
-        <el-table-column prop="goodsBrand" label="产品品牌" min-width="90" show-overflow-tooltip />
-        <el-table-column prop="goodsCount" label="数量" width="70" align="center" />
+        <el-table-column
+          v-if="isSubcontract"
+          prop="goodsBrand"
+          label="产品品牌"
+          min-width="90"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          v-if="isSubcontract"
+          prop="goodsCount"
+          label="数量"
+          width="70"
+          align="center"
+        />
         <el-table-column prop="projectName" label="实验测试项目" min-width="120" show-overflow-tooltip />
-        <el-table-column prop="className" label="实验分类" min-width="100" show-overflow-tooltip />
-        <el-table-column label="测试人员" width="150">
+        <el-table-column v-if="isSubcontract || isExperiment" label="测试人员" width="150">
           <template #default="{ row }">
             <el-select
               v-model="row._testUserId"
@@ -283,12 +338,23 @@
             >
               <el-option label="抢单" value="22" />
               <el-option
-                v-for="u in userOptions"
+                v-for="u in staffOptions"
                 :key="String(u.id)"
                 :label="userLabel(u)"
                 :value="String(u.id)"
               />
             </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column v-if="isExperiment" label="预计完成时间" width="170">
+          <template #default="{ row }">
+            <el-date-picker
+              v-model="row._finishTime"
+              type="datetime"
+              value-format="YYYY-MM-DD HH:mm:ss"
+              placeholder="预计完成"
+              style="width: 158px"
+            />
           </template>
         </el-table-column>
         <el-table-column v-if="isSubcontract" label="分包单价" width="120">
@@ -300,18 +366,8 @@
             />
           </template>
         </el-table-column>
-        <el-table-column v-if="!isSubcontract" prop="price" label="单价" width="90" align="right" />
-        <el-table-column label="预计完成" width="150">
-          <template #default="{ row }">
-            <el-date-picker
-              v-model="row._finishTime"
-              type="date"
-              value-format="YYYY-MM-DD"
-              style="width: 130px"
-            />
-          </template>
-        </el-table-column>
-        <el-table-column v-if="!isSubcontract" prop="orderStatusLabel" label="状态" width="100" />
+        <el-table-column v-if="!isSubcontract && !isExperiment" prop="price" label="单价" width="90" align="right" />
+        <el-table-column v-if="!isSubcontract && !isExperiment" prop="orderStatusLabel" label="状态" width="100" />
       </el-table>
 
       <div class="actions">
@@ -336,7 +392,6 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { createExpSubOrder, getExpOrderDetail } from '@admin/api/experiment'
-import { fetchIncomeUsers } from '@admin/api/inventory'
 import { fetchEnterpriseList } from '@admin/api/member'
 import {
   fetchBillTypeAll,
@@ -344,6 +399,7 @@ import {
   fetchTaxAll,
   formatTaxDisplay,
 } from '@admin/api/order-settings'
+import { fetchUserList } from '@admin/api/system'
 import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
 const route = useRoute()
@@ -356,7 +412,9 @@ const parent = ref<Record<string, unknown> | null>(null)
 const children = ref<Record<string, unknown>[]>([])
 const selected = ref<Record<string, unknown>[]>([])
 
-const userOptions = ref<Record<string, unknown>[]>([])
+const managerOptions = ref<Record<string, unknown>[]>([])
+const testManagerOptions = ref<Record<string, unknown>[]>([])
+const staffOptions = ref<Record<string, unknown>[]>([])
 const companyOptions = ref<Record<string, unknown>[]>([])
 const paytypeOptions = ref<Record<string, unknown>[]>([])
 const billTypeOptions = ref<Record<string, unknown>[]>([])
@@ -364,6 +422,8 @@ const taxOptions = ref<Record<string, unknown>[]>([])
 
 const form = reactive({
   saleManager: '',
+  saleUser: '',
+  stockUser: '',
   testManager: '',
   stockCompanyName: '',
   invoiceOn: true,
@@ -381,6 +441,7 @@ const titleText = computed(() =>
   String(parent.value?.orderType || '') === '8' ? '创建实验分包子订单' : '创建实验子订单'
 )
 const isSubcontract = computed(() => String(parent.value?.orderType || '') === '8')
+const isExperiment = computed(() => String(parent.value?.orderType || '') === '6')
 
 const pendingRows = computed(() =>
   children.value.filter((r) => Number(r.opStatus ?? 0) === 1)
@@ -412,7 +473,7 @@ function goBack() {
   if (saleOrderId) {
     router.push({ name: 'ExperimentOrderDetail', params: { id: saleOrderId } })
   } else {
-    router.push('/admin/experiment/subcontract-orders')
+    router.push('/experiment/subcontract-orders')
   }
 }
 
@@ -441,15 +502,18 @@ async function reloadCompanies() {
 }
 
 async function loadOptions() {
-  const [usersRes, payRes, billRes, taxRes] = await Promise.all([
-    fetchIncomeUsers(''),
+  const silent = { silentError: true } as const
+  const [mgr, testMgr, staff, payRes, billRes, taxRes] = await Promise.all([
+    fetchUserList({ start: 0, length: 500, type: 1, draw: 1 }, silent),
+    fetchUserList({ start: 0, length: 500, type: 3, draw: 1 }, silent),
+    fetchUserList({ start: 0, length: 500, type: -1, draw: 1 }, silent),
     fetchPaytypeAll(),
     fetchBillTypeAll(2),
     fetchTaxAll(),
   ])
-  if (isAjaxOk(usersRes) && Array.isArray(usersRes.obj)) {
-    userOptions.value = usersRes.obj as Record<string, unknown>[]
-  }
+  managerOptions.value = mgr.data || []
+  testManagerOptions.value = testMgr.data || []
+  staffOptions.value = staff.data || []
   paytypeOptions.value = (payRes.data || []).filter((p) => !p.delStatus && Number(p.del_status || 0) === 0)
   billTypeOptions.value = (billRes.data || []).filter((b) => !b.delStatus)
   if (isAjaxOk(taxRes) && Array.isArray(taxRes.obj)) {
@@ -458,6 +522,12 @@ async function loadOptions() {
     taxOptions.value = taxRes.data as Record<string, unknown>[]
   }
   await reloadCompanies()
+}
+
+function nowOrderTime() {
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
 }
 
 async function load() {
@@ -482,11 +552,10 @@ async function load() {
       _costPrice: c.price != null ? String(c.price) : '',
       _finishTime: '',
     }))
-    await loadOptions()
-    if (String(obj.orderType || '') === '8') {
-      const now = new Date()
-      const pad = (n: number) => String(n).padStart(2, '0')
-      form.orderTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
+    const ot = String(obj.orderType || '')
+    if (ot === '8' || ot === '6') {
+      await loadOptions()
+      form.orderTime = nowOrderTime()
     }
   } finally {
     loading.value = false
@@ -517,6 +586,15 @@ function validateSubcontract(): string | null {
   return null
 }
 
+function validateExperiment(): string | null {
+  if (!form.orderTime) return '请填写下单时间'
+  if (!form.saleManager) return '请选择实验室主管'
+  if (!form.saleUser) return '请选择销售人员'
+  if (!form.stockUser) return '请选择仓库管理员'
+  if (!form.deliveryTime) return '请填写预计收货时间'
+  return null
+}
+
 async function onCreate() {
   const ids = selected.value.map((r) => r.id).filter((id) => id != null)
   if (!ids.length) {
@@ -525,6 +603,12 @@ async function onCreate() {
   }
   if (isSubcontract.value) {
     const err = validateSubcontract()
+    if (err) {
+      ElMessage.warning(err)
+      return
+    }
+  } else if (isExperiment.value) {
+    const err = validateExperiment()
     if (err) {
       ElMessage.warning(err)
       return
@@ -553,11 +637,14 @@ async function onCreate() {
       payload.testUserIds = selected.value.map((r) => String(r._testUserId || ''))
       payload.costPrices = selected.value.map((r) => String(r._costPrice || ''))
       payload.totalPrice = Number(totalCostText.value)
-    } else {
+    } else if (isExperiment.value) {
       payload.saleManager = form.saleManager
+      payload.saleUser = form.saleUser
+      payload.stockUser = form.stockUser
+      payload.orderTime = form.orderTime
       payload.deliveryTime = form.deliveryTime
       payload.msg = form.msg
-      payload.testUserIds = selected.value.map((r) => String(r._testUserId || ''))
+      payload.testUserIds = selected.value.map((r) => String(r._testUserId || '22'))
       payload.finishTimes = selected.value.map((r) => String(r._finishTime || ''))
     }
     const res = await createExpSubOrder(payload)

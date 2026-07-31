@@ -403,7 +403,22 @@
             />
           </div>
         </div>
-        <el-descriptions v-else :column="3" border class="soft-desc">
+        <el-descriptions v-else-if="orderType === '10'" :column="3" border class="soft-desc">
+          <el-descriptions-item label="订单状态">{{ detail.orderStatusLabel || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="订单编号">
+            <span class="mono">{{ detail.orderId || '-' }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="来源单号">
+            <el-button
+              v-if="detail.parentPkId"
+              link
+              type="primary"
+              @click="goDetail(Number(detail.parentPkId), '6', detail.parentOrderId)"
+            >
+              {{ detail.parentOrderId || '-' }}
+            </el-button>
+            <span v-else>{{ detail.parentOrderId || '-' }}</span>
+          </el-descriptions-item>
           <el-descriptions-item label="订单类型">
             {{ detail.testClassName || orderTypeLabel }}
           </el-descriptions-item>
@@ -411,31 +426,74 @@
             {{ detail.customerName || detail.companyName || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="所属公司">{{ detail.supplierName || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="制单人员">{{ detail.addUser || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="销售主管">{{ detail.saleManager }}</el-descriptions-item>
-          <el-descriptions-item :label="isChildKind ? '采购人员' : '销售人员'">
-            {{ detail.saleUser }}
-          </el-descriptions-item>
-          <el-descriptions-item v-if="isChildKind" label="测试人员">
-            {{ detail.testName || '-' }}
-          </el-descriptions-item>
-          <el-descriptions-item label="录入时间">{{ detail.addTime || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="实验室主管">{{ detail.saleManager || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="销售人员">{{ detail.saleUser || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="制单员">{{ detail.addUser || '-' }}</el-descriptions-item>
           <el-descriptions-item label="下单时间">{{ detail.orderTime || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="预计收货">{{ detail.deliveryTime || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="预计收货时间">{{ detail.deliveryTime || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="客户账号">{{ detail.customMobile || detail.mobile || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="仓库管理员">{{ detail.warehouseUser || detail.stockUser || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="联系电话">{{ detail.shipPhone || detail.contactPhone || detail.mobile || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="样品是否回收">{{ detail.reversoLabel || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="寄回地址" :span="2">{{ detail.shipAddress || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="是否云视频">{{ detail.isVideoLabel || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="是否确认">{{ detail.confirmLabel || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="备注" :span="3">
+            <span class="mark-text">{{ detail.mark || detail.msg || '-' }}</span>
+          </el-descriptions-item>
+        </el-descriptions>
+        <el-descriptions v-else :column="3" border class="soft-desc">
+          <el-descriptions-item label="订单编号">
+            <span class="mono">{{ detail.orderId || '-' }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="订单状态">{{ detail.orderStatusLabel || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="订单类型">
+            {{ detail.testClassName || orderTypeLabel }}
+          </el-descriptions-item>
+          <el-descriptions-item label="制单人员">{{ detail.addUser || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="所属公司">{{ detail.supplierName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="录入订单时间">{{ detail.addTime || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="下单时间">{{ detail.orderTime || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="总价">
+            {{ detail.totalPrice ?? '-' }}
+            <template v-if="detail.currencyLabel"> {{ detail.currencyLabel }}</template>
+          </el-descriptions-item>
+          <el-descriptions-item label="销售主管">{{ detail.saleManager || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="销售人员">{{ detail.saleUser || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="客户名称">
+            {{ detail.customerName || detail.companyName || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="客户账号">{{ detail.customMobile || detail.mobile || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="订单币种">{{ detail.currencyLabel || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="预计收货时间">{{ detail.deliveryTime || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="付款方式">{{ detail.payWayName || '-' }}</el-descriptions-item>
+          <template v-if="expectPayRows.length">
+            <template v-for="(ep, idx) in expectPayRows" :key="'ep6-' + idx">
+              <el-descriptions-item label="预计收款时间">{{ ep.time || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="预计收款金额" :span="2">{{ ep.price || '-' }}</el-descriptions-item>
+            </template>
+          </template>
+          <el-descriptions-item v-if="!isChildKind" label="实际收款">
+            {{ detail.receiveAmount ?? 0 }}
+          </el-descriptions-item>
           <el-descriptions-item v-if="!isChildKind" label="是否开票">
             {{ detail.invoiceLabel || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item v-if="!isChildKind" label="已开票金额">
+            {{ detail.invoiceAmount ?? 0 }}
           </el-descriptions-item>
           <el-descriptions-item v-if="!isChildKind" label="成本结清">
             {{ detail.costSettleLabel || '-' }}
           </el-descriptions-item>
-          <el-descriptions-item label="云视频">{{ detail.isVideoLabel || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="样品是否回收">{{ detail.reversoLabel || '-' }}</el-descriptions-item>
           <el-descriptions-item label="收件人">{{ detail.shipUser || '-' }}</el-descriptions-item>
           <el-descriptions-item label="联系电话">{{ detail.shipPhone || '-' }}</el-descriptions-item>
           <el-descriptions-item label="寄回地址" :span="3">
             {{ detail.shipAddress || '-' }}
           </el-descriptions-item>
+          <el-descriptions-item label="是否云视频">{{ detail.isVideoLabel || '-' }}</el-descriptions-item>
           <el-descriptions-item label="备注" :span="3">
-            <span class="mark-text">{{ detail.mark || '-' }}</span>
+            <span class="mark-text">{{ detail.mark || detail.msg || '-' }}</span>
           </el-descriptions-item>
         </el-descriptions>
       </section>
@@ -454,7 +512,34 @@
           <el-table-column prop="goodsCount" label="数量" width="70" align="center" />
           <el-table-column prop="projectName" label="测试项目" min-width="120" show-overflow-tooltip />
           <el-table-column prop="className" label="分类" min-width="100" show-overflow-tooltip />
-          <el-table-column prop="price" label="单价" width="90" align="right" />
+          <el-table-column
+            v-if="!isChildKind"
+            prop="referencePrice"
+            label="实际测试金额"
+            width="110"
+            align="right"
+          />
+          <el-table-column
+            v-if="!isChildKind"
+            prop="price"
+            label="标准测试金额"
+            width="110"
+            align="right"
+          />
+          <el-table-column
+            v-if="!isChildKind"
+            label="总价"
+            width="90"
+            align="right"
+          >
+            <template #default="{ row }">
+              {{
+                Number(row.referencePrice ?? row.price ?? 0) *
+                  Number(row.goodsCount ?? 1) || row.price || '-'
+              }}
+            </template>
+          </el-table-column>
+          <el-table-column v-if="isChildKind" prop="price" label="单价" width="90" align="right" />
           <el-table-column
             v-if="isChildKind"
             prop="referencePrice"
@@ -463,6 +548,9 @@
             align="right"
           />
           <el-table-column prop="testUserName" label="测试员" width="100" />
+          <el-table-column v-if="orderType === '10'" prop="deviceName" label="设备名称" min-width="100" show-overflow-tooltip />
+          <el-table-column v-if="orderType === '10'" prop="platformName" label="实验平台" min-width="100" show-overflow-tooltip />
+          <el-table-column v-if="orderType === '9'" prop="costPrice" label="分包单价" width="90" align="right" />
           <el-table-column v-if="isGrabMode" label="抢单" width="100" align="center" fixed="right">
             <template #default="{ row }">
               <el-button

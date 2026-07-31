@@ -27,6 +27,13 @@ def _child_ids_from(data: dict):
     return data.get("childIds") or data.get("childids") or data.get("ids") or data.get("childId")
 
 
+def _staff_id(user) -> str:
+    """JWT 员工 payload 常用 user_id；兼容 id / userId。"""
+    if not isinstance(user, dict):
+        return ""
+    return str(user.get("user_id") or user.get("id") or user.get("userId") or "").strip()
+
+
 # ---------- health ----------
 @api_view(["GET", "POST"])
 @authentication_classes([])
@@ -628,9 +635,7 @@ def order_audit(request: Request, user=None):
     else:
         pass_ = bool(pass_raw) if pass_raw is not None else True
     remark = (data.get("remark") or data.get("mark") or "").strip()
-    staff = ""
-    if isinstance(user, dict):
-        staff = str(user.get("id") or user.get("userId") or "")
+    staff = _staff_id(user)
     ok_flag, msg = order_repo.audit_order(
         order_id=order_id, pass_=pass_, remark=remark, staff_user_id=staff
     )
@@ -648,9 +653,7 @@ def order_cancel(request: Request, user=None):
     order_id = to_int(data.get("id") or data.get("ofId"))
     if not order_id:
         return fail("参数错误")
-    staff = ""
-    if isinstance(user, dict):
-        staff = str(user.get("id") or user.get("userId") or "")
+    staff = _staff_id(user)
     ok_flag, msg = order_repo.cancel_order(
         order_id=order_id,
         remark=(data.get("remark") or data.get("mark") or "").strip(),
@@ -666,12 +669,11 @@ def order_cancel(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_submit_audit(request: Request, user=None):
-    del user
     data = merge_payload(request)
     order_id = to_int(data.get("id") or data.get("ofId"))
     if not order_id:
         return fail("参数错误")
-    ok_flag, msg = order_repo.submit_audit(order_id=order_id)
+    ok_flag, msg = order_repo.submit_audit(order_id=order_id, staff_user_id=_staff_id(user))
     if not ok_flag:
         return fail(msg)
     return ok(res_msg=msg)
@@ -682,12 +684,11 @@ def order_submit_audit(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_withdraw_audit(request: Request, user=None):
-    del user
     data = merge_payload(request)
     order_id = to_int(data.get("id") or data.get("ofId"))
     if not order_id:
         return fail("参数错误")
-    ok_flag, msg = order_repo.withdraw_audit(order_id=order_id)
+    ok_flag, msg = order_repo.withdraw_audit(order_id=order_id, staff_user_id=_staff_id(user))
     if not ok_flag:
         return fail(msg)
     return ok(res_msg=msg)
@@ -722,7 +723,7 @@ def order_save_receive_bill(request: Request, user=None):
     money = data.get("money") or data.get("amount")
     staff_id = ""
     if isinstance(user, dict):
-        staff_id = str(user.get("id") or user.get("userId") or "")
+        staff_id = _staff_id(user)
     from apps.admin_experiment.services.split_money import save_receive_bill
 
     ok_flag, msg = save_receive_bill(
@@ -818,7 +819,6 @@ def order_del_related(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_save_finish(request: Request, user=None):
-    del user
     data = merge_payload(request)
     order_id = to_int(data.get("id") or data.get("ofId"))
     if not order_id:
@@ -837,7 +837,9 @@ def order_save_finish(request: Request, user=None):
             items = []
     if not isinstance(items, list):
         return fail("明细格式错误")
-    ok_flag, msg = order_repo.save_finish_times(order_id=order_id, items=items)
+    ok_flag, msg = order_repo.save_finish_times(
+        order_id=order_id, items=items, staff_user_id=_staff_id(user)
+    )
     if not ok_flag:
         return fail(msg)
     return ok(res_msg=msg)
@@ -1118,9 +1120,7 @@ def order_save_invoice_bill(request: Request, user=None):
     oid = _order_id_from(data)
     if not oid:
         return fail("参数错误")
-    staff = ""
-    if isinstance(user, dict):
-        staff = str(user.get("id") or user.get("userId") or "")
+    staff = _staff_id(user)
     ok_flag, msg = order_repo.save_invoice_bill(
         order_id=oid,
         money=data.get("money") or data.get("amount"),
@@ -1153,9 +1153,7 @@ def order_confirm_pay(request: Request, user=None):
     oid = _order_id_from(data)
     if not oid:
         return fail("参数错误")
-    staff = ""
-    if isinstance(user, dict):
-        staff = str(user.get("id") or user.get("userId") or "")
+    staff = _staff_id(user)
     ok_flag, msg = order_repo.confirm_online_pay(order_id=oid, staff_user_id=staff)
     return ok(res_msg=msg) if ok_flag else fail(msg)
 
@@ -1169,9 +1167,7 @@ def order_generate_appointment(request: Request, user=None):
     oid = _order_id_from(data)
     if not oid:
         return fail("参数错误")
-    staff = ""
-    if isinstance(user, dict):
-        staff = str(user.get("id") or user.get("userId") or "")
+    staff = _staff_id(user)
     ok_flag, msg = order_repo.generate_appointment(
         order_id=oid,
         test_address_id=str(data.get("testAddressId") or data.get("test_address_id") or ""),
@@ -1185,7 +1181,6 @@ def order_generate_appointment(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_update_basic(request: Request, user=None):
-    del user
     data = merge_payload(request)
     oid = _order_id_from(data)
     if not oid:
@@ -1198,6 +1193,7 @@ def order_update_basic(request: Request, user=None):
         ship_address=str(data.get("shipAddress") or data.get("ship_address") or ""),
         total_price=data.get("totalPrice") if "totalPrice" in data or "total_price" in data else None,
         delivery_time=str(data.get("deliveryTime") or data.get("delivery_time") or ""),
+        staff_user_id=_staff_id(user),
     )
     return ok(res_msg=msg) if ok_flag else fail(msg)
 
@@ -1263,9 +1259,7 @@ def order_upload_sub_pay(request: Request, user=None):
     oid = _order_id_from(data)
     if not oid:
         return fail("参数错误")
-    staff = ""
-    if isinstance(user, dict):
-        staff = str(user.get("id") or user.get("userId") or "")
+    staff = _staff_id(user)
     ok_flag, msg = order_repo.upload_sub_pay_bill(
         order_id=oid,
         money=data.get("money") or data.get("amount"),
@@ -1284,9 +1278,7 @@ def order_upload_sub_invoice(request: Request, user=None):
     oid = _order_id_from(data)
     if not oid:
         return fail("参数错误")
-    staff = ""
-    if isinstance(user, dict):
-        staff = str(user.get("id") or user.get("userId") or "")
+    staff = _staff_id(user)
     ok_flag, msg = order_repo.upload_sub_invoice_bill(
         order_id=oid,
         money=data.get("money") or data.get("amount"),

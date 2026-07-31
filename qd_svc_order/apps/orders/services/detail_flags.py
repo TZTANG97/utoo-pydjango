@@ -23,12 +23,13 @@ def has_pending_payment_application(order_id: int) -> bool:
 
 
 def has_invoice_apply_for_order(order_id: int) -> bool:
-    # 表字段为 order_ids（逗号分隔 pk），不是 order_id
+    # 对齐 Java selListByOrderId：仅 status=1（开票中）才拦截订单详情「开票」
     return bool(
         fetch_one(
             """
             SELECT 1 AS ok FROM invoice_apply_log
             WHERE deleteStatus = 0
+              AND status = 1
               AND FIND_IN_SET(%(oid)s, REPLACE(IFNULL(order_ids, ''), ' ', '')) > 0
             LIMIT 1
             """,

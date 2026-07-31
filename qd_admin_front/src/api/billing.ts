@@ -52,6 +52,19 @@ export function rejectInvoice(id: string | number, config?: RequestConfig) {
   return request.post('/vue/invoice/bohuiInvoice.ajax', { id }, config)
 }
 
+export function fetchInvoiceOpenPreview(id: string | number, config?: RequestConfig) {
+  return request.get('/vue/invoice/openPreview.ajax', { params: { id }, ...config })
+}
+
+export function agreeInvoice(
+  id: string | number,
+  items: Record<string, unknown>[] = [],
+  mark = '',
+  config?: RequestConfig
+) {
+  return request.post('/vue/invoice/agreeInvoice.ajax', { id, items, mark }, config)
+}
+
 export function fetchPayLogList(params: ListQuery, config?: RequestConfig) {
   return fetchDatatable<Record<string, unknown>>('/vue/payLog/payList.ajax', params, config)
 }

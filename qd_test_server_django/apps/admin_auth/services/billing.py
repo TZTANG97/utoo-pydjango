@@ -40,13 +40,14 @@ def reject_invoice(*, apply_id: int, staff_user_id: str) -> tuple[bool, str]:
         "UPDATE invoice_apply_log SET status = 5 WHERE id = %(id)s",
         {"id": apply_id},
     )
+    # 对齐 Java bohuiInvoice：驳回后 ADD 回可开票金额
     money = Decimal(str(row.get("invoice_money") or 0))
     if money > 0:
         ua_repo.get_or_create(int(row["user_id"]))
         execute(
             """
             UPDATE user_account
-            SET invoicing_amount = GREATEST(COALESCE(invoicing_amount, 0) - %(m)s, 0),
+            SET invoicing_amount = COALESCE(invoicing_amount, 0) + %(m)s,
                 update_time = NOW()
             WHERE delete_status = 0 AND user_id = %(uid)s
             """,
@@ -285,41 +286,70 @@ def _fill_receive_bills_for_payment(
         )
 
 
+def _resolve_experiment_order_pk(order_ref: str) -> int | None:
+    """payment_application.orderId 可能是 experiment_order.id 或业务单号 order_id。"""
+    text = str(order_ref or "").strip()
+    if not text:
+        return None
+    if text.isdigit():
+        by_pk = fetch_one(
+            "SELECT id FROM experiment_order WHERE id = %(id)s LIMIT 1",
+            {"id": int(text)},
+        )
+        if by_pk:
+            return int(by_pk["id"])
+    by_no = fetch_one(
+        "SELECT id FROM experiment_order WHERE order_id = %(no)s LIMIT 1",
+        {"no": text},
+    )
+    if by_no:
+        return int(by_no["id"])
+    return int(text) if text.isdigit() else None
+
+
 @transaction.atomic
 def agree_payment(*, apply_id: int, staff_user_id: str) -> tuple[bool, str]:
     row = billing_repo.get_payment_application(apply_id)
     if not row:
         return False, "付款申请不存在"
-    if str(row.get("applyStatus")) != "1":
+    apply_status = row.get("applyStatus")
+    if apply_status is None:
+        apply_status = row.get("apply_status")
+    if str(apply_status) != "1":
         return False, "仅待审核申请可操作"
 
-    order_type = str(row.get("orderType") or "")
-    user_id = int(row["userId"])
+    order_type = str(row.get("orderType") if row.get("orderType") is not None else row.get("order_type") or "")
+    uid_raw = row.get("userId") if row.get("userId") is not None else row.get("user_id")
+    if uid_raw is None:
+        return False, "申请缺少用户"
+    user_id = int(uid_raw)
     money = Decimal(str(row.get("money") or 0))
     staff = _safe_staff_uid(staff_user_id)
+    order_ref = str(row.get("orderId") if row.get("orderId") is not None else row.get("order_id") or "")
 
     if order_type in ("2", "3"):
-        order_id = str(row.get("orderId") or "")
-        if order_id.isdigit():
+        order_pk = _resolve_experiment_order_pk(order_ref)
+        if order_pk:
             execute(
                 "UPDATE experiment_order SET isUploadReceipt = 2 WHERE id = %(id)s",
-                {"id": int(order_id)},
+                {"id": order_pk},
             )
             try:
                 _fill_receive_bills_for_payment(
-                    order_id=int(order_id),
+                    order_id=order_pk,
                     money=money,
                     staff_user_id=staff,
                 )
             except Exception:
                 logger.exception("fill receive bills failed apply=%s", apply_id)
                 insert_receive_bill(
-                    order_id=int(order_id),
+                    order_id=order_pk,
                     money=money,
                     user_id=staff or 0,
                     log_info="同意付款申请",
                 )
         pay_type = 3
+        pay_way = 3
     elif order_type == "1":
         account = ua_repo.get_or_create(user_id)
         execute(
@@ -331,8 +361,10 @@ def agree_payment(*, apply_id: int, staff_user_id: str) -> tuple[bool, str]:
             {"m": float(money), "id": int(account["id"])},
         )
         pay_type = 1
+        pay_way = 3
     elif order_type == "4":
         pay_type = 4
+        pay_way = 4  # 对齐 Java 提现 pay_way=4
     else:
         return False, f"暂不支持的申请类型: {order_type}"
 
@@ -344,13 +376,14 @@ def agree_payment(*, apply_id: int, staff_user_id: str) -> tuple[bool, str]:
              pay_type, pay_way, pa_num, pa_id)
         VALUES
             (NOW(), 0, %(uid)s, %(money)s, 2, %(order_id)s,
-             %(pay_type)s, 3, %(pa_num)s, %(pa_id)s)
+             %(pay_type)s, %(pay_way)s, %(pa_num)s, %(pa_id)s)
         """,
         {
             "uid": user_id,
             "money": float(money),
-            "order_id": str(row.get("orderId") or ""),
+            "order_id": order_ref,
             "pay_type": pay_type,
+            "pay_way": pay_way,
             "pa_num": pa_num,
             "pa_id": apply_id,
         },
@@ -376,27 +409,32 @@ def refuse_payment(*, apply_id: int, staff_user_id: str, mark: str = "") -> tupl
     row = billing_repo.get_payment_application(apply_id)
     if not row:
         return False, "付款申请不存在"
-    if str(row.get("applyStatus")) != "1":
+    apply_status = row.get("applyStatus")
+    if apply_status is None:
+        apply_status = row.get("apply_status")
+    if str(apply_status) != "1":
         return False, "仅待审核申请可操作"
 
-    order_type = str(row.get("orderType") or "")
+    order_type = str(row.get("orderType") if row.get("orderType") is not None else row.get("order_type") or "")
     if order_type in ("2", "3"):
-        order_id = str(row.get("orderId") or "")
-        if order_id.isdigit():
+        order_ref = str(row.get("orderId") if row.get("orderId") is not None else row.get("order_id") or "")
+        order_pk = _resolve_experiment_order_pk(order_ref)
+        if order_pk:
             execute(
                 "UPDATE experiment_order SET isUploadReceipt = 3 WHERE id = %(id)s",
-                {"id": int(order_id)},
+                {"id": order_pk},
             )
     elif order_type == "4":
         money = Decimal(str(row.get("money") or 0))
-        ua_repo.get_or_create(int(row["userId"]))
+        uid_raw = row.get("userId") if row.get("userId") is not None else row.get("user_id")
+        ua_repo.get_or_create(int(uid_raw))
         execute(
             """
             UPDATE user_account
             SET amount = COALESCE(amount, 0) + %(m)s, update_time = NOW()
             WHERE delete_status = 0 AND user_id = %(uid)s
             """,
-            {"m": float(money), "uid": int(row["userId"])},
+            {"m": float(money), "uid": int(uid_raw)},
         )
 
     execute(
