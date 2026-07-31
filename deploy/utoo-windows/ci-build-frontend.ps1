@@ -23,11 +23,19 @@ if (Test-Path -LiteralPath $distDir) {
 	Write-Host '[ci] removed stale qd_web_front/dist'
 }
 
+$commitSha = (($env:CI_COMMIT_SHA | ForEach-Object { "$_" }).Trim())
+if ([string]::IsNullOrWhiteSpace($commitSha)) {
+	Push-Location $root
+	try { $commitSha = (& git rev-parse HEAD 2>$null | ForEach-Object { "$_" }).Trim() } finally { Pop-Location }
+}
+if ([string]::IsNullOrWhiteSpace($commitSha)) { $commitSha = 'unknown' }
+
 @(
 	'VITE_APP_BASE_API=/api',
-	'VITE_API_MODE=django'
+	'VITE_API_MODE=django',
+	("VITE_BUILD_ID={0}" -f $commitSha)
 ) | Set-Content -LiteralPath (Join-Path $target '.env.production') -Encoding utf8
-Write-Host '[ci] wrote qd_web_front/.env.production'
+Write-Host ('[ci] wrote qd_web_front/.env.production buildId={0}' -f $commitSha)
 
 if (Test-Path -LiteralPath (Join-Path $target 'package-lock.json')) {
 	& npm ci
@@ -49,13 +57,28 @@ if ($indexText -notmatch 'assets/index-[^"\.]+\.js') {
 	Write-Error 'dist/index.html missing hashed assets/index-*.js entry'
 	exit 1
 }
-$markerNeedles = @('ServiceConsultDetail', 'warehouse-config', 'InventoryWarehouseConfig')
+
+# Stamp the exact commit into dist so deploy can refuse uploading an unrelated/old package.
+$buildInfo = @{
+	commit = $commitSha
+	builtAt = (Get-Date).ToString('o')
+	root = $root
+	jobId = (($env:CI_JOB_ID | ForEach-Object { "$_" }).Trim())
+} | ConvertTo-Json -Compress
+$buildInfoPath = Join-Path $distDir 'build-info.json'
+[IO.File]::WriteAllText($buildInfoPath, $buildInfo, [Text.UTF8Encoding]::new($false))
+Write-Host ("[ci] wrote {0}" -f $buildInfoPath)
+
+# Keep a couple of long-lived markers, plus commit SHA, so stale dist cannot pass.
+$markerNeedles = @('ServiceConsultDetail', 'warehouse-config', 'InventoryWarehouseConfig', 'fetchUserAccessRights')
+if ($commitSha -ne 'unknown') { $markerNeedles += $commitSha }
 $assetFiles = Get-ChildItem -LiteralPath (Join-Path $distDir 'assets') -Filter '*.js' -ErrorAction Stop
 $joined = ''
 foreach ($f in $assetFiles) {
-	# Sample main + router chunks only would be faster; full scan keeps the guard reliable.
 	$joined += [IO.File]::ReadAllText($f.FullName, [Text.Encoding]::UTF8)
 }
+$joined += $indexText
+$joined += $buildInfo
 foreach ($needle in $markerNeedles) {
 	if ($joined.IndexOf($needle, [StringComparison]::Ordinal) -lt 0) {
 		Write-Error ("Frontend dist missing expected marker '{0}' — refusing to publish stale/wrong build (root={1})" -f $needle, $root)

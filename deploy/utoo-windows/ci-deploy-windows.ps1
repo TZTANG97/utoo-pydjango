@@ -5,6 +5,10 @@ $ErrorActionPreference = 'Stop'
 $root = Get-UtooCiProjectRoot
 Set-Location $root
 Write-Host "[ci] project root: $root"
+$ciSha = (($env:CI_COMMIT_SHA | ForEach-Object { "$_" }).Trim())
+if (-not [string]::IsNullOrWhiteSpace($ciSha)) {
+	Write-Host ("[ci] CI_COMMIT_SHA={0} CI_JOB_ID={1} CI_PROJECT_DIR={2}" -f $ciSha, $env:CI_JOB_ID, $env:CI_PROJECT_DIR)
+}
 
 $env:MSYS2_ARG_CONV_EXCL = '*'
 $env:MSYS_NO_PATHCONV = '1'
@@ -514,14 +518,32 @@ try {
 			exit 1
 		}
 		$expectedAsset = $Matches[1]
+		$buildInfoPath = Join-Path $webDist 'build-info.json'
+		if (-not (Test-Path -LiteralPath $buildInfoPath)) {
+			Write-Error "Missing $buildInfoPath — refuse to publish dist without build stamp (possible stale package)"
+			exit 1
+		}
+		$buildInfoText = Get-Content -LiteralPath $buildInfoPath -Raw -Encoding utf8
+		$expectedCommit = (($env:CI_COMMIT_SHA | ForEach-Object { "$_" }).Trim())
+		if (-not [string]::IsNullOrWhiteSpace($expectedCommit) -and ($buildInfoText.IndexOf($expectedCommit, [StringComparison]::OrdinalIgnoreCase) -lt 0)) {
+			Write-Error ("Local build-info.json does not contain CI_COMMIT_SHA={0}. Refusing stale/wrong dist.`n{1}" -f $expectedCommit, $buildInfoText)
+			exit 1
+		}
 		Write-Host ("[deploy] sync unified front static -> {0} (expect {1})" -f $StaticWeb, $expectedAsset)
+		Write-Host ("[deploy] local build-info: {0}" -f $buildInfoText.Trim())
 		Sync-DirToRemote -LocalDir $webDist -RemoteDir $StaticWeb -Exclude @() -PreserveNames @('.keep')
 		$remoteIndex = (Invoke-RemoteCapture ("cat {0}/index.html" -f $StaticWeb))
 		if ($remoteIndex -notmatch [regex]::Escape($expectedAsset)) {
 			Write-Error ("Remote {0}/index.html does not reference {1} after sync. Got:`n{2}" -f $StaticWeb, $expectedAsset, $remoteIndex)
 			exit 1
 		}
+		$remoteBuildInfo = (Invoke-RemoteCapture ("cat {0}/build-info.json" -f $StaticWeb))
+		if (-not [string]::IsNullOrWhiteSpace($expectedCommit) -and ($remoteBuildInfo.IndexOf($expectedCommit, [StringComparison]::OrdinalIgnoreCase) -lt 0)) {
+			Write-Error ("Remote build-info.json does not contain CI_COMMIT_SHA={0}. Got:`n{1}" -f $expectedCommit, $remoteBuildInfo)
+			exit 1
+		}
 		Write-Host ("[deploy] verified remote index.html -> {0}" -f $expectedAsset)
+		Write-Host ("[deploy] verified remote build-info.json -> {0}" -f $expectedCommit)
 		Write-Host '[deploy] phase static done.'
 	}
 
