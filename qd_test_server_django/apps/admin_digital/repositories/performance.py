@@ -387,7 +387,7 @@ def list_lab_sale_perf_orders(
             t.totalPrice,
             t.invoiceType,
             t.order_time AS orderTime,
-            t.isOut,
+            2 AS isOut,
             q.name AS customerName,
             u.company_name AS supplierName,
             sm.user_name AS managerName,
