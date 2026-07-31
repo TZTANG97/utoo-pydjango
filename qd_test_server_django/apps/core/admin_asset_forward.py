@@ -13,14 +13,24 @@ from apps.core.svc_proxy import forward_admin_asset, svc_admin_asset_enabled
 
 
 def forward_admin_asset_first(view_func):
-    """DRF 视图最外层：启用 SVC_ADMIN_ASSET_URL 时透明转发 request.path。"""
+    """DRF 视图最外层：启用 SVC_ADMIN_ASSET_URL 时透明转发 request.path。
+
+    上游 404 / 非 JSON（常见于 Asset 尚未同步某接口）时回退到网关本地实现。
+    """
 
     @wraps(view_func)
     def wrapper(request: Request, *args, **kwargs):
         if svc_admin_asset_enabled():
-            return as_django_response(
-                forward_admin_asset(as_drf_request(request), request.path)
-            )
+            upstream = forward_admin_asset(as_drf_request(request), request.path)
+            data = upstream.data if isinstance(upstream, Response) else None
+            msg = ""
+            if isinstance(data, dict):
+                msg = str(data.get("message") or data.get("msg") or "")
+            if upstream.status_code in (404, 502) and (
+                "非 JSON" in msg or "Not Found" in msg or upstream.status_code == 404
+            ):
+                return view_func(request, *args, **kwargs)
+            return as_django_response(upstream)
         return view_func(request, *args, **kwargs)
 
     return wrapper

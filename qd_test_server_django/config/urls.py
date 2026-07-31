@@ -200,9 +200,16 @@ _ADMIN_ASSET_PREFIXES = (
 
 def _admin_asset_patterns():
     if svc_admin_asset_enabled():
+        from apps.admin_digital.views import digital as digital_views
         from apps.core.admin_asset_forward import proxy_admin_asset_request
 
-        patterns = []
+        # 精确本地路由优先于 prefix 代理：Asset 未同步接口时可走网关兜底
+        patterns = [
+            path(
+                "api/labPerformanceSaleuser/expOrderList.ajax",
+                digital_views.lab_sale_order_list,
+            ),
+        ]
         for prefix in _ADMIN_ASSET_PREFIXES:
             if "/" in prefix or prefix.endswith(".ajax"):
                 patterns.append(path(f"api/{prefix}", proxy_admin_asset_request))
