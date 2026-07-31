@@ -6,9 +6,9 @@
 # - 1 个一键全发：deploy_all_*（顺序跑完上面 6 步；中途失败即停）
 # 前四者按各自 upstream 的空闲蓝绿实例发布并切流；gateway 独立切公网入口。
 #
-# Runner shell 已是 powershell。
-# 注意：勿写 $env:CI_*（GitLab 会先展开 $env 为空，导致 :CI_* / UnexpectedToken，并落到 Runner 安装目录）。
-# 用 '$CI_PROJECT_DIR' 让 GitLab 注入路径；其余 PowerShell 变量写成 $$xxx。
+# Runner shell 多为 Windows PowerShell 5.1。
+# 禁止在 script 里写 $$var：Runner 19 可能把 $$ 原样交给 PowerShell，解析失败却仍 Job succeeded（假绿）。
+# 入口一律走 cmd -> powershell -File，用 ERRORLEVEL 保证失败能红。
 # 禁止复用 emku-windows /opt/emku-* / emku_upstream_*
 stages:
   - deploy
@@ -28,16 +28,15 @@ variables:
   tags:
     - utoo-windows
 
-# $$ -> PowerShell $ ; '$CI_PROJECT_DIR' injected by GitLab (keep single-quoted)
-# Keep these blocks ASCII + prefer few lines: WinPS may drop newlines / misread UTF-8 without BOM.
-.utoo_run_deploy: &utoo_run_deploy |
-  $$ErrorActionPreference = 'Stop'; $$root = '$CI_PROJECT_DIR'; if ([string]::IsNullOrWhiteSpace($$root)) { throw 'CI_PROJECT_DIR is empty' }; $$root = $$root.Trim().TrimEnd('\'); Set-Location -LiteralPath $$root; Write-Host ("[ci] project_dir={0}" -f $$root); $$deployScript = Join-Path $$root 'deploy\utoo-windows\ci-deploy-windows.ps1'; if (-not (Test-Path -LiteralPath $$deployScript)) { throw ("Missing deploy script: {0}" -f $$deployScript) }; & $$deployScript
+# GitLab 会展开 $CI_PROJECT_DIR；此处不再写任何 PowerShell $ 变量。
+.utoo_run_deploy: &utoo_run_deploy
+  - cmd.exe /c "$CI_PROJECT_DIR\\deploy\\utoo-windows\\ci-entry-deploy.cmd"
 
-.utoo_run_frontend: &utoo_run_frontend |
-  $$ErrorActionPreference = 'Stop'; $$root = '$CI_PROJECT_DIR'; if ([string]::IsNullOrWhiteSpace($$root)) { throw 'CI_PROJECT_DIR is empty' }; $$root = $$root.Trim().TrimEnd('\'); Set-Location -LiteralPath $$root; Write-Host ("[ci] project_dir={0}" -f $$root); $$runScript = Join-Path $$root 'deploy\utoo-windows\ci-run-frontend.ps1'; if (-not (Test-Path -LiteralPath $$runScript)) { throw ("Missing frontend runner: {0}" -f $$runScript) }; & $$runScript
+.utoo_run_frontend: &utoo_run_frontend
+  - cmd.exe /c "$CI_PROJECT_DIR\\deploy\\utoo-windows\\ci-entry-frontend.cmd"
 
-.utoo_run_all: &utoo_run_all |
-  $$ErrorActionPreference = 'Stop'; $$root = '$CI_PROJECT_DIR'; if ([string]::IsNullOrWhiteSpace($$root)) { throw 'CI_PROJECT_DIR is empty' }; $$root = $$root.Trim().TrimEnd('\'); Set-Location -LiteralPath $$root; Write-Host ("[ci] project_dir={0}" -f $$root); $$runScript = Join-Path $$root 'deploy\utoo-windows\ci-run-all.ps1'; if (-not (Test-Path -LiteralPath $$runScript)) { throw ("Missing all-deploy runner: {0}" -f $$runScript) }; & $$runScript
+.utoo_run_all: &utoo_run_all
+  - cmd.exe /c "$CI_PROJECT_DIR\\deploy\\utoo-windows\\ci-entry-all.cmd"
 
 # --- dev：6 个独立发布 + 1 个一键全发 ---
 
@@ -53,8 +52,7 @@ deploy_all_dev:
   when: manual
   allow_failure: false
   timeout: 2h
-  script:
-    - *utoo_run_all
+  script: *utoo_run_all
 
 deploy_order_dev:
   extends: .utoo_windows_runner
@@ -69,8 +67,7 @@ deploy_order_dev:
     UTOO_DEPLOY_SERVICE: order
   when: manual
   allow_failure: false
-  script:
-    - *utoo_run_deploy
+  script: *utoo_run_deploy
 
 deploy_payment_dev:
   extends: .utoo_windows_runner
@@ -85,8 +82,7 @@ deploy_payment_dev:
     UTOO_DEPLOY_SERVICE: payment
   when: manual
   allow_failure: false
-  script:
-    - *utoo_run_deploy
+  script: *utoo_run_deploy
 
 deploy_admin_asset_dev:
   extends: .utoo_windows_runner
@@ -101,8 +97,7 @@ deploy_admin_asset_dev:
     UTOO_DEPLOY_SERVICE: admin_asset
   when: manual
   allow_failure: false
-  script:
-    - *utoo_run_deploy
+  script: *utoo_run_deploy
 
 deploy_admin_platform_dev:
   extends: .utoo_windows_runner
@@ -117,8 +112,7 @@ deploy_admin_platform_dev:
     UTOO_DEPLOY_SERVICE: admin_platform
   when: manual
   allow_failure: false
-  script:
-    - *utoo_run_deploy
+  script: *utoo_run_deploy
 
 deploy_gateway_dev:
   extends: .utoo_windows_runner
@@ -133,8 +127,7 @@ deploy_gateway_dev:
     UTOO_DEPLOY_SERVICE: gateway
   when: manual
   allow_failure: false
-  script:
-    - *utoo_run_deploy
+  script: *utoo_run_deploy
 
 deploy_frontend_dev:
   extends: .utoo_windows_runner
@@ -149,8 +142,7 @@ deploy_frontend_dev:
     UTOO_DEPLOY_SERVICE: frontend
   when: manual
   allow_failure: false
-  script:
-    - *utoo_run_frontend
+  script: *utoo_run_frontend
 
 # --- prod：6 个独立发布 + 1 个一键全发 ---
 
@@ -166,8 +158,7 @@ deploy_all_prod:
   when: manual
   allow_failure: false
   timeout: 2h
-  script:
-    - *utoo_run_all
+  script: *utoo_run_all
 
 deploy_order_prod:
   extends: .utoo_windows_runner
@@ -182,8 +173,7 @@ deploy_order_prod:
     UTOO_DEPLOY_SERVICE: order
   when: manual
   allow_failure: false
-  script:
-    - *utoo_run_deploy
+  script: *utoo_run_deploy
 
 deploy_payment_prod:
   extends: .utoo_windows_runner
@@ -198,8 +188,7 @@ deploy_payment_prod:
     UTOO_DEPLOY_SERVICE: payment
   when: manual
   allow_failure: false
-  script:
-    - *utoo_run_deploy
+  script: *utoo_run_deploy
 
 deploy_admin_asset_prod:
   extends: .utoo_windows_runner
@@ -214,8 +203,7 @@ deploy_admin_asset_prod:
     UTOO_DEPLOY_SERVICE: admin_asset
   when: manual
   allow_failure: false
-  script:
-    - *utoo_run_deploy
+  script: *utoo_run_deploy
 
 deploy_admin_platform_prod:
   extends: .utoo_windows_runner
@@ -230,8 +218,7 @@ deploy_admin_platform_prod:
     UTOO_DEPLOY_SERVICE: admin_platform
   when: manual
   allow_failure: false
-  script:
-    - *utoo_run_deploy
+  script: *utoo_run_deploy
 
 deploy_gateway_prod:
   extends: .utoo_windows_runner
@@ -246,8 +233,7 @@ deploy_gateway_prod:
     UTOO_DEPLOY_SERVICE: gateway
   when: manual
   allow_failure: false
-  script:
-    - *utoo_run_deploy
+  script: *utoo_run_deploy
 
 deploy_frontend_prod:
   extends: .utoo_windows_runner
@@ -262,5 +248,4 @@ deploy_frontend_prod:
     UTOO_DEPLOY_SERVICE: frontend
   when: manual
   allow_failure: false
-  script:
-    - *utoo_run_frontend
+  script: *utoo_run_frontend
