@@ -285,10 +285,28 @@
             collapse-tags
             collapse-tags-tooltip
             style="width: 100%"
+            :loading="userLoading"
           >
             <el-option
-              v-for="o in options.users"
+              v-for="o in userOptions"
               :key="String(o.value)"
+              :label="String(o.label)"
+              :value="String(o.value)"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="关联账号">
+          <el-select
+            v-model="form.syuserId"
+            clearable
+            filterable
+            placeholder="请选择关联账号"
+            style="width: 100%"
+            :loading="userLoading"
+          >
+            <el-option
+              v-for="o in userOptions"
+              :key="`sy-${o.value}`"
               :label="String(o.label)"
               :value="String(o.value)"
             />
@@ -385,7 +403,7 @@ import {
   updateLabLineStatus,
   updateLabStatus,
 } from '@/api/inventory'
-import { fetchDistrictChildren } from '@/api/system'
+import { fetchDistrictChildren, fetchUserList } from '@/api/system'
 import { useDataTable } from '@/composables/useDataTable'
 import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
 
@@ -422,6 +440,7 @@ const form = reactive({
   labNum: '',
   labName: '',
   labUserIds: [] as string[],
+  syuserId: '',
   country: '',
   provinceId: '',
   cityId: '',
@@ -429,6 +448,9 @@ const form = reactive({
   address: '',
   status: 1,
 })
+
+const userLoading = ref(false)
+const userOptions = ref<{ value: string; label: string }[]>([])
 
 const lineLoading = ref(false)
 const lineRows = ref<Record<string, unknown>[]>([])
@@ -470,6 +492,30 @@ function lineStatusLabel(v: unknown) {
   const n = Number(v)
   if (n === 1) return '进行中'
   return '空闲中'
+}
+
+async function loadUserOptions() {
+  userLoading.value = true
+  try {
+    const res = await fetchUserList(
+      { start: 0, length: 1000, type: -1, draw: 1 },
+      { silentError: true }
+    )
+    const rows = Array.isArray(res.data) ? res.data : []
+    userOptions.value = rows
+      .map((u) => {
+        const id = String(u.id ?? u.userId ?? '')
+        const name = String(u.userName || u.user_name || '')
+        const trueName = String(u.trueName || u.true_name || '')
+        const label = trueName ? `${name}（${trueName}）` : name || id
+        return { value: id, label }
+      })
+      .filter((o) => o.value)
+  } catch {
+    userOptions.value = []
+  } finally {
+    userLoading.value = false
+  }
 }
 
 async function loadOptions() {
@@ -552,6 +598,7 @@ function openCreate() {
     labNum: '',
     labName: '',
     labUserIds: [],
+    syuserId: '',
     country: '',
     provinceId: '',
     cityId: '',
@@ -562,11 +609,13 @@ function openCreate() {
   formProvinces.value = []
   formCities.value = []
   formAreas.value = []
+  void loadUserOptions()
   dialogVisible.value = true
 }
 
 async function openEdit(row: Record<string, unknown>) {
   editingId.value = String(row.id)
+  await loadUserOptions()
   const res = await getLab(String(row.id))
   const obj = isAjaxOk(res) && res.obj ? (res.obj as Record<string, unknown>) : row
   const userIds = String(obj.labUserid || '')
@@ -577,6 +626,7 @@ async function openEdit(row: Record<string, unknown>) {
     labNum: String(obj.labNum || ''),
     labName: String(obj.labName || ''),
     labUserIds: userIds,
+    syuserId: String(obj.syuserId || obj.syUserId || ''),
     country: String(obj.country || ''),
     provinceId: String(obj.provinceId || ''),
     cityId: String(obj.cityId || ''),
@@ -748,6 +798,7 @@ async function handleSubmit() {
       labNum: form.labNum,
       labName: form.labName,
       labUserid: form.labUserIds.join(','),
+      syuserId: form.syuserId || undefined,
       country: form.country,
       areaId: form.areaId,
       address: form.address,

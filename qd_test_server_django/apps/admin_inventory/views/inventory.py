@@ -142,7 +142,7 @@ def inventory_update(request: Request, user=None):
             "produce_time": produce_time,
         },
     )
-    return Response(ajax_ok(msg="更新成功"))
+    return Response(ajax_ok(res_msg="更新成功"))
 
 
 # ---- 实验室 ----
@@ -233,9 +233,9 @@ def lab_save(request: Request, user=None):
     row_id = _to_int(data.get("id"))
     if row_id:
         lab_repo.update_lab(row_id, payload)
-        return Response(ajax_ok(msg="更新成功"))
+        return Response(ajax_ok(res_msg="更新成功"))
     new_id = lab_repo.insert_lab(payload)
-    return Response(ajax_ok(msg="保存成功", obj={"id": new_id}))
+    return Response(ajax_ok(res_msg="保存成功", obj={"id": new_id}))
 
 
 @api_view(["POST"])
@@ -251,7 +251,7 @@ def lab_status(request: Request, user=None):
     if not row_id or status is None:
         return Response(ajax_fail("参数错误"))
     lab_repo.set_lab_status(row_id, status)
-    return Response(ajax_ok(msg="状态已更新"))
+    return Response(ajax_ok(res_msg="状态已更新"))
 
 
 @api_view(["POST"])
@@ -265,7 +265,7 @@ def lab_del(request: Request, user=None):
     if not row_id:
         return Response(ajax_fail("参数错误"))
     lab_repo.soft_delete_lab(row_id)
-    return Response(ajax_ok(msg="删除成功"))
+    return Response(ajax_ok(res_msg="删除成功"))
 
 
 # ---- 实验线（实验室查看页） ----
@@ -325,7 +325,7 @@ def lab_line_submit(request: Request, user=None):
     if not lab_id or not line_num or not class_id:
         return Response(ajax_fail("请填写实验线编号和类型"))
     new_id = line_repo.insert_line(lab_id=lab_id, line_num=line_num, class_id=class_id)
-    return Response(ajax_ok(msg=str(new_id), obj={"id": new_id}))
+    return Response(ajax_ok(res_msg=str(new_id), obj={"id": new_id}))
 
 
 @api_view(["POST"])
@@ -342,7 +342,7 @@ def lab_line_update(request: Request, user=None):
     if not row_id or not line_num or not class_id:
         return Response(ajax_fail("请填写实验线编号和类型"))
     line_repo.update_line(row_id, line_num=line_num, class_id=class_id)
-    return Response(ajax_ok(msg=str(row_id), obj={"id": row_id}))
+    return Response(ajax_ok(res_msg=str(row_id), obj={"id": row_id}))
 
 
 @api_view(["POST"])
@@ -358,7 +358,7 @@ def lab_line_status(request: Request, user=None):
     if not row_id or status is None:
         return Response(ajax_fail("参数错误"))
     line_repo.set_line_status(row_id, status)
-    return Response(ajax_ok(msg="操作成功!"))
+    return Response(ajax_ok(res_msg="操作成功!"))
 
 
 # ---- 样品管理单 ----

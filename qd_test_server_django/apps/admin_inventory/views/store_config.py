@@ -54,7 +54,7 @@ def _add_block(request: Request, kind: cfg.Kind):
     ok, msg = cfg.add_block(kind=kind, store_id=store_id, block=block)
     if not ok:
         return Response(ajax_fail(msg))
-    return Response(ajax_ok(msg="添加成功"))
+    return Response(ajax_ok(res_msg="添加成功"))
 
 
 def _position_list(request: Request, kind: cfg.Kind):
@@ -91,7 +91,7 @@ def _add_position(request: Request, kind: cfg.Kind):
     )
     if not ok:
         return Response(ajax_fail(msg))
-    return Response(ajax_ok(msg="添加成功"))
+    return Response(ajax_ok(res_msg="添加成功"))
 
 
 def _del_position(request: Request, kind: cfg.Kind):
@@ -102,7 +102,7 @@ def _del_position(request: Request, kind: cfg.Kind):
     ok, msg = cfg.soft_delete_position(kind=kind, pos_id=pos_id)
     if not ok:
         return Response(ajax_fail(msg))
-    return Response(ajax_ok(msg=msg))
+    return Response(ajax_ok(res_msg=msg))
 
 
 def _qr_payload(request: Request, kind: cfg.Kind, retain: bool = False):
@@ -248,7 +248,7 @@ def sample_del_sample_goods(request: Request, user=None):
     ok, msg = cfg.clear_sample_goods(pos_id=pos_id)
     if not ok:
         return Response(ajax_fail(msg))
-    return Response(ajax_ok(msg=msg))
+    return Response(ajax_ok(res_msg=msg))
 
 
 @api_view(["GET", "POST"])
@@ -328,7 +328,7 @@ def remain_del_sample_goods(request: Request, user=None):
     ok, msg = cfg.clear_sample_goods(pos_id=pos_id)
     if not ok:
         return Response(ajax_fail(msg))
-    return Response(ajax_ok(msg=msg))
+    return Response(ajax_ok(res_msg=msg))
 
 
 @api_view(["GET", "POST"])

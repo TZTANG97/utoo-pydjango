@@ -53,15 +53,31 @@
         v-model:page-size="pagination.pageSize"
         layout="total, prev, pager, next"
         :total="total"
-        @current-change="reload()"
+        @current-change="() => load()"
       />
     </div>
 
     <el-dialog v-model="dialogVisible" :title="editingId ? '编辑仓库' : '新增仓库'" width="520px">
       <el-form label-width="90px">
         <el-form-item label="仓库编号"><el-input v-model="form.storeNum" /></el-form-item>
-        <el-form-item label="仓库名称"><el-input v-model="form.storeName" /></el-form-item>
-        <el-form-item label="负责人ID"><el-input v-model="form.storeUserid" placeholder="sy_users.id" /></el-form-item>
+        <el-form-item label="仓库名称" required><el-input v-model="form.storeName" /></el-form-item>
+        <el-form-item label="负责人">
+          <el-select
+            v-model="form.storeUserid"
+            filterable
+            clearable
+            :loading="userLoading"
+            placeholder="请选择负责人"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="o in userOptions"
+              :key="String(o.value)"
+              :label="String(o.label)"
+              :value="String(o.value)"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="手机"><el-input v-model="form.moblie" /></el-form-item>
         <el-form-item label="地址"><el-input v-model="form.address" /></el-form-item>
         <el-form-item label="备注"><el-input v-model="form.mark" type="textarea" :rows="2" /></el-form-item>
@@ -95,8 +111,9 @@ import {
   updateSampleStorehouseStatus,
   updateStorehouseStatus,
 } from '@admin/api/inventory'
+import { fetchUserList } from '@admin/api/system'
 import { useDataTable } from '@admin/composables/useDataTable'
-import { isAjaxOk } from '@admin/utils/request'
+import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
 const props = withDefaults(
   defineProps<{ mode?: 'goods' | 'sample' | 'retain'; title?: string }>(),
@@ -109,6 +126,8 @@ const filters = reactive({ storeName: '', trueName: '', mobile: '' })
 const dialogVisible = ref(false)
 const editingId = ref<string | null>(null)
 const saving = ref(false)
+const userLoading = ref(false)
+const userOptions = ref<{ value: string; label: string }[]>([])
 const form = reactive({
   storeNum: '',
   storeName: '',
@@ -132,7 +151,33 @@ function reload() {
   load()
 }
 
-onMounted(() => load())
+async function loadUserOptions() {
+  userLoading.value = true
+  try {
+    const res = await fetchUserList(
+      { start: 0, length: 1000, type: -1, draw: 1 },
+      { silentError: true }
+    )
+    const list = Array.isArray(res.data) ? res.data : []
+    userOptions.value = list
+      .map((u) => {
+        const id = String(u.id ?? u.userId ?? '')
+        const name = String(u.userName || u.user_name || '')
+        const trueName = String(u.trueName || u.true_name || '')
+        return { value: id, label: trueName ? `${name}（${trueName}）` : name || id }
+      })
+      .filter((o) => o.value)
+  } catch {
+    userOptions.value = []
+  } finally {
+    userLoading.value = false
+  }
+}
+
+onMounted(() => {
+  void loadUserOptions()
+  load()
+})
 
 function openCreate() {
   editingId.value = null
@@ -145,6 +190,7 @@ function openCreate() {
     mark: '',
     status: 1,
   })
+  void loadUserOptions()
   dialogVisible.value = true
 }
 
@@ -153,12 +199,13 @@ function openEdit(row: Record<string, unknown>) {
   Object.assign(form, {
     storeNum: String(row.storeNum || ''),
     storeName: String(row.storeName || ''),
-    storeUserid: String(row.storeUserid || ''),
+    storeUserid: String(row.storeUserid || row.store_userid || ''),
     moblie: String(row.moblie || ''),
     address: String(row.address || ''),
     mark: String(row.mark || ''),
     status: Number(row.status ?? 1),
   })
+  void loadUserOptions()
   dialogVisible.value = true
 }
 
@@ -175,7 +222,7 @@ async function handleSubmit() {
         ? await saveStorehouse(payload)
         : await saveSampleStorehouse(props.mode === 'retain', payload)
     if (!isAjaxOk(res)) {
-      ElMessage.error(String(res.msg || '保存失败'))
+      ElMessage.error(ajaxErrorMessage(res, '保存失败'))
       return
     }
     ElMessage.success('保存成功')
@@ -193,9 +240,10 @@ async function toggleStatus(row: Record<string, unknown>) {
       ? await updateStorehouseStatus(String(row.id), next)
       : await updateSampleStorehouseStatus(props.mode === 'retain', String(row.id), next)
   if (!isAjaxOk(res)) {
-    ElMessage.error(String(res.msg || '操作失败'))
+    ElMessage.error(ajaxErrorMessage(res, '操作失败'))
     return
   }
+  ElMessage.success(next === 1 ? '已启用' : '已停用')
   load()
 }
 
@@ -206,7 +254,7 @@ async function handleDelete(row: Record<string, unknown>) {
       ? await deleteStorehouse(String(row.id))
       : await deleteSampleStorehouse(props.mode === 'retain', String(row.id))
   if (!isAjaxOk(res)) {
-    ElMessage.error(String(res.msg || '删除失败'))
+    ElMessage.error(ajaxErrorMessage(res, '删除失败'))
     return
   }
   ElMessage.success('已删除')

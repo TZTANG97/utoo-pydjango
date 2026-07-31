@@ -22,6 +22,9 @@ def _to_int(value, default=None):
 
 
 def _store_payload(data: dict) -> dict:
+    status = _to_int(data.get("status"), 1)
+    if status is None:
+        status = 1
     return {
         "store_num": (data.get("storeNum") or data.get("store_num") or "").strip(),
         "store_name": (data.get("storeName") or data.get("store_name") or "").strip(),
@@ -29,7 +32,7 @@ def _store_payload(data: dict) -> dict:
         "moblie": (data.get("moblie") or data.get("mobile") or "").strip(),
         "address": (data.get("address") or "").strip(),
         "mark": (data.get("mark") or "").strip(),
-        "status": _to_int(data.get("status"), 1) or 1,
+        "status": status,
     }
 
 
@@ -80,9 +83,9 @@ def storehouse_save(request: Request, user=None):
     row_id = _to_int(data.get("id"))
     if row_id:
         repo.update_storehouse(row_id, payload)
-        return Response(ajax_ok(msg="更新成功"))
+        return Response(ajax_ok(res_msg="更新成功"))
     new_id = repo.insert_storehouse(payload)
-    return Response(ajax_ok(msg="保存成功", obj={"id": new_id}))
+    return Response(ajax_ok(res_msg="保存成功", obj={"id": new_id}))
 
 
 @api_view(["POST"])
@@ -93,11 +96,14 @@ def storehouse_status(request: Request, user=None):
     del user
     data = merge_payload(request)
     row_id = _to_int(data.get("id"))
-    status = _to_int(data.get("shstatus") or data.get("status"))
+    raw_status = data.get("shstatus")
+    if raw_status is None:
+        raw_status = data.get("status")
+    status = _to_int(raw_status)
     if not row_id or status is None:
         return Response(ajax_fail("参数错误"))
     repo.set_storehouse_status(row_id, status)
-    return Response(ajax_ok(msg="状态已更新"))
+    return Response(ajax_ok(res_msg="状态已更新"))
 
 
 @api_view(["POST"])
@@ -111,7 +117,7 @@ def storehouse_del(request: Request, user=None):
     if not row_id:
         return Response(ajax_fail("参数错误"))
     repo.soft_delete_storehouse(row_id)
-    return Response(ajax_ok(msg="删除成功"))
+    return Response(ajax_ok(res_msg="删除成功"))
 
 
 def _sample_payload(data: dict, store_type: int) -> dict:
@@ -178,9 +184,9 @@ def _sample_save(request: Request, store_type: int):
     row_id = _to_int(data.get("id"))
     if row_id:
         repo.update_sample_storehouse(row_id, payload)
-        return Response(ajax_ok(msg="更新成功"))
+        return Response(ajax_ok(res_msg="更新成功"))
     new_id = repo.insert_sample_storehouse(payload)
-    return Response(ajax_ok(msg="保存成功", obj={"id": new_id}))
+    return Response(ajax_ok(res_msg="保存成功", obj={"id": new_id}))
 
 
 @api_view(["POST"])
@@ -209,11 +215,14 @@ def sample_storehouse_status(request: Request, user=None):
     del user
     data = merge_payload(request)
     row_id = _to_int(data.get("id"))
-    status = _to_int(data.get("shstatus") or data.get("status"))
+    raw_status = data.get("shstatus")
+    if raw_status is None:
+        raw_status = data.get("status")
+    status = _to_int(raw_status)
     if not row_id or status is None:
         return Response(ajax_fail("参数错误"))
     repo.set_sample_storehouse_status(row_id, status)
-    return Response(ajax_ok(msg="状态已更新"))
+    return Response(ajax_ok(res_msg="状态已更新"))
 
 
 @api_view(["POST"])
@@ -227,4 +236,4 @@ def sample_storehouse_del(request: Request, user=None):
     if not row_id:
         return Response(ajax_fail("参数错误"))
     repo.soft_delete_sample_storehouse(row_id)
-    return Response(ajax_ok(msg="删除成功"))
+    return Response(ajax_ok(res_msg="删除成功"))
