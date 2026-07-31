@@ -39,6 +39,13 @@ function normalizeBody(body: unknown): AjaxBody {
   if (typeof body === 'boolean') {
     return { res: body, code: body ? 0 : 1 }
   }
+  // 兼容 /funds/account_userId.htm 等直接返回数字的旧接口
+  if (typeof body === 'number') {
+    return { res: true, code: 0, obj: body }
+  }
+  if (typeof body === 'string' && body.trim() !== '' && !Number.isNaN(Number(body))) {
+    return { res: true, code: 0, obj: Number(body) }
+  }
   if (!body || typeof body !== 'object') return {}
   const b = body as AjaxBody
   if (typeof b.code === 'number' && 'data' in b) {

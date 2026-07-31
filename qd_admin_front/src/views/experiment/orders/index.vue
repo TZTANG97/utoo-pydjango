@@ -252,7 +252,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   exportExpOrders,
@@ -264,6 +264,7 @@ import { useDataTable } from '@/composables/useDataTable'
 import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
 
 const router = useRouter()
+const route = useRoute()
 
 const headerCellStyle = {
   background: '#f3f6fb',
@@ -469,7 +470,22 @@ async function handleExport() {
   }
 }
 
+function applyRouteQuery() {
+  const q = route.query
+  const orderId = String(q.orderId || q.order_id || '').trim()
+  if (orderId) filters.orderId = orderId
+  const year = String(q.year || q.statistics_time || '').trim()
+  if (year && /^\d{4}$/.test(year)) {
+    filters.orderStart = `${year}-01-01`
+    filters.orderEnd = `${year}-12-31`
+  }
+  if (q.orderStart) filters.orderStart = String(q.orderStart)
+  if (q.orderEnd) filters.orderEnd = String(q.orderEnd)
+  if (q.saleUser) filters.saleUser = String(q.saleUser)
+}
+
 onMounted(async () => {
+  applyRouteQuery()
   await loadOptions()
   reload()
 })

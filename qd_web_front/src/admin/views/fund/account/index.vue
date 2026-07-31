@@ -10,11 +10,19 @@
           </el-select>
         </div>
         <div v-loading="expLoading" class="exp-body">
-          <div>实验总额：￥{{ money(exp.qnsyzermb) }} / ${{ money(exp.qnsyzeus) }}</div>
-          <div>实验回款总收益：￥{{ money(exp.rmbSyhkzsy) }} / ${{ money(exp.usSyhkzsy) }}</div>
+          <div class="exp-link" @click="goExpJump('total')">
+            实验总额：￥{{ money(exp.qnsyzermb) }} / ${{ money(exp.qnsyzeus) }}
+          </div>
+          <div class="exp-link" @click="goExpJump('income')">
+            实验回款总收益：￥{{ money(exp.rmbSyhkzsy) }} / ${{ money(exp.usSyhkzsy) }}
+          </div>
           <div class="exp-split" />
-          <div>实验应收款总额：￥{{ money(exp.rmbSyyskze) }} / ${{ money(exp.usSyyskze) }}</div>
-          <div>实验分包应付款总额：￥{{ money(exp.rmbSyfbyfkze) }} / ${{ money(exp.usSyfbyfkze) }}</div>
+          <div class="exp-link" @click="goExpJump('receivable')">
+            实验应收款总额：￥{{ money(exp.rmbSyyskze) }} / ${{ money(exp.usSyyskze) }}
+          </div>
+          <div class="exp-link" @click="goExpJump('subPay')">
+            实验分包应付款总额：￥{{ money(exp.rmbSyfbyfkze) }} / ${{ money(exp.usSyfbyfkze) }}
+          </div>
         </div>
       </div>
       <div class="action-panel">
@@ -58,7 +66,20 @@
       <el-table-column label="状态" width="100" align="center">
         <template #default="{ row }">{{ statusLabel(row.logStatus) }}</template>
       </el-table-column>
-      <el-table-column prop="czNum" label="关联订单" min-width="140" show-overflow-tooltip />
+      <el-table-column label="关联订单" min-width="140" show-overflow-tooltip>
+        <template #default="{ row }">
+          <el-button
+            v-if="relatedOrderText(row)"
+            link
+            type="primary"
+            class="order-link"
+            @click="openRelatedOrder(row)"
+          >
+            {{ relatedOrderText(row) }}
+          </el-button>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="pdLogInfo" label="交易备注" min-width="140" show-overflow-tooltip />
       <el-table-column label="操作" width="120" align="center" fixed="right">
         <template #default="{ row }">
@@ -79,13 +100,40 @@
       />
     </div>
 
-    <el-dialog v-model="applyVisible" :title="applyTitle" width="480px">
+    <el-dialog v-model="applyVisible" :title="applyTitle" width="480px" destroy-on-close>
       <el-form label-width="100px">
         <el-form-item label="账户类型" required>
-          <el-select v-model="applyForm.accountType" style="width: 100%">
+          <el-select
+            v-model="applyForm.accountType"
+            style="width: 100%"
+            @change="onApplyAccountTypeChange"
+          >
             <el-option :value="1" label="人民币账户" />
             <el-option :value="2" label="美元账户" />
           </el-select>
+        </el-form-item>
+        <el-form-item v-if="applyKind === 'recharge'" label="充值用户" required>
+          <el-select
+            v-model="applyForm.userId"
+            filterable
+            remote
+            clearable
+            :remote-method="searchUsers"
+            :loading="userLoading"
+            placeholder="搜索用户名/姓名"
+            style="width: 100%"
+            @change="loadAvailableBalance"
+          >
+            <el-option
+              v-for="u in userOptions"
+              :key="String(u.id)"
+              :label="userOptionLabel(u)"
+              :value="String(u.id)"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="applyKind === 'recharge'" label="可用余额">
+          <span class="balance-text">{{ balanceLoading ? '加载中…' : money(availableBalance) }}</span>
         </el-form-item>
         <el-form-item label="金额" required>
           <el-input v-model="applyForm.logAmount" placeholder="请输入金额" />
@@ -113,13 +161,16 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminPageCard from '@admin/components/AdminPageCard.vue'
 import {
   cancelAccountApply,
   fetchAccountLogList,
   fetchExpSumByYear,
+  fetchFundUsers,
   fetchFundYears,
+  fetchUserAvailableBalance,
   submitAccountApply,
   submitLoanApply,
   submitTransferApply,
@@ -128,6 +179,10 @@ import { useDataTable } from '@admin/composables/useDataTable'
 import { useUserStore } from '@admin/stores/user'
 import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
+type ExpJump = 'total' | 'income' | 'receivable' | 'subPay'
+type ApplyKind = 'recharge' | 'withdraw' | 'transfer' | 'loan'
+
+const router = useRouter()
 const userStore = useUserStore()
 const years = ref<number[]>([])
 const statYear = ref('')
@@ -141,9 +196,14 @@ const filters = reactive({
 
 const applyVisible = ref(false)
 const saving = ref(false)
-const applyKind = ref<'recharge' | 'withdraw' | 'transfer' | 'loan'>('recharge')
+const applyKind = ref<ApplyKind>('recharge')
+const userLoading = ref(false)
+const balanceLoading = ref(false)
+const availableBalance = ref(0)
+const userOptions = ref<Record<string, unknown>[]>([])
 const applyForm = reactive({
   accountType: 1,
+  userId: '',
   logAmount: '',
   bankName: '',
   cardNum: '',
@@ -152,7 +212,7 @@ const applyForm = reactive({
 })
 
 const applyTitle = computed(() => {
-  const map = {
+  const map: Record<ApplyKind, string> = {
     recharge: '充值申请',
     withdraw: '提现申请',
     transfer: '转账申请',
@@ -227,6 +287,58 @@ function reload() {
   return load(listParams())
 }
 
+/** 对齐小程序 digitalOperationsCenter → experimentEdOrAble 的 type 映射 */
+function goExpJump(kind: ExpJump) {
+  const year = String(statYear.value || '').trim()
+  const yearQuery = year ? { year } : {}
+
+  if (kind === 'income') {
+    // 实验回款总收益 → 本页「实验回款」流水（accType=13）
+    filters.accType = '13'
+    reload()
+    return
+  }
+  if (kind === 'total' || kind === 'receivable') {
+    // type=10 个人实验总额 / type=7 个人实验应收 → 实验订单列表
+    router.push({
+      name: 'ExperimentOrders',
+      query: { ...yearQuery, from: 'fund-account', fundJump: kind },
+    })
+    return
+  }
+  // type=8 个人实验分包应付款 → 实验分包订单
+  router.push({
+    name: 'ExperimentSubcontractOrders',
+    query: { ...yearQuery, from: 'fund-account', fundJump: kind },
+  })
+}
+
+function relatedOrderText(row: Record<string, unknown>) {
+  return String(row.czNum || row.orderNum || '').trim()
+}
+
+/** 对齐小程序：accType=13 用 orderId 进订单详情，否则有关联单号也尝试进详情/列表 */
+function openRelatedOrder(row: Record<string, unknown>) {
+  const orderNo = relatedOrderText(row)
+  if (!orderNo) return
+  const pk = String(row.orderId || '').trim()
+  if (pk && pk !== '0') {
+    router.push({
+      name: 'ExperimentOrderDetail',
+      params: { id: pk },
+      query: {
+        from: 'fund-account',
+        orderNo,
+      },
+    })
+    return
+  }
+  router.push({
+    name: 'ExperimentOrders',
+    query: { orderId: orderNo, from: 'fund-account' },
+  })
+}
+
 async function loadExpSum() {
   expLoading.value = true
   try {
@@ -239,22 +351,80 @@ async function loadExpSum() {
   }
 }
 
-function openApply(kind: typeof applyKind.value) {
+function currentUserId() {
+  const profile = (userStore.profile || {}) as Record<string, unknown>
+  return String(profile.id || profile.userId || '')
+}
+
+function userOptionLabel(u: Record<string, unknown>) {
+  const name = String(u.userName || '')
+  const trueName = String(u.trueName || '')
+  return trueName ? `${name}（${trueName}）` : name || String(u.id || '')
+}
+
+async function searchUsers(keyword: string) {
+  userLoading.value = true
+  try {
+    const res = await fetchFundUsers(keyword || '')
+    if (isAjaxOk(res) && Array.isArray(res.obj)) {
+      userOptions.value = res.obj as Record<string, unknown>[]
+    }
+  } finally {
+    userLoading.value = false
+  }
+}
+
+async function loadAvailableBalance() {
+  if (applyKind.value !== 'recharge') return
+  const uid = String(applyForm.userId || '').trim()
+  if (!uid) {
+    availableBalance.value = 0
+    return
+  }
+  balanceLoading.value = true
+  try {
+    availableBalance.value = await fetchUserAvailableBalance(uid, Number(applyForm.accountType) || 1)
+  } catch {
+    availableBalance.value = 0
+  } finally {
+    balanceLoading.value = false
+  }
+}
+
+function onApplyAccountTypeChange() {
+  loadAvailableBalance()
+}
+
+async function openApply(kind: ApplyKind) {
   applyKind.value = kind
+  const uid = currentUserId()
   Object.assign(applyForm, {
     accountType: Number(filters.accountType) || 1,
+    userId: uid,
     logAmount: '',
     bankName: '',
     cardNum: '',
     inUserId: '',
     pdLogInfo: '',
   })
+  availableBalance.value = 0
   applyVisible.value = true
-}
-
-function currentUserId() {
-  const profile = (userStore.profile || {}) as Record<string, unknown>
-  return String(profile.id || profile.userId || '')
+  if (kind === 'recharge') {
+    await searchUsers('')
+    // 确保当前用户在选项里
+    if (uid && !userOptions.value.some((u) => String(u.id) === uid)) {
+      const profile = (userStore.profile || {}) as Record<string, unknown>
+      userOptions.value = [
+        {
+          id: uid,
+          userName: profile.userName || profile.username || uid,
+          trueName: profile.trueName || profile.true_name || '',
+        },
+        ...userOptions.value,
+      ]
+    }
+    await loadAvailableBalance()
+  }
 }
 
 async function submitApply() {
@@ -263,9 +433,12 @@ async function submitApply() {
     ElMessage.warning('请输入正确金额')
     return
   }
-  const userId = currentUserId()
+  const userId =
+    applyKind.value === 'recharge'
+      ? String(applyForm.userId || '').trim()
+      : currentUserId()
   if (!userId) {
-    ElMessage.warning('无法获取当前用户，请重新登录')
+    ElMessage.warning(applyKind.value === 'recharge' ? '请选择充值用户' : '无法获取当前用户，请重新登录')
     return
   }
   saving.value = true
@@ -353,6 +526,14 @@ onMounted(async () => {
   line-height: 1.9;
   color: #303133;
 }
+.exp-link {
+  color: #f39800;
+  cursor: pointer;
+  width: fit-content;
+}
+.exp-link:hover {
+  text-decoration: underline;
+}
 .exp-split {
   border-top: 1px dashed #ccc;
   margin: 10px 0;
@@ -379,5 +560,13 @@ onMounted(async () => {
   margin-top: 12px;
   display: flex;
   justify-content: flex-end;
+}
+.order-link {
+  padding: 0;
+  font-weight: 500;
+}
+.balance-text {
+  color: #303133;
+  font-weight: 600;
 }
 </style>

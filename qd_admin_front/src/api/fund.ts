@@ -51,6 +51,35 @@ export const fetchAccountOverviewList = (p: Record<string, unknown>) =>
 export const fetchUserAccountDetail = (id: string | number) =>
   postAjax('/funds/userAccountDetail.ajax', { id })
 
+/** 当前用户某币种可用余额（优先 account_userId.htm，失败回退账户详情） */
+export async function fetchAvailableBalance(userId: string | number, accountType: number) {
+  try {
+    const body = await postAjax(
+      '/funds/account_userId.htm',
+      { userId, type: accountType, accountType },
+      { silentError: true }
+    )
+    if (typeof body.obj === 'number') return body.obj
+    if (body.obj != null && !Number.isNaN(Number(body.obj))) return Number(body.obj)
+  } catch {
+    /* fallback */
+  }
+  const res = await fetchUserAccountDetail(userId)
+  const accounts = ((res.obj as { accounts?: Record<string, unknown>[] } | undefined)?.accounts ||
+    []) as Record<string, unknown>[]
+  const hit = accounts.find(
+    (a) => Number(a.accountType ?? a.account_type ?? a.type) === Number(accountType)
+  )
+  return Number(hit?.availableBalance ?? hit?.available_balance ?? 0)
+}
+
+/** 转账可选转入用户（有对应币种账户） */
+export const fetchTransferUsers = (accountType: number) =>
+  fetchDatatable<{ userId?: string | number; userName?: string; trueName?: string }>(
+    '/account_User.ajax',
+    { accountType, start: 0, length: 999, draw: 1 }
+  )
+
 export const fetchAssetOverview = (p: Record<string, unknown> = {}) =>
   postAjax('/funds/assetAcc.ajax', p)
 export const fetchAccountLogList = (p: Record<string, unknown>) =>
