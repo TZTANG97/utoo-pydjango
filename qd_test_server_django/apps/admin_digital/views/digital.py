@@ -13,7 +13,6 @@ from apps.admin_digital.repositories import performance as perf_repo
 from apps.admin_digital.repositories import stats as stats_repo
 from apps.admin_digital.repositories import users as user_repo
 from apps.admin_system.views.common import merge_payload
-from apps.core.admin_asset_forward import forward_admin_asset_first
 from apps.core.responses import ajax_fail, ajax_ok
 
 TEST_TYPES = ["测试人员", "测试主管"]
@@ -270,13 +269,15 @@ def lab_sale_perf(request: Request, user=None):
     return Response(ajax_ok(obj=payload))
 
 
-@forward_admin_asset_first
 @api_view(["GET", "POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def lab_sale_order_list(request: Request, user=None):
-    """对齐 Java labPerformanceSaleuser/expOrderList.ajax。"""
+    """对齐 Java labPerformanceSaleuser/expOrderList.ajax。
+
+    固定走网关本地（不转发 Asset）：UAT Asset 常未同步该路由会 404。
+    """
     del user
     data = merge_payload(request)
     draw, page, page_size = parse_datatable_params(request)

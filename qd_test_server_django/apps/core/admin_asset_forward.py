@@ -12,6 +12,30 @@ from apps.core.drf_request import as_django_response, as_drf_request
 from apps.core.svc_proxy import forward_admin_asset, svc_admin_asset_enabled
 
 
+def _upstream_missing(upstream: Response) -> bool:
+    data = upstream.data if isinstance(upstream, Response) else None
+    msg = ""
+    if isinstance(data, dict):
+        msg = str(data.get("message") or data.get("msg") or "")
+    return upstream.status_code in (404, 502) and (
+        "非 JSON" in msg
+        or "Not Found" in msg
+        or "不可用" in msg
+        or upstream.status_code == 404
+    )
+
+
+def _local_asset_fallback(request: Request):
+    """Asset 缺路由时回退到网关本地实现。"""
+    path = (getattr(request, "path", "") or "").split("?")[0].rstrip("/")
+    if path == "/api/labPerformanceSaleuser/expOrderList.ajax":
+        # 该 view 不挂 forward_*，可直接调用，避免循环转发
+        from apps.admin_digital.views.digital import lab_sale_order_list
+
+        return lab_sale_order_list(request)
+    return None
+
+
 def forward_admin_asset_first(view_func):
     """DRF 视图最外层：启用 SVC_ADMIN_ASSET_URL 时透明转发 request.path。
 
@@ -22,13 +46,7 @@ def forward_admin_asset_first(view_func):
     def wrapper(request: Request, *args, **kwargs):
         if svc_admin_asset_enabled():
             upstream = forward_admin_asset(as_drf_request(request), request.path)
-            data = upstream.data if isinstance(upstream, Response) else None
-            msg = ""
-            if isinstance(data, dict):
-                msg = str(data.get("message") or data.get("msg") or "")
-            if upstream.status_code in (404, 502) and (
-                "非 JSON" in msg or "Not Found" in msg or upstream.status_code == 404
-            ):
+            if _upstream_missing(upstream):
                 return view_func(request, *args, **kwargs)
             return as_django_response(upstream)
         return view_func(request, *args, **kwargs)
@@ -40,4 +58,11 @@ def forward_admin_asset_first(view_func):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def proxy_admin_asset_request(request: Request, subpath: str = "") -> Response:
-    return forward_admin_asset(request, request.path)
+    """Prefix 代理；上游缺路由时回退网关本地白名单接口。"""
+    del subpath
+    upstream = forward_admin_asset(request, request.path)
+    if _upstream_missing(upstream):
+        local = _local_asset_fallback(as_drf_request(request))
+        if local is not None:
+            return local
+    return upstream
