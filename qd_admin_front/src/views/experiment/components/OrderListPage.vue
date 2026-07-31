@@ -49,10 +49,9 @@
       <el-table-column prop="orderStatusLabel" label="状态" width="100" />
       <el-table-column v-if="!isGrab" prop="totalPrice" label="金额" width="100" align="right" />
       <el-table-column prop="addTime" :label="isGrab ? '下单时间' : '创建时间'" width="170" />
-      <el-table-column label="操作" :width="isGrab ? 160 : 200" fixed="right">
+      <el-table-column label="操作" :width="isGrab ? 100 : 200" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openDetail(row)">查看</el-button>
-          <el-button v-if="isGrab" link type="success" @click="handleGrab(row)">抢单</el-button>
           <template v-if="showAudit && !isGrab">
             <el-button link type="warning" @click="handleAudit(row, true)">通过</el-button>
             <el-button link type="danger" @click="handleAudit(row, false)">驳回</el-button>
@@ -87,7 +86,6 @@ import {
   fetchExpOrderList,
   fetchExpOrderStatusOptions,
   fetchGrabOrderList,
-  grabExpOrder,
 } from '@/api/experiment'
 import { useDataTable } from '@/composables/useDataTable'
 import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
@@ -150,6 +148,18 @@ function reload() {
 }
 
 function openDetail(row: Record<string, unknown>) {
+  if (isGrab.value) {
+    const orderNo = String(row.orderId || '').trim()
+    router.push({
+      name: 'ExperimentOrderDetail',
+      params: { id: String(row.id) },
+      query: {
+        from: 'grab-orders',
+        ...(orderNo ? { orderNo } : {}),
+      },
+    })
+    return
+  }
   const ot = String(props.orderType)
   const fromMap: Record<string, string> = {
     '8': 'subcontract-orders',
@@ -166,17 +176,6 @@ function openDetail(row: Record<string, unknown>) {
       ...(orderNo ? { orderNo } : {}),
     },
   })
-}
-
-async function handleGrab(row: Record<string, unknown>) {
-  await ElMessageBox.confirm(`确认抢单 ${row.orderId || ''}？`, '抢单', { type: 'warning' })
-  const res = await grabExpOrder(String(row.id))
-  if (isAjaxOk(res)) {
-    ElMessage.success(String(res.resMsg || '抢单成功'))
-    await reload()
-  } else {
-    ElMessage.error(ajaxErrorMessage(res, '抢单失败'))
-  }
 }
 
 async function handleAudit(row: Record<string, unknown>, pass: boolean) {

@@ -623,38 +623,42 @@ def list_grab_orders(
 
 
 def grab_order(*, order_id: int, user_id: str) -> tuple[bool, str]:
-    """对齐 Java competitionOrder：认领抢单池子单（test_user_id=22）。"""
-    children = fetch_all(
+    """对齐 Java competitionOrder：ofId 为子单 experiment_order_child.id。"""
+    child = fetch_one(
         """
-        SELECT ocf.id
-        FROM exp_qd_purchase_order_child poc
-        JOIN experiment_order_child ocf ON poc.order_child_id = ocf.id
-        WHERE poc.purchase_order_id = %(oid)s
-          AND ocf.test_user_id = %(pool_uid)s
-          AND ocf.order_status <= 36
-          AND IFNULL(ocf.delete_status, 2) <> 1
+        SELECT id, test_user_id AS testUserId, order_status AS orderStatus
+        FROM experiment_order_child
+        WHERE id = %(id)s AND IFNULL(delete_status, 2) <> 1
+        LIMIT 1
         """,
-        {"oid": order_id, "pool_uid": GRAB_POOL_TEST_USER_ID},
+        {"id": order_id},
     )
-    if not children:
-        return False, "没有可抢的子单"
-    for c in children:
+    if not child:
+        return False, "子单不存在"
+    if str(child.get("testUserId") or "") != GRAB_POOL_TEST_USER_ID:
+        return False, "该子单不可抢或已被抢"
+    try:
+        st = int(child.get("orderStatus") or 0)
+    except (TypeError, ValueError):
+        st = 0
+    if st > 36:
+        return False, "该子单当前状态不可抢"
+    execute(
+        "UPDATE experiment_order_child SET test_user_id = %(uid)s WHERE id = %(id)s",
+        {"uid": user_id, "id": child["id"]},
+    )
+    try:
         execute(
-            "UPDATE experiment_order_child SET test_user_id = %(uid)s WHERE id = %(id)s",
-            {"uid": user_id, "id": c["id"]},
+            """
+            UPDATE statistic_experiment_finish
+            SET test_user_id = %(uid)s
+            WHERE child_id = %(cid)s
+            """,
+            {"uid": user_id, "cid": child["id"]},
         )
-        try:
-            execute(
-                """
-                UPDATE statistic_experiment_finish
-                SET test_user_id = %(uid)s
-                WHERE child_id = %(cid)s
-                """,
-                {"uid": user_id, "cid": c["id"]},
-            )
-        except Exception:
-            pass
-    return True, f"已抢单 {len(children)} 条子单"
+    except Exception:
+        pass
+    return True, "抢单成功！"
 
 
 def _is_child_order_type(order_type: Any) -> bool:
@@ -1168,8 +1172,15 @@ def list_order_children(order_id: int) -> list[dict[str, Any]]:
         # 行状态用 childOrderStatus，不用主单 SUB 映射（否则 2 会原样显示）
         r["orderStatusLabel"] = _child_line_status_label(r.get("orderStatus"))
         r["testUserName"] = str(r.get("testUserTrueName") or r.get("testUserName") or "-")
-        if str(r.get("testUserId") or "") == GRAB_POOL_TEST_USER_ID:
+        pool = str(r.get("testUserId") or "") == GRAB_POOL_TEST_USER_ID
+        if pool:
             r["testUserName"] = "待抢单"
+        try:
+            child_st = int(r.get("orderStatus")) if r.get("orderStatus") is not None else -1
+        except (TypeError, ValueError):
+            child_st = -1
+        # 对齐 Java：待抢池子单且状态未超样品到货，详情中可单独抢单
+        r["canGrab"] = pool and child_st <= 36
         try:
             conf_i = int(r.get("isConfirm")) if r.get("isConfirm") is not None else 0
         except (TypeError, ValueError):

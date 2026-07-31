@@ -581,14 +581,15 @@ def grab_list(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def grab_order(request: Request, user=None):
+    """对齐 Java competitionOrder.ajax：ofId 为子单 id。"""
     data = merge_payload(request)
-    order_id = to_int(data.get("id") or data.get("orderId") or data.get("ofId"))
-    if not order_id:
+    child_id = to_int(data.get("ofId") or data.get("id") or data.get("childId") or data.get("orderId"))
+    if not child_id:
         return fail("参数错误")
     uid = str((user or {}).get("id") or (user or {}).get("user_id") or "")
     if not uid:
         return fail("用户未登录")
-    ok_flag, msg = order_repo.grab_order(order_id=order_id, user_id=uid)
+    ok_flag, msg = order_repo.grab_order(order_id=child_id, user_id=uid)
     if not ok_flag:
         return fail(msg)
     return ok(res_msg=msg)

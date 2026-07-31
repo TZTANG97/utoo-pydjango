@@ -203,5 +203,6 @@ export const updateExpOrderMsg = (id: string | number, msg: string) =>
 
 export const fetchGrabOrderList = (p: Record<string, unknown>) =>
   fetchDatatable(`${BASE}/grab/list.ajax`, p)
-export const grabExpOrder = (id: string | number) =>
-  postAjax(`${BASE}/grab/competition.ajax`, { id })
+/** 对齐 Java competitionOrder：参数为子单 id */
+export const grabExpOrder = (childId: string | number) =>
+  postAjax(`${BASE}/grab/competition.ajax`, { ofId: childId, id: childId })

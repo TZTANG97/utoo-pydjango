@@ -15,6 +15,7 @@ const DETAIL_FROM_TITLE: Record<string, string> = {
   'sub-orders': '实验子订单详情',
   'subcontract-orders': '实验分包订单详情',
   'subcontract-sub-orders': '实验分包子订单详情',
+  'grab-orders': '抢单实验详情',
 }
 
 const DETAIL_TYPE_TITLE: Record<string, string> = {
@@ -49,6 +50,12 @@ const LIST_TAG_BY_FROM: Record<string, TagView> = {
     fullPath: '/experiment/subcontract-sub-orders',
     name: 'ExperimentSubcontractSubOrders',
     title: '实验分包子订单',
+  },
+  'grab-orders': {
+    path: '/experiment/grab-orders',
+    fullPath: '/experiment/grab-orders',
+    name: 'ExperimentGrabOrders',
+    title: '抢单实验列表',
   },
 }
 

@@ -35,12 +35,12 @@
           </p>
         </div>
         <div class="hero-meta">
-          <div class="meta-item">
+          <div v-if="!isGrabMode" class="meta-item">
             <span class="meta-label">总价</span>
             <strong>{{ detail.totalPrice ?? '-' }}</strong>
             <small>{{ detail.currencyLabel }}</small>
           </div>
-          <div v-if="!isChildKind" class="meta-item">
+          <div v-if="!isGrabMode && !isChildKind" class="meta-item">
             <span class="meta-label">已开票 / 已收款</span>
             <strong>{{ detail.invoiceAmount ?? 0 }} / {{ detail.receiveAmount ?? 0 }}</strong>
           </div>
@@ -48,12 +48,17 @@
       </header>
 
       <section class="action-bar">
-        <el-button v-if="detail.canCancel" class="btn-warn" :loading="acting" @click="onCancel">
+        <el-button
+          v-if="!isGrabMode && detail.canCancel"
+          class="btn-warn"
+          :loading="acting"
+          @click="onCancel"
+        >
           取消订单
         </el-button>
-        <el-button v-if="detail.canEdit" plain @click="onEditOrder">编辑订单</el-button>
+        <el-button v-if="!isGrabMode && detail.canEdit" plain @click="onEditOrder">编辑订单</el-button>
         <el-button
-          v-if="detail.canWithdrawAudit"
+          v-if="!isGrabMode && detail.canWithdrawAudit"
           plain
           :loading="acting"
           @click="onWithdrawAudit"
@@ -61,7 +66,7 @@
           取消审核申请
         </el-button>
         <el-button
-          v-if="detail.canSubmitAudit"
+          v-if="!isGrabMode && detail.canSubmitAudit"
           type="warning"
           :loading="acting"
           @click="onSubmitAudit"
@@ -70,14 +75,14 @@
         </el-button>
         <!-- Java 主单：创建子单在审核通过/驳回之前 -->
         <el-button
-          v-if="detail.canCreateChild"
+          v-if="!isGrabMode && detail.canCreateChild"
           class="btn-accent"
           @click="onCreateChild"
         >
           {{ orderType === '8' ? '创建实验分包子订单' : '创建实验子订单' }}
         </el-button>
         <el-button
-          v-if="detail.canAudit"
+          v-if="!isGrabMode && detail.canAudit"
           type="success"
           :loading="acting"
           @click="doAudit(true)"
@@ -85,7 +90,7 @@
           审核通过
         </el-button>
         <el-button
-          v-if="detail.canAudit"
+          v-if="!isGrabMode && detail.canAudit"
           type="danger"
           :loading="acting"
           @click="doAudit(false)"
@@ -97,7 +102,7 @@
           保存
         </el-button>
         <el-button
-          v-if="detail.canConfirmOrdered"
+          v-if="!isGrabMode && detail.canConfirmOrdered"
           type="warning"
           :loading="acting"
           @click="onConfirmOrdered"
@@ -105,7 +110,7 @@
           确认已下单
         </el-button>
         <el-button
-          v-if="detail.canAskPay"
+          v-if="!isGrabMode && detail.canAskPay"
           type="warning"
           :loading="acting"
           @click="onSubPay('1')"
@@ -113,7 +118,7 @@
           申请付款
         </el-button>
         <el-button
-          v-if="detail.canAuditPay"
+          v-if="!isGrabMode && detail.canAuditPay"
           type="success"
           :loading="acting"
           @click="onSubPay('2')"
@@ -121,7 +126,7 @@
           付款审核通过
         </el-button>
         <el-button
-          v-if="detail.canAuditPay"
+          v-if="!isGrabMode && detail.canAuditPay"
           type="danger"
           :loading="acting"
           @click="onSubPay('3')"
@@ -129,7 +134,7 @@
           付款申请驳回
         </el-button>
         <el-button
-          v-if="detail.canReAskPay"
+          v-if="!isGrabMode && detail.canReAskPay"
           type="warning"
           :loading="acting"
           @click="onSubPay('1')"
@@ -137,7 +142,7 @@
           重新发起付款申请
         </el-button>
         <el-button
-          v-if="detail.canUploadPay"
+          v-if="!isGrabMode && detail.canUploadPay"
           type="warning"
           :loading="acting"
           @click="subPayBillVisible = true"
@@ -145,7 +150,7 @@
           上传付款信息
         </el-button>
         <el-button
-          v-if="detail.canUploadInvoice"
+          v-if="!isGrabMode && detail.canUploadInvoice"
           type="warning"
           :loading="acting"
           @click="subInvoiceVisible = true"
@@ -154,7 +159,7 @@
         </el-button>
         <!-- Java 主单：开票 → 收款 → 确认付款 → 沟通确认 → 分成 → 结清 → 关联 -->
         <el-button
-          v-if="detail.canInvoice"
+          v-if="!isGrabMode && detail.canInvoice"
           type="warning"
           :loading="acting"
           @click="invoiceVisible = true"
@@ -162,7 +167,7 @@
           开票
         </el-button>
         <el-button
-          v-if="detail.canReceiveBill"
+          v-if="!isGrabMode && detail.canReceiveBill"
           type="warning"
           :loading="acting"
           @click="receiveVisible = true"
@@ -170,7 +175,7 @@
           收款
         </el-button>
         <el-button
-          v-if="detail.canConfirmPay"
+          v-if="!isGrabMode && detail.canConfirmPay"
           type="success"
           :loading="acting"
           @click="onConfirmPay"
@@ -178,7 +183,7 @@
           确认付款
         </el-button>
         <el-button
-          v-if="detail.canConfirmCustomer"
+          v-if="!isGrabMode && detail.canConfirmCustomer"
           type="primary"
           :loading="acting"
           @click="onConfirmCustomer"
@@ -186,14 +191,14 @@
           已和客户沟通确认
         </el-button>
         <el-button
-          v-if="detail.canShareRatio"
+          v-if="!isGrabMode && detail.canShareRatio"
           class="btn-accent"
           @click="openShareDialog"
         >
           调整分成比例
         </el-button>
         <el-button
-          v-if="detail.canCostSettle"
+          v-if="!isGrabMode && detail.canCostSettle"
           class="btn-accent"
           :loading="acting"
           @click="onCostSettle"
@@ -201,15 +206,15 @@
           所有成本已结清
         </el-button>
         <el-button
-          v-if="detail.canAddRelated"
+          v-if="!isGrabMode && detail.canAddRelated"
           class="btn-accent"
           @click="relatedVisible = true"
         >
           增加关联订单
         </el-button>
-        <el-button v-if="detail.canMoreInfo" @click="onMoreInfo">更多信息</el-button>
+        <el-button v-if="!isGrabMode && detail.canMoreInfo" @click="onMoreInfo">更多信息</el-button>
         <el-button
-          v-if="detail.canGenerateAppointment"
+          v-if="!isGrabMode && detail.canGenerateAppointment"
           class="btn-accent"
           :loading="acting"
           @click="onGenerateAppointment"
@@ -490,6 +495,20 @@
             align="right"
           />
           <el-table-column prop="testUserName" label="测试员" width="100" />
+          <el-table-column v-if="isGrabMode" label="抢单" width="100" align="center" fixed="right">
+            <template #default="{ row }">
+              <el-button
+                v-if="row.canGrab"
+                link
+                type="success"
+                :loading="acting"
+                @click="onGrabChild(row)"
+              >
+                抢单
+              </el-button>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
           <el-table-column v-if="isChildKind" prop="confirmLabel" label="确认" width="80" align="center" />
           <el-table-column v-if="isChildKind && orderType === '10'" label="预计完成时间" width="170">
             <template #default="{ row }">
@@ -514,7 +533,7 @@
         </el-table>
       </section>
 
-      <section v-if="relatedOrders.length" class="card">
+      <section v-if="!isGrabMode && relatedOrders.length" class="card">
         <h3 class="card-title">关联订单</h3>
         <el-table :data="relatedOrders" border stripe class="detail-table">
           <el-table-column type="index" width="50" label="#" align="center" />
@@ -546,7 +565,7 @@
         </el-table>
       </section>
 
-      <section v-if="linkedOrders.length" class="card">
+      <section v-if="!isGrabMode && linkedOrders.length" class="card">
         <h3 class="card-title">{{ linkedTitle }}</h3>
         <el-table :data="linkedOrders" border stripe class="detail-table">
           <el-table-column type="index" width="50" label="#" align="center" />
@@ -897,6 +916,7 @@ import {
   fetchExpOrderMoreInfo,
   generateExpOrderAppointment,
   getExpOrderDetail,
+  grabExpOrder,
   retestExpOrder,
   sampleArriveExpOrder,
   samplePickExpOrder,
@@ -945,10 +965,15 @@ const tagsViewStore = useTagsViewStore()
 function syncDetailTagTitle(ot: string, orderNo?: string) {
   const from = String(route.query.from || '') || detailFromByOrderType(ot)
   tagsViewStore.ensureSourceListTag(from)
-  const title = detailTitleByOrderType(ot, orderNo)
+  const no = String(orderNo || '').trim()
+  const title =
+    from === 'grab-orders'
+      ? no
+        ? `${no} 抢单实验详情`
+        : '抢单实验详情'
+      : detailTitleByOrderType(ot, orderNo)
   tagsViewStore.updateViewTitle(route.path, title)
   // 同步 query.orderNo，便于标签/刷新后仍带单号
-  const no = String(orderNo || '').trim()
   if (no && String(route.query.orderNo || '') !== no) {
     router.replace({
       path: route.path,
@@ -1019,6 +1044,8 @@ const relatedOrders = computed(
 )
 const orderType = computed(() => String(detail.value?.orderType || ''))
 const isChildKind = computed(() => ['9', '10'].includes(orderType.value))
+/** 抢单列表进入：对齐 Java qdorderdetail，精简财务操作，子单可单独抢单 */
+const isGrabMode = computed(() => String(route.query.from || '') === 'grab-orders')
 
 const expectPayRows = computed(() => {
   const list = detail.value?.expectPayList
@@ -1034,7 +1061,9 @@ const orderTypeLabel = computed(() => {
   }
   return map[orderType.value] || orderType.value || '-'
 })
-const titleText = computed(() => `${orderTypeLabel.value}详情`)
+const titleText = computed(() =>
+  isGrabMode.value ? `抢单实验详情` : `${orderTypeLabel.value}详情`
+)
 const linkedTitle = computed(() =>
   orderType.value === '8' ? '关联分包子订单' : '关联实验子订单'
 )
@@ -1257,6 +1286,21 @@ async function onCancel() {
       return
     }
     ElMessage.success(String(res.resMsg || '订单已取消'))
+    await load()
+    emit('refreshed')
+  })
+}
+
+async function onGrabChild(row: Record<string, unknown>) {
+  const label = String(row.childOrderId || row.id || '')
+  await ElMessageBox.confirm(`确认抢单子单 ${label}？`, '抢单', { type: 'warning' })
+  await runAction(async () => {
+    const res = await grabExpOrder(String(row.id))
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '抢单失败'))
+      return
+    }
+    ElMessage.success(String(res.resMsg || '抢单成功！请前往实验子订单列表进行测试！'))
     await load()
     emit('refreshed')
   })
