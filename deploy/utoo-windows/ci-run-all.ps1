@@ -28,23 +28,44 @@ $steps = @(
 	@{ Name = 'frontend'; Phase = 'static'; Service = 'frontend'; Kind = 'frontend' }
 )
 
+$allStart = Get-Date
 $i = 0
 foreach ($step in $steps) {
 	$i++
+	$stepStart = Get-Date
 	Write-Host ''
 	Write-Host ('========== [{0}/{1}] deploy {2} (phase={3}) ==========' -f $i, $steps.Count, $step.Name, $step.Phase) -ForegroundColor Cyan
 	$env:UTOO_DEPLOY_PHASE = [string]$step.Phase
 	$env:UTOO_DEPLOY_SERVICE = [string]$step.Service
-	if ($step.Kind -eq 'frontend') {
-		& $frontendScript
-	} else {
-		& $deployScript
+	# Reset so a stale native exit code cannot mask a pure-PS success/failure.
+	$global:LASTEXITCODE = 0
+	try {
+		if ($step.Kind -eq 'frontend') {
+			& $frontendScript
+		} else {
+			& $deployScript
+		}
+		$stepExit = 0
+		if ($null -ne $LASTEXITCODE) { $stepExit = [int]$LASTEXITCODE }
+	} catch {
+		$elapsedFail = ((Get-Date) - $stepStart).TotalSeconds
+		Write-Host ('[all] step FAILED: {0} after {1:N1}s' -f $step.Name, $elapsedFail) -ForegroundColor Red
+		throw ("Step failed: {0}: {1}" -f $step.Name, $_.Exception.Message)
 	}
-	if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
-		throw ("Step failed: {0} (exit={1})" -f $step.Name, $LASTEXITCODE)
+	if ($stepExit -ne 0) {
+		$elapsedFail = ((Get-Date) - $stepStart).TotalSeconds
+		Write-Host ('[all] step FAILED: {0} exit={1} after {2:N1}s' -f $step.Name, $stepExit, $elapsedFail) -ForegroundColor Red
+		throw ("Step failed: {0} (exit={1})" -f $step.Name, $stepExit)
 	}
-	Write-Host ('[all] step OK: {0}' -f $step.Name) -ForegroundColor Green
+	$elapsedOk = ((Get-Date) - $stepStart).TotalSeconds
+	# Guard against "instant OK" that never entered deploy (should be tens of seconds+ each).
+	if ($elapsedOk -lt 3) {
+		throw ("Step suspiciously fast: {0} finished in {1:N2}s — deploy likely did not run" -f $step.Name, $elapsedOk)
+	}
+	Write-Host ('[all] step OK: {0} ({1:N1}s)' -f $step.Name, $elapsedOk) -ForegroundColor Green
 }
 
+$totalSec = ((Get-Date) - $allStart).TotalSeconds
 Write-Host ''
-Write-Host ('ci-run-all.ps1: OK (target={0}, steps={1})' -f $target, $steps.Count)
+Write-Host ('ci-run-all.ps1: OK (target={0}, steps={1}, total={2:N1}s)' -f $target, $steps.Count, $totalSec)
+exit 0

@@ -2,8 +2,8 @@
 # Runner tag：utoo-windows（须为本项目单独注册，否则会 stuck）
 #
 # 每个环境：
-# - 6 个独立手动发布：order / payment / admin_asset / admin_platform / gateway / frontend
-# - 1 个一键全发：deploy_all_*（顺序跑完上面 6 步；中途失败即停）
+# - stage deploy：6 个独立手动发布（order / payment / admin_asset / admin_platform / gateway / frontend）
+# - stage deploy_all：1 个一键全发（写在单发后面，单独一列；needs:[] 不挡单发）
 # 前四者按各自 upstream 的空闲蓝绿实例发布并切流；gateway 独立切公网入口。
 #
 # Runner shell 多为 Windows PowerShell 5.1。
@@ -12,6 +12,7 @@
 # 禁止复用 emku-windows /opt/emku-* / emku_upstream_*
 stages:
   - deploy
+  - deploy_all
 
 variables:
   GIT_STRATEGY: fetch
@@ -38,21 +39,7 @@ variables:
 .utoo_run_all: &utoo_run_all
   - cmd.exe /c "$CI_PROJECT_DIR\\deploy\\utoo-windows\\ci-entry-all.cmd"
 
-# --- dev：6 个独立发布 + 1 个一键全发 ---
-
-deploy_all_dev:
-  extends: .utoo_windows_runner
-  stage: deploy
-  only:
-    - dev
-  except:
-    - merge_requests
-  variables:
-    UTOO_DEPLOY_TARGET: dev
-  when: manual
-  allow_failure: false
-  timeout: 2h
-  script: *utoo_run_all
+# --- dev：先 6 个单发，再一键全发 ---
 
 deploy_order_dev:
   extends: .utoo_windows_runner
@@ -144,21 +131,23 @@ deploy_frontend_dev:
   allow_failure: false
   script: *utoo_run_frontend
 
-# --- prod：6 个独立发布 + 1 个一键全发 ---
-
-deploy_all_prod:
+deploy_all_dev:
   extends: .utoo_windows_runner
-  stage: deploy
+  stage: deploy_all
+  # 不依赖前面单发是否点过，否则会一直卡在 deploy stage
+  needs: []
   only:
-    - prod
+    - dev
   except:
     - merge_requests
   variables:
-    UTOO_DEPLOY_TARGET: prod
+    UTOO_DEPLOY_TARGET: dev
   when: manual
   allow_failure: false
   timeout: 2h
   script: *utoo_run_all
+
+# --- prod：先 6 个单发，再一键全发 ---
 
 deploy_order_prod:
   extends: .utoo_windows_runner
@@ -249,3 +238,18 @@ deploy_frontend_prod:
   when: manual
   allow_failure: false
   script: *utoo_run_frontend
+
+deploy_all_prod:
+  extends: .utoo_windows_runner
+  stage: deploy_all
+  needs: []
+  only:
+    - prod
+  except:
+    - merge_requests
+  variables:
+    UTOO_DEPLOY_TARGET: prod
+  when: manual
+  allow_failure: false
+  timeout: 2h
+  script: *utoo_run_all
