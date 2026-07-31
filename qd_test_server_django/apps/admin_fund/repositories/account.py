@@ -556,19 +556,23 @@ def create_transfer_or_loan(
     if not account:
         return None, "账户不存在"
     available = float(account.get("availableBalance") or 0)
-    if log_amount > available:
+    # 借贷款(acc_type=12)：对齐旧 Java，仅挂待审申请，不校验/扣减可用余额
+    # 转账(acc_type=11)：需校验可用余额并先扣减
+    is_loan = acc_type == 12
+    if not is_loan and log_amount > available:
         return None, "金额不可大于可用金额"
-    after = available - log_amount
+    after = available if is_loan else available - log_amount
     in_account_id = None
     if in_user_id:
         in_acc = get_account_by_user(in_user_id, account_type)
         if not in_acc:
             return None, "转入账户不存在"
         in_account_id = in_acc["id"]
-    execute(
-        "UPDATE account SET available_balance = %(available)s WHERE id = %(id)s",
-        {"available": after, "id": account["id"]},
-    )
+    if not is_loan:
+        execute(
+            "UPDATE account SET available_balance = %(available)s WHERE id = %(id)s",
+            {"available": after, "id": account["id"]},
+        )
     from datetime import datetime
 
     prefix = "ZZ" if acc_type == 11 else "JD"

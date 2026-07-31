@@ -118,3 +118,7 @@ export function fetchLabSaleUsers() {
 export function fetchLabSalePerf(params: Record<string, unknown>) {
   return postAjax('/labPerformanceSaleuser/selByYear.ajax', params)
 }
+
+export function fetchLabSalePerfOrders(params: Record<string, unknown>) {
+  return fetchDatatable('/labPerformanceSaleuser/expOrderList.ajax', params)
+}

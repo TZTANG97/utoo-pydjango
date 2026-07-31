@@ -16,7 +16,6 @@ from apps.admin_system.views.common import merge_payload
 from apps.core.responses import ajax_fail, ajax_ok
 
 TEST_TYPES = ["测试人员", "测试主管"]
-SALE_TYPES = ["销售人员", "销售主管", "销售"]
 
 
 def _to_int(value, default=None):
@@ -230,11 +229,25 @@ def lab_test_perf(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def lab_sale_users(request: Request, user=None):
-    del user, request
-    rows = user_repo.list_staff_users_all(utoo_types=None)
-    # 优先销售相关，否则返回全部启用用户供选择
-    sale_rows = [r for r in rows if str(r.get("utooType") or "") in SALE_TYPES or "销售" in str(r.get("utooType") or "")]
-    return Response(ajax_ok(obj=sale_rows or rows))
+    """对齐 Java LabPerformanceSaleuserController#selUsersByDeptId。"""
+    del request
+    uid = str((user or {}).get("user_id") or (user or {}).get("id") or "").strip()
+    staff = user_repo.get_staff(uid) if uid else None
+    if not staff:
+        return Response(ajax_ok(obj=[]))
+    utoo = str(staff.get("utooType") or "").strip()
+    if utoo == "销售主管":
+        dept_ids = user_repo.child_dept_ids(str(staff.get("deptId") or ""))
+        rows = (
+            user_repo.list_staff_users_all(dept_ids=dept_ids, require_pt_type_staff=True)
+            if dept_ids
+            else [staff]
+        )
+    elif utoo in ("系统管理员", "超级管理员") or "管理员" in utoo:
+        rows = user_repo.list_staff_users_all(require_pt_type_staff=True)
+    else:
+        rows = [staff]
+    return Response(ajax_ok(obj=rows))
 
 
 @api_view(["GET", "POST"])
@@ -254,6 +267,36 @@ def lab_sale_perf(request: Request, user=None):
     payload["trueName"] = staff.get("trueName") or staff.get("userName") or ""
     payload["userName"] = staff.get("userName") or ""
     return Response(ajax_ok(obj=payload))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def lab_sale_order_list(request: Request, user=None):
+    """对齐 Java labPerformanceSaleuser/expOrderList.ajax。"""
+    del user
+    data = merge_payload(request)
+    draw, page, page_size = parse_datatable_params(request)
+    month = str(data.get("month") or "").strip()
+    sale_user_id = str(data.get("sale_user_id") or data.get("saleUserId") or "").strip()
+    type_ = _to_int(data.get("type"), 1) or 1
+    if not month or not sale_user_id:
+        return Response(datatable_payload(draw=draw, total=0, rows=[]))
+    rows, total = perf_repo.list_lab_sale_perf_orders(
+        sale_user_id=sale_user_id,
+        month=month,
+        type_=type_,
+        customer_name=(data.get("customer_name") or data.get("customerName") or "").strip(),
+        order_id=(data.get("order_id") or data.get("orderId") or "").strip(),
+        goods_name=(data.get("goods_name") or data.get("goodsName") or "").strip(),
+        supplier_name=str(data.get("supplier_name") or data.get("company_id") or "").strip(),
+        sale_manager=str(data.get("sale_Manager") or data.get("sale_manager") or "").strip(),
+        order_status=str(data.get("order_status") or data.get("orderStatus") or "").strip(),
+        page=page,
+        page_size=page_size,
+    )
+    return Response(datatable_payload(draw=draw, total=total, rows=rows))
 
 
 @api_view(["GET", "POST"])

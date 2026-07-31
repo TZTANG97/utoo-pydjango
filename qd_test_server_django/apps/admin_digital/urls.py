@@ -29,4 +29,5 @@ urlpatterns = [
     # 实验室销售人员绩效
     path("labPerformanceSaleuser/selUsersByDeptId.ajax", views.lab_sale_users),
     path("labPerformanceSaleuser/selByYear.ajax", views.lab_sale_perf),
+    path("labPerformanceSaleuser/expOrderList.ajax", views.lab_sale_order_list),
 ]

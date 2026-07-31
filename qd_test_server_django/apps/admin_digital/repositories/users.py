@@ -127,9 +127,14 @@ def list_staff_users_all(
     *,
     utoo_types: list[str] | None = None,
     dept_ids: list[str] | None = None,
+    require_pt_type_staff: bool = False,
 ) -> list[dict[str, Any]]:
+    """对齐 Java UserMapper.queryUsersByDeptId2：启用员工，可选 pt_type/部门/类型。"""
     where = "WHERE u.user_status = 1"
     params: dict[str, Any] = {}
+    if require_pt_type_staff:
+        where += " AND u.pt_type LIKE %(pt_type)s"
+        params["pt_type"] = "%2%"
     if utoo_types:
         placeholders = []
         for i, t in enumerate(utoo_types):

@@ -3,7 +3,26 @@ from __future__ import annotations
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
+from apps.admin_digital.helpers import page_clause
 from apps.core.db_utils import execute, execute_insert, fetch_all, fetch_one, scalar
+
+# 对齐 Java mainOrderStatus（绩效明细列表展示）
+_ORDER_STATUS_LABEL = {
+    0: "已取消",
+    5: "订单未发起审核",
+    10: "已驳回",
+    15: "审核中",
+    20: "待审核",
+    25: "待确认",
+    30: "已审核",
+    40: "已确认",
+    50: "已完成",
+    55: "已评价",
+    60: "已关闭",
+    66: "待平台确认",
+    67: "待客户确认",
+    70: "已开票待收款",
+}
 
 
 def list_test_targets(*, test_user_id: str, year: str | None = None) -> list[dict[str, Any]]:
@@ -265,3 +284,143 @@ def build_lab_sale_rows(*, user_id: str, year: str) -> dict[str, Any]:
         "resultListkp": invoice_list,
         "resultListsk": receipt_list,
     }
+
+
+def list_lab_sale_perf_orders(
+    *,
+    sale_user_id: str,
+    month: str,
+    type_: int,
+    customer_name: str = "",
+    order_id: str = "",
+    goods_name: str = "",
+    supplier_name: str = "",
+    sale_manager: str = "",
+    order_status: str = "",
+    page: int,
+    page_size: int,
+) -> tuple[list[dict[str, Any]], int]:
+    """对齐 Java ExperimentOrderMapper#explistPages_labPerSaleUser。"""
+    where = [
+        "(of.order_type = 6 OR of.order_type = 8)",
+        "of.sale_user = %(sale_user_id)s",
+        "DATE_FORMAT(of.order_time, '%%Y-%%m') = %(month)s",
+    ]
+    params: dict[str, Any] = {
+        "sale_user_id": sale_user_id,
+        "month": month,
+    }
+    joins = ["LEFT JOIN qd_user_company quc ON of.customer_name = quc.id"]
+    if int(type_) == 1:
+        where.append("of.order_status >= 30")
+    elif int(type_) == 2:
+        joins.append(
+            """
+            LEFT JOIN (
+                SELECT qb.exp_of_id, SUM(qb.money) kpje
+                FROM qd_bill qb WHERE qb.type = 1
+                GROUP BY qb.exp_of_id
+            ) qdtab1 ON of.id = qdtab1.exp_of_id
+            """
+        )
+        where.append("of.order_status != 0")
+        where.append("IFNULL(qdtab1.kpje, 0) > 0")
+    elif int(type_) == 3:
+        joins.append(
+            """
+            LEFT JOIN (
+                SELECT qb.exp_of_id, SUM(qb.money) kpje
+                FROM qd_bill qb WHERE qb.type = 2
+                GROUP BY qb.exp_of_id
+            ) qdtab1 ON of.id = qdtab1.exp_of_id
+            """
+        )
+        where.append("of.order_status != 0")
+        where.append("IFNULL(qdtab1.kpje, 0) > 0")
+    if customer_name:
+        where.append("quc.name LIKE %(customer_name)s")
+        params["customer_name"] = f"%{customer_name.strip('%')}%"
+    if order_id:
+        where.append("of.order_id LIKE %(order_id)s")
+        params["order_id"] = f"%{order_id}%"
+    if goods_name:
+        joins.append("JOIN experiment_order_child ocf ON of.id = ocf.order_form_id")
+        where.append(
+            "(ocf.goods_name LIKE %(goods_name)s OR ocf.goods_spec LIKE %(goods_name)s)"
+        )
+        params["goods_name"] = f"%{goods_name}%"
+    if supplier_name:
+        where.append("of.supplier_name = %(supplier_name)s")
+        params["supplier_name"] = supplier_name
+    if sale_manager:
+        where.append("of.sale_manager = %(sale_manager)s")
+        params["sale_manager"] = sale_manager
+    if order_status != "":
+        where.append("of.order_status = %(order_status)s")
+        params["order_status"] = order_status
+
+    where_sql = " AND ".join(where)
+    join_sql = "\n".join(joins)
+    total = int(
+        scalar(
+            f"""
+            SELECT COUNT(DISTINCT of.id)
+            FROM experiment_order of
+            {join_sql}
+            WHERE {where_sql}
+            """,
+            params,
+        )
+        or 0
+    )
+    clause, page_params = page_clause(page, page_size)
+    rows = fetch_all(
+        f"""
+        SELECT
+            t.id,
+            t.addTime,
+            t.order_id AS orderId,
+            t.order_status AS orderStatus,
+            t.totalPrice,
+            t.invoiceType,
+            t.order_time AS orderTime,
+            t.isOut,
+            q.name AS customerName,
+            u.company_name AS supplierName,
+            sm.user_name AS managerName,
+            sm.true_name AS managerTrueName,
+            su.user_name AS saleUserName,
+            su.true_name AS saleUserTrueName
+        FROM experiment_order t
+        INNER JOIN (
+            SELECT DISTINCT of.id
+            FROM experiment_order of
+            {join_sql}
+            WHERE {where_sql}
+        ) ids ON t.id = ids.id
+        LEFT JOIN qd_user_company q ON t.customer_name = q.id
+        LEFT JOIN `user` u ON t.supplier_name = u.id
+        LEFT JOIN sy_users sm ON t.sale_manager = sm.id
+        LEFT JOIN sy_users su ON t.sale_user = su.id
+        ORDER BY t.addTime DESC
+        {clause}
+        """,
+        {**params, **page_params},
+    )
+    for r in rows:
+        try:
+            st = int(r.get("orderStatus")) if r.get("orderStatus") is not None else None
+        except (TypeError, ValueError):
+            st = None
+        r["orderStatusLabel"] = _ORDER_STATUS_LABEL.get(
+            st, str(r.get("orderStatus") if r.get("orderStatus") is not None else "-")
+        )
+        inv = r.get("invoiceType")
+        r["invoiceLabel"] = "是" if inv in (1, "1") else "否"
+        for key in ("addTime", "orderTime"):
+            val = r.get(key)
+            if val is not None and hasattr(val, "strftime"):
+                r[key] = val.strftime("%Y-%m-%d %H:%M:%S") if key == "addTime" else val.strftime("%Y-%m-%d")
+            elif val is not None:
+                r[key] = str(val)[:19]
+    return rows, total

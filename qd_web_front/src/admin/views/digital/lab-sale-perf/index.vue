@@ -35,21 +35,33 @@
       <el-table :data="orderRows" border stripe>
         <el-table-column prop="monthLabel" :label="`${displayName}订单`" min-width="120" />
         <el-table-column prop="mbyj" label="目标业绩" min-width="120" />
-        <el-table-column prop="sjyj" label="实际业绩" min-width="120" />
+        <el-table-column label="实际业绩" min-width="120">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openOrders(row, 1)">{{ row.sjyj }}</el-button>
+          </template>
+        </el-table-column>
         <el-table-column prop="dclText" label="达成率" min-width="120" />
       </el-table>
 
       <el-table :data="invoiceRows" border stripe>
         <el-table-column prop="monthLabel" :label="`${displayName}开票`" min-width="120" />
         <el-table-column prop="mbyj" label="目标业绩" min-width="120" />
-        <el-table-column prop="sjyj" label="实际业绩" min-width="120" />
+        <el-table-column label="实际业绩" min-width="120">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openOrders(row, 2)">{{ row.sjyj }}</el-button>
+          </template>
+        </el-table-column>
         <el-table-column prop="dclText" label="达成率" min-width="120" />
       </el-table>
 
       <el-table :data="receiptRows" border stripe>
         <el-table-column prop="monthLabel" :label="`${displayName}收款`" min-width="120" />
         <el-table-column prop="mbyj" label="目标业绩" min-width="120" />
-        <el-table-column prop="sjyj" label="实际业绩" min-width="120" />
+        <el-table-column label="实际业绩" min-width="120">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openOrders(row, 3)">{{ row.sjyj }}</el-button>
+          </template>
+        </el-table-column>
         <el-table-column prop="dclText" label="达成率" min-width="120" />
       </el-table>
     </div>
@@ -58,6 +70,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AdminPageCard from '@admin/components/AdminPageCard.vue'
 import { fetchLabSalePerf, fetchLabSaleUsers } from '@admin/api/digital'
@@ -65,6 +78,7 @@ import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
 const MONTH_CN = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月']
 
+const router = useRouter()
 const loading = ref(false)
 const year = ref(String(new Date().getFullYear()))
 const userId = ref('')
@@ -85,10 +99,30 @@ function normalizeRows(list: Record<string, unknown>[]) {
     const row = list[idx] || {}
     return {
       monthLabel: label,
+      monthIndex: idx + 1,
       mbyj: Number(row.mbyj ?? 0),
       sjyj: Number(row.sjyj ?? 0),
       dclText: `${Number(row.dcl ?? 0)}%`,
     }
+  })
+}
+
+function openOrders(row: Record<string, unknown>, type: 1 | 2 | 3) {
+  if (!userId.value || !year.value) {
+    ElMessage.warning('请先选择人员和年份')
+    return
+  }
+  const monthNum = Number(row.monthIndex || 0)
+  const month = `${year.value}-${String(monthNum).padStart(2, '0')}`
+  router.push({
+    path: '/digital/lab-sale-perf/orders',
+    query: {
+      sale_user_id: userId.value,
+      year: year.value,
+      month,
+      type: String(type),
+      name: displayName.value,
+    },
   })
 }
 

@@ -75,11 +75,11 @@ def insert_user(data: dict[str, Any]) -> str:
         INSERT INTO sy_users
             (id, user_name, true_name, user_password, user_status, dept_id,
              mobile_phone_number, email, type, show_type, user_type_role_id,
-             user_desc, pt_type, account_type)
+             user_desc, pt_type, account_type, register_time)
         VALUES
             (%(id)s, %(user_name)s, %(true_name)s, %(user_password)s, %(user_status)s,
              %(dept_id)s, %(mobile_phone_number)s, %(email)s, %(type)s, %(show_type)s,
-             %(user_type_role_id)s, %(user_desc)s, '2', 0)
+             %(user_type_role_id)s, %(user_desc)s, '2', 0, NOW())
         """,
         {
             "id": user_id,

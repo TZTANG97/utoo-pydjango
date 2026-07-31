@@ -398,6 +398,12 @@ export const constantRoutes: RouteRecordRaw[] = [
         component: () => import('@admin/views/digital/lab-sale-perf/index.vue'),
         meta: { title: '实验室销售人员绩效' },
       },
+      {
+        path: 'digital/lab-sale-perf/orders',
+        name: 'DigitalLabSalePerfOrders',
+        component: () => import('@admin/views/digital/lab-sale-perf/orders.vue'),
+        meta: { title: '销售实际业绩订单明细' },
+      },
       // 库存管理
       {
         path: 'inventory/list',
