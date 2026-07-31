@@ -502,8 +502,49 @@ try {
 		if (-not $RemoteRoot) { throw 'gateway phase requires slot resolution' }
 		Deploy-DjangoUnit -Unit $GatewayUnit -SlotRoot $RemoteRoot
 
+		# 同步后立刻核对关键路由已落盘（避免切流了但代码没上去）
+		$remoteUrls = ("{0}/qd_test_server_django/config/urls.py" -f $RemoteRoot)
+		$markerCheck = ("if grep -q adminLabSale {0}; then echo deploy_urls_marker_ok; else echo deploy_urls_marker_missing >&2; exit 1; fi" -f $remoteUrls)
+		Write-Host ("[deploy] verify remote urls.py contains adminLabSale ({0})" -f $remoteUrls)
+		Invoke-RemoteSudo $markerCheck
+
 		Write-Host ("[deploy] switch nginx upstream -> {0} via {1}" -f $GwPort, $SwitchScript)
 		Invoke-RemoteSudo ("/bin/bash '{0}' {1}" -f $SwitchScript, $GwPort)
+
+		# 切流后探测公网：新路由必须是 JSON，不能是 Django HTML 404
+		$publicBase = (Get-CiEnv 'UTOO_PUBLIC_WEB_BASE')
+		if ([string]::IsNullOrWhiteSpace($publicBase)) { $publicBase = 'https://uat.utoodev.laide.tech' }
+		$publicBase = $publicBase.TrimEnd('/')
+		$probeUrl = "{0}/api/adminLabSale/expOrderList.ajax" -f $publicBase
+		$probeOut = Join-Path $env:TEMP ("utoo_gw_probe_{0}.body" -f [Guid]::NewGuid().ToString('N'))
+		try {
+			Write-Host ("[deploy] probe public gateway route: {0}" -f $probeUrl)
+			$probeCode = (& curl.exe -sS -o $probeOut -w "%{http_code}" --max-time 30 -X POST $probeUrl `
+				-H "Content-Type: application/x-www-form-urlencoded" `
+				-d "sale_user_id=1&month=2026-06&type=1&start=0&length=10&draw=1")
+			$probeCode = ("$probeCode").Trim()
+			$probeBody = Get-Content -LiteralPath $probeOut -Raw -Encoding utf8
+			$previewLen = [Math]::Min(160, $probeBody.Length)
+			Write-Host ("[deploy] probe http={0} body={1}" -f $probeCode, $probeBody.Substring(0, $previewLen))
+			if ($probeBody -match 'Page not found|didn.?t match any of these') {
+				Write-Error @"
+Gateway switch verification FAILED: public $probeUrl still returns Django HTML 404.
+Nginx may not be using $UpstreamConf, or traffic still hits the old slot.
+Switched to gateway port $GwPort. On server check:
+  cat $UpstreamConf
+  curl -sS -X POST http://127.0.0.1:$GwPort/api/adminLabSale/expOrderList.ajax -d 'sale_user_id=1&month=2026-06&type=1&start=0&length=10&draw=1'
+"@
+				exit 1
+			}
+			# 期望 JSON（未登录也行）
+			if ($probeBody -notmatch '"res"\s*:|"code"\s*:') {
+				Write-Error ("Gateway switch verification FAILED: expected JSON from {0}, got:`n{1}" -f $probeUrl, $probeBody.Substring(0, [Math]::Min(400, $probeBody.Length)))
+				exit 1
+			}
+			Write-Host '[deploy] verified public gateway serves adminLabSale JSON'
+		} finally {
+			Remove-Item -LiteralPath $probeOut -Force -ErrorAction SilentlyContinue
+		}
 		Write-Host '[deploy] phase gateway done (switched).'
 	}
 
@@ -531,6 +572,16 @@ try {
 		}
 		Write-Host ("[deploy] sync unified front static -> {0} (expect {1})" -f $StaticWeb, $expectedAsset)
 		Write-Host ("[deploy] local build-info: {0}" -f $buildInfoText.Trim())
+		# 若线上仍是本机 manual-local 旧包，先打日志方便对照
+		try {
+			$prevInfo = (Invoke-RemoteCapture ("cat {0}/build-info.json 2>/dev/null || true" -f $StaticWeb))
+			if (-not [string]::IsNullOrWhiteSpace($prevInfo)) {
+				Write-Host ("[deploy] remote build-info BEFORE sync: {0}" -f $prevInfo.Trim()) -ForegroundColor Yellow
+				if ($prevInfo -match 'manual-local') {
+					Write-Host '[deploy] WARNING: remote site was published by manual-local deploy; CI will overwrite it.' -ForegroundColor Yellow
+				}
+			}
+		} catch { }
 		Sync-DirToRemote -LocalDir $webDist -RemoteDir $StaticWeb -Exclude @() -PreserveNames @('.keep')
 		$remoteIndex = (Invoke-RemoteCapture ("cat {0}/index.html" -f $StaticWeb))
 		if ($remoteIndex -notmatch [regex]::Escape($expectedAsset)) {
