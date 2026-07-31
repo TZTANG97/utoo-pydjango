@@ -9,6 +9,8 @@ from django.conf import settings
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from apps.core.drf_request import as_drf_request
+
 logger = logging.getLogger(__name__)
 
 _FORWARD_HEADERS = (
@@ -51,6 +53,8 @@ def forward_request(
     path: str,
     service_name: str = "上游服务",
 ) -> Response:
+    # forward_*_first 在 @api_view 外侧时拿到的是 WSGIRequest；统一提升为 DRF Request
+    request = as_drf_request(request)
     url = f"{base_url.rstrip('/')}{path}"
     headers = {}
     for key in _FORWARD_HEADERS:

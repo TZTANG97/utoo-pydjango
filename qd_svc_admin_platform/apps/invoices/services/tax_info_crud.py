@@ -9,10 +9,31 @@ from qd_common.serialize import to_jsonable
 logger = logging.getLogger(__name__)
 
 
+def _bit_to_int(val: Any) -> int:
+    """MySQL BIT / tinyint / bool → 0/1。"""
+    if val is None:
+        return 0
+    if isinstance(val, (bytes, bytearray)):
+        return 1 if val and val[0] else 0
+    if isinstance(val, bool):
+        return 1 if val else 0
+    if isinstance(val, (int, float)):
+        return 1 if int(val) else 0
+    s = str(val).strip()
+    if not s or s in ("\x00", "False", "false"):
+        return 0
+    if s in ("\x01", "True", "true"):
+        return 1
+    try:
+        return 1 if int(float(s)) else 0
+    except (TypeError, ValueError):
+        return 1 if s else 0
+
+
 def _normalize_row(row: dict[str, Any]) -> dict[str, Any]:
-    d = to_jsonable(row)
-    if d.get("is_default") is not None:
-        d["is_default"] = int(d["is_default"]) == 1
+    d = {k: to_jsonable(v) for k, v in row.items()}
+    if "is_default" in row and row.get("is_default") is not None:
+        d["is_default"] = _bit_to_int(row.get("is_default")) == 1
     return d
 
 
@@ -160,7 +181,7 @@ def delete_or_set_default_invoice(
         return False, "发票信息不存在"
 
     if op_type == "1":
-        if int(row.get("is_default") or 0) == 1:
+        if _bit_to_int(row.get("is_default")) == 1:
             return False, "默认地址不能删除！"
         try:
             execute(
