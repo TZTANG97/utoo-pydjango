@@ -96,11 +96,59 @@ export function updateUser(data: Record<string, unknown>) {
 }
 
 export function deleteUser(id: string | number) {
-  return postAjax('/sys/user/del.ajax', { id })
+  return postAjax('/sys/user/del.ajax', { id, status: 0 })
+}
+
+export function updateUserStatus(id: string | number, status: number) {
+  return postAjax('/sys/user/updateStatus.ajax', { id, status })
+}
+
+export function updateUserPassword(data: Record<string, unknown>) {
+  return postAjax('/sys/user/updatePw.ajax', data)
+}
+
+export function updateUserRoles(data: Record<string, unknown>) {
+  return postAjax('/sys/user/updateRole.ajax', data)
+}
+
+export function fetchUserPowers(id: string | number) {
+  return postAjax('/sys/user/showPowers.ajax', { id })
+}
+
+export function fetchUserLogs(id: string | number) {
+  return postAjax('/sys/user/logs.ajax', { id })
+}
+
+export function fetchUserFormOptions() {
+  return postAjax('/sys/user/formOptions.ajax')
 }
 
 export function fetchUserRoleOptions() {
   return fetchOptions('/sys/user/roleOptions.ajax')
+}
+
+export function fetchUserAccessRights(id: string | number) {
+  return postAjax('/sys/user/updateAccessRightsQuery.ajax', { id })
+}
+
+export function updateUserAccessRights(data: Record<string, unknown>) {
+  return postAjax('/sys/user/updateAccessRights.ajax', data)
+}
+
+export function fetchUserExpManageAvailable(userId: string | number) {
+  return postAjax('/sys/user/queryUsersExpManage.ajax', { userId })
+}
+
+export function fetchUserExpManageList(userId: string | number) {
+  return postAjax('/sys/user/queryExpManageByUser.ajax', { userId })
+}
+
+export function addUserExpManage(data: { userId: string | number; exp_manage_id: string | number }) {
+  return postAjax('/sys/user/addUserExpManage.ajax', data)
+}
+
+export function deleteUserExpManage(id: string | number) {
+  return postAjax('/sys/user/delUserExpManage.ajax', { id })
 }
 
 // --- role ---
