@@ -1,4 +1,4 @@
-import request, { type AjaxBody, type RequestConfig, isAjaxOk } from '@admin/utils/request'
+import request, { type AjaxBody, type RequestConfig, isAjaxOk } from '@/utils/request'
 
 export type { AjaxBody }
 export { isAjaxOk }
@@ -81,6 +81,20 @@ export function deleteDept(id: string | number) {
 // --- user ---
 export function fetchUserList(params: Record<string, unknown>, config?: RequestConfig) {
   return fetchDatatable('/sys/user/queryUsers.ajax', params, config)
+}
+
+/** 对齐 Java queryTestUsers：管理员+测试人员+测试主管+分类绑定 */
+export function fetchTestUsers(classId?: string | number, config?: RequestConfig) {
+  return postAjax(
+    '/sys/user/queryTestUsers.ajax',
+    { type: -1, classid: classId != null && classId !== '' ? classId : '' },
+    config
+  )
+}
+
+/** 对齐 Java queryTestUsers1：仅测试人员+测试主管 */
+export function fetchTestUsers1(config?: RequestConfig) {
+  return postAjax('/sys/user/queryTestUsers1.ajax', { type: -1 }, config)
 }
 
 export function getUserById(id: string | number) {

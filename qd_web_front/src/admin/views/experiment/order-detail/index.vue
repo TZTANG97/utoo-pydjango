@@ -17,14 +17,14 @@ const orderId = computed(() => String(route.params.id || ''))
 function goBack() {
   const from = String(route.query.from || '')
   const map: Record<string, string> = {
-    orders: '/experiment/orders',
-    'sub-orders': '/experiment/sub-orders',
-    'subcontract-orders': '/experiment/subcontract-orders',
-    'subcontract-sub-orders': '/experiment/subcontract-sub-orders',
-    'grab-orders': '/experiment/grab-orders',
+    orders: '/admin/experiment/orders',
+    'sub-orders': '/admin/experiment/sub-orders',
+    'subcontract-orders': '/admin/experiment/subcontract-orders',
+    'subcontract-sub-orders': '/admin/experiment/subcontract-sub-orders',
+    'grab-orders': '/admin/experiment/grab-orders',
   }
   // 优先回标签上的来源列表，避免详情把列表标签挤掉后无法返回
-  const fallback = map[from] || '/experiment/orders'
+  const fallback = map[from] || '/admin/experiment/orders'
   router.push(fallback)
 }
 </script>

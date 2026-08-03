@@ -97,13 +97,21 @@ async function onRefresh() {
 async function closeTag(tag: TagView) {
   if (tag.affix) return
   const wasActive = isActive(tag)
+  const viewsBefore = tagsViewStore.visitedViews
+  const idx = viewsBefore.findIndex((item) => item.path === tag.path)
+  const fallback =
+    (idx > 0 ? viewsBefore[idx - 1] : null) ||
+    viewsBefore[idx + 1] ||
+    null
   tagsViewStore.delView(tag.path)
   if (!wasActive) return
 
   const views = tagsViewStore.visitedViews
-  const last = views[views.length - 1]
-  if (last) {
-    await router.push(last.fullPath)
+  const target =
+    (fallback && views.find((v) => v.path === fallback.path)) ||
+    views[views.length - 1]
+  if (target) {
+    await router.push(target.fullPath)
   } else {
     await router.push('/dashboard')
   }

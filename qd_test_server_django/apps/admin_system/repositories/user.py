@@ -490,6 +490,80 @@ def list_member_options() -> list[dict[str, Any]]:
     ]
 
 
+def _users_by_utoo_type(utoo_type: str) -> list[dict[str, Any]]:
+    """对齐 Java queryUsersByType0419：pt_type 含 2、启用、指定 utoo_type。"""
+    rows = fetch_all(
+        """
+        SELECT u.id, u.user_name, u.true_name, u.user_status, u.dept_id,
+               u.mobile_phone_number, u.email, u.type, u.show_type,
+               u.user_sex, u.utoo_type, u.account_type, u.register_time,
+               d.dept_name
+        FROM sy_users u
+        LEFT JOIN sy_dept d ON d.id = u.dept_id
+        WHERE u.pt_type LIKE %(pt_type)s
+          AND u.user_status = 1
+          AND u.utoo_type = %(utoo_type)s
+        ORDER BY u.user_name ASC
+        """,
+        {"pt_type": "%2%", "utoo_type": utoo_type},
+    )
+    return [_normalize_user(r) for r in rows or []]
+
+
+def _users_by_exp_class(class_id: int | str) -> list[dict[str, Any]]:
+    """sy_user_expmanage 关联实验分类的用户。"""
+    try:
+        cid = int(class_id)
+    except (TypeError, ValueError):
+        return []
+    if cid <= 0:
+        return []
+    rows = fetch_all(
+        """
+        SELECT u.id, u.user_name, u.true_name, u.user_status, u.dept_id,
+               u.mobile_phone_number, u.email, u.type, u.show_type,
+               u.user_sex, u.utoo_type, u.account_type, u.register_time,
+               d.dept_name
+        FROM sy_user_expmanage sue
+        INNER JOIN sy_users u ON u.id = sue.user_id
+        LEFT JOIN sy_dept d ON d.id = u.dept_id
+        WHERE sue.exp_manage_id = %(cid)s
+          AND u.pt_type LIKE %(pt_type)s
+          AND u.user_status = 1
+        ORDER BY u.user_name ASC
+        """,
+        {"cid": cid, "pt_type": "%2%"},
+    )
+    return [_normalize_user(r) for r in rows or []]
+
+
+def list_test_users(*, class_id: str = "", with_admin: bool = True) -> list[dict[str, Any]]:
+    """
+    对齐 Java queryTestUsers / queryTestUsers1：
+    - 测试人员 + 测试主管
+    - with_admin 时含系统管理员
+    - class_id 有值时合并 sy_user_expmanage 绑定用户
+    """
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+
+    def _add(rows: list[dict[str, Any]]) -> None:
+        for r in rows:
+            uid = str(r.get("id") or "")
+            if not uid or uid in seen:
+                continue
+            seen.add(uid)
+            out.append(r)
+
+    if with_admin:
+        _add(_users_by_utoo_type("系统管理员"))
+    _add(_users_by_utoo_type("测试人员"))
+    _add(_users_by_utoo_type("测试主管"))
+    if str(class_id or "").strip():
+        _add(_users_by_exp_class(class_id))
+    return out
+
+
 def _normalize_user(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": row.get("id"),

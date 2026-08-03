@@ -25,39 +25,41 @@ const DETAIL_TYPE_TITLE: Record<string, string> = {
   '9': '实验分包子订单详情',
 }
 
-/** 详情 from → 列表页标签，进入详情时若列表标签丢失则补回 */
+/** 详情 from → 列表页标签（路径须带 /admin，与 router 一致；否则会插出 404 幽灵标签） */
 const LIST_TAG_BY_FROM: Record<string, TagView> = {
   orders: {
-    path: '/experiment/orders',
-    fullPath: '/experiment/orders',
+    path: '/admin/experiment/orders',
+    fullPath: '/admin/experiment/orders',
     name: 'ExperimentOrders',
     title: '实验订单',
   },
   'sub-orders': {
-    path: '/experiment/sub-orders',
-    fullPath: '/experiment/sub-orders',
+    path: '/admin/experiment/sub-orders',
+    fullPath: '/admin/experiment/sub-orders',
     name: 'ExperimentSubOrders',
     title: '实验子订单',
   },
   'subcontract-orders': {
-    path: '/experiment/subcontract-orders',
-    fullPath: '/experiment/subcontract-orders',
+    path: '/admin/experiment/subcontract-orders',
+    fullPath: '/admin/experiment/subcontract-orders',
     name: 'ExperimentSubcontractOrders',
     title: '实验分包订单',
   },
   'subcontract-sub-orders': {
-    path: '/experiment/subcontract-sub-orders',
-    fullPath: '/experiment/subcontract-sub-orders',
+    path: '/admin/experiment/subcontract-sub-orders',
+    fullPath: '/admin/experiment/subcontract-sub-orders',
     name: 'ExperimentSubcontractSubOrders',
     title: '实验分包子订单',
   },
   'grab-orders': {
-    path: '/experiment/grab-orders',
-    fullPath: '/experiment/grab-orders',
+    path: '/admin/experiment/grab-orders',
+    fullPath: '/admin/experiment/grab-orders',
     name: 'ExperimentGrabOrders',
     title: '抢单实验列表',
   },
 }
+
+const ORDER_DETAIL_PATH_PREFIX = '/admin/experiment/order-detail/'
 
 function titleHasOrderNo(title: string) {
   // 「单号 + 空格 + …详情」
@@ -116,10 +118,13 @@ export const useTagsViewStore = defineStore('tagsView', {
     ensureSourceListTag(from: string) {
       const meta = LIST_TAG_BY_FROM[from]
       if (!meta) return
-      const exists = this.visitedViews.find((item) => item.path === meta.path)
+      // 用 name 或 path 判断，避免 /admin 前缀不一致时重复插入幽灵标签
+      const exists = this.visitedViews.find(
+        (item) => item.name === meta.name || item.path === meta.path
+      )
       if (exists) return
       const detailIdx = this.visitedViews.findIndex((item) =>
-        item.path.startsWith('/experiment/order-detail/')
+        item.path.startsWith(ORDER_DETAIL_PATH_PREFIX)
       )
       const tag = { ...meta }
       if (detailIdx >= 0) {
@@ -189,7 +194,7 @@ export const useTagsViewStore = defineStore('tagsView', {
     },
 
     viewKey(route: { path: string; fullPath: string }) {
-      const base = route.path.startsWith('/experiment/order-detail/')
+      const base = route.path.startsWith(ORDER_DETAIL_PATH_PREFIX)
         ? route.path
         : route.fullPath
       return `${base}__${this.refreshKeys[route.path] || 0}`

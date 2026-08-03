@@ -699,12 +699,13 @@ def order_withdraw_audit(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_cost_settle(request: Request, user=None):
-    del user
     data = merge_payload(request)
     order_id = to_int(data.get("id") or data.get("ofId"))
     if not order_id:
         return fail("参数错误")
-    ok_flag, msg = order_repo.cost_settle_sure(order_id=order_id)
+    ok_flag, msg = order_repo.cost_settle_sure(
+        order_id=order_id, staff_user_id=_staff_id(user)
+    )
     if not ok_flag:
         return fail(msg)
     return ok(res_msg=msg)
@@ -743,7 +744,6 @@ def order_save_receive_bill(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_share_ratio(request: Request, user=None):
-    del user
     data = merge_payload(request)
     order_id = to_int(data.get("id") or data.get("ofId"))
     if not order_id:
@@ -763,6 +763,7 @@ def order_share_ratio(request: Request, user=None):
             or data.get("salecbScaleInfo")
             or ""
         ),
+        staff_user_id=_staff_id(user),
     )
     if not ok_flag:
         return fail(msg)
@@ -819,14 +820,14 @@ def order_del_related(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_save_finish(request: Request, user=None):
+    import json
+
     data = merge_payload(request)
     order_id = to_int(data.get("id") or data.get("ofId"))
     if not order_id:
         return fail("参数错误")
     items = data.get("items") or data.get("children") or []
     if isinstance(items, str):
-        import json
-
         text = items.strip()
         if text:
             try:
@@ -835,8 +836,30 @@ def order_save_finish(request: Request, user=None):
                 return fail("明细格式错误")
         else:
             items = []
+    # 单个对象 / 数字键字典 也按列表处理
+    if isinstance(items, dict):
+        if "id" in items or "finishTime" in items or "expectFinishTime" in items:
+            items = [items]
+        else:
+            try:
+                items = [items[k] for k in sorted(items.keys(), key=lambda x: int(x) if str(x).isdigit() else str(x))]
+            except Exception:
+                items = list(items.values())
     if not isinstance(items, list):
-        return fail("明细格式错误")
+        # 兼容平行数组：childIds + finishTimes
+        ids = data.get("childIds") or data.get("ids") or []
+        fts = data.get("finishTimes") or data.get("finish_times") or []
+        if isinstance(ids, str):
+            ids = [x.strip() for x in ids.split(",") if x.strip()]
+        if isinstance(fts, str):
+            fts = [x.strip() for x in fts.split(",")]
+        if isinstance(ids, (list, tuple)):
+            items = [
+                {"id": ids[i], "finishTime": fts[i] if isinstance(fts, (list, tuple)) and i < len(fts) else ""}
+                for i in range(len(ids))
+            ]
+        else:
+            return fail("明细格式错误")
     ok_flag, msg = order_repo.save_finish_times(
         order_id=order_id, items=items, staff_user_id=_staff_id(user)
     )
@@ -938,7 +961,6 @@ def order_status_options(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_sample_arrive(request: Request, user=None):
-    del user
     data = merge_payload(request)
     oid = _order_id_from(data)
     if not oid:
@@ -953,6 +975,7 @@ def order_sample_arrive(request: Request, user=None):
             or data.get("store_position_id")
             or ""
         ),
+        staff_user_id=_staff_id(user),
     )
     return ok(res_msg=msg) if ok_flag else fail(msg)
 
@@ -962,12 +985,21 @@ def order_sample_arrive(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_sample_pick(request: Request, user=None):
-    del user
     data = merge_payload(request)
     oid = _order_id_from(data)
     if not oid:
         return fail("参数错误")
-    ok_flag, msg = sample_flow_repo.sample_pick(order_id=oid, child_ids=_child_ids_from(data))
+    ok_flag, msg = sample_flow_repo.sample_pick(
+        order_id=oid,
+        child_ids=_child_ids_from(data),
+        store_position_id=str(
+            data.get("storePosId")
+            or data.get("storePositionId")
+            or data.get("store_position_id")
+            or ""
+        ),
+        staff_user_id=_staff_id(user),
+    )
     return ok(res_msg=msg) if ok_flag else fail(msg)
 
 
@@ -976,7 +1008,6 @@ def order_sample_pick(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_test_start(request: Request, user=None):
-    del user
     data = merge_payload(request)
     oid = _order_id_from(data)
     if not oid:
@@ -985,6 +1016,7 @@ def order_test_start(request: Request, user=None):
         order_id=oid,
         child_ids=_child_ids_from(data),
         line_id=str(data.get("lineId") or data.get("line_id") or ""),
+        staff_user_id=_staff_id(user),
     )
     return ok(res_msg=msg) if ok_flag else fail(msg)
 
@@ -994,12 +1026,13 @@ def order_test_start(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_test_end(request: Request, user=None):
-    del user
     data = merge_payload(request)
     oid = _order_id_from(data)
     if not oid:
         return fail("参数错误")
-    ok_flag, msg = sample_flow_repo.test_end(order_id=oid, child_ids=_child_ids_from(data))
+    ok_flag, msg = sample_flow_repo.test_end(
+        order_id=oid, child_ids=_child_ids_from(data), staff_user_id=_staff_id(user)
+    )
     return ok(res_msg=msg) if ok_flag else fail(msg)
 
 
@@ -1008,12 +1041,22 @@ def order_test_end(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_sample_return(request: Request, user=None):
-    del user
     data = merge_payload(request)
     oid = _order_id_from(data)
     if not oid:
         return fail("参数错误")
-    ok_flag, msg = sample_flow_repo.sample_return(order_id=oid, child_ids=_child_ids_from(data))
+    ok_flag, msg = sample_flow_repo.sample_return(
+        order_id=oid,
+        child_ids=_child_ids_from(data),
+        store_id=str(data.get("storeId") or data.get("store_id") or ""),
+        store_position_id=str(
+            data.get("storePosId")
+            or data.get("storePositionId")
+            or data.get("store_position_id")
+            or ""
+        ),
+        staff_user_id=_staff_id(user),
+    )
     return ok(res_msg=msg) if ok_flag else fail(msg)
 
 
@@ -1022,7 +1065,6 @@ def order_sample_return(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_sample_ship(request: Request, user=None):
-    del user
     data = merge_payload(request)
     oid = _order_id_from(data)
     if not oid:
@@ -1031,6 +1073,14 @@ def order_sample_ship(request: Request, user=None):
         order_id=oid,
         child_ids=_child_ids_from(data),
         express_no=str(data.get("expressNo") or data.get("express_no") or ""),
+        express_name=str(data.get("expressName") or data.get("express_name") or ""),
+        store_position_id=str(
+            data.get("storePosId")
+            or data.get("storePositionId")
+            or data.get("store_position_id")
+            or ""
+        ),
+        staff_user_id=_staff_id(user),
     )
     return ok(res_msg=msg) if ok_flag else fail(msg)
 
@@ -1040,7 +1090,6 @@ def order_sample_ship(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_sample_retain(request: Request, user=None):
-    del user
     data = merge_payload(request)
     oid = _order_id_from(data)
     if not oid:
@@ -1056,7 +1105,25 @@ def order_sample_retain(request: Request, user=None):
             "scrap",
         )
     ok_flag, msg = sample_flow_repo.sample_retain(
-        order_id=oid, child_ids=_child_ids_from(data), scrap=scrap
+        order_id=oid,
+        child_ids=_child_ids_from(data),
+        scrap=scrap,
+        is_position=str(
+            data.get("isPosition") if data.get("isPosition") is not None else data.get("is_position") or "0"
+        ),
+        store_pos_id=str(
+            data.get("storePosId")
+            or data.get("storePositionId")
+            or data.get("store_position_id")
+            or ""
+        ),
+        new_store_pos_id=str(
+            data.get("newStorePosId")
+            or data.get("new_store_pos_id")
+            or data.get("retainStorePosId")
+            or ""
+        ),
+        staff_user_id=_staff_id(user),
     )
     return ok(res_msg=msg) if ok_flag else fail(msg)
 
@@ -1066,7 +1133,6 @@ def order_sample_retain(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_add_video(request: Request, user=None):
-    del user
     data = merge_payload(request)
     oid = _order_id_from(data)
     if not oid:
@@ -1075,6 +1141,8 @@ def order_add_video(request: Request, user=None):
         order_id=oid,
         child_ids=_child_ids_from(data),
         meeting_num=str(data.get("meetingNum") or data.get("meeting_num") or ""),
+        setting_time=str(data.get("settingTime") or data.get("setting_time") or ""),
+        staff_user_id=_staff_id(user),
     )
     return ok(res_msg=msg) if ok_flag else fail(msg)
 
@@ -1084,7 +1152,6 @@ def order_add_video(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_confirm_done(request: Request, user=None):
-    del user
     data = merge_payload(request)
     oid = _order_id_from(data)
     if not oid:
@@ -1093,6 +1160,7 @@ def order_confirm_done(request: Request, user=None):
         order_id=oid,
         child_ids=_child_ids_from(data),
         mark=str(data.get("mark") or data.get("remark") or ""),
+        staff_user_id=_staff_id(user),
     )
     return ok(res_msg=msg) if ok_flag else fail(msg)
 
@@ -1193,6 +1261,33 @@ def order_update_basic(request: Request, user=None):
         ship_address=str(data.get("shipAddress") or data.get("ship_address") or ""),
         total_price=data.get("totalPrice") if "totalPrice" in data or "total_price" in data else None,
         delivery_time=str(data.get("deliveryTime") or data.get("delivery_time") or ""),
+        order_time=str(data.get("orderTime") or data.get("order_time") or ""),
+        collection_time=str(data.get("collectionTime") or data.get("collection_time") or ""),
+        currency_type=data.get("currencyType") if "currencyType" in data or "currency_type" in data else None,
+        pay_way=data.get("payWay") if "payWay" in data or "pay_way" in data else None,
+        invoice_type=data.get("invoiceType") if "invoiceType" in data or "invoice_type" in data else None,
+        reverso_context=data.get("reversoContext")
+        if "reversoContext" in data or "reverso_context" in data
+        else None,
+        taxes=data.get("taxes") if "taxes" in data else None,
+        out_bill_type_id=data.get("outBillTypeId")
+        if "outBillTypeId" in data or "out_bill_type_id" in data
+        else None,
+        sale_manager=data.get("saleManagerId")
+        if "saleManagerId" in data or "sale_manager" in data
+        else None,
+        sale_user=data.get("saleUserId") if "saleUserId" in data or "sale_user" in data else None,
+        supplier_id=data.get("supplierId")
+        if "supplierId" in data or "supplier_name" in data or "supplier_id" in data
+        else None,
+        class_id=data.get("classId") if "classId" in data or "class_id" in data else None,
+        test_address_id=data.get("testAddressId")
+        if "testAddressId" in data or "test_address_id" in data
+        else None,
+        company_account_id=data.get("companyAccountId")
+        if "companyAccountId" in data or "company_account_id" in data
+        else None,
+        is_video=data.get("isVideo") if "isVideo" in data or "is_video" in data else None,
         staff_user_id=_staff_id(user),
     )
     return ok(res_msg=msg) if ok_flag else fail(msg)
@@ -1203,19 +1298,64 @@ def order_update_basic(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_create_sub(request: Request, user=None):
-    del user
     data = merge_payload(request)
     pid = to_int(data.get("saleOrderId") or data.get("parentId") or data.get("id"))
     if not pid:
         return fail("参数错误")
     ok_flag, msg, new_id = order_repo.create_sub_order_from_parent(
         parent_id=pid,
-        child_line_ids=data.get("childIds") or data.get("childids") or data.get("ids"),
+        child_line_ids=(
+            data.get("childIds")
+            or data.get("childids")
+            or data.get("checkChilds")
+            or data.get("check_childs")
+            or data.get("ids")
+        ),
         form=data,
+        staff_user_id=_staff_id(user),
     )
     if not ok_flag:
         return fail(msg)
     return ok({"id": new_id}, res_msg=msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_save_reference_price(request: Request, user=None):
+    """对齐 Java experimentChildOrder/saveReferencePrice.ajax。"""
+    data = merge_payload(request)
+    child_id = to_int(data.get("id") or data.get("childId"))
+    if not child_id:
+        return fail("参数错误")
+    price = data.get("referencePrice")
+    if price is None:
+        price = data.get("reference_price")
+    ok_flag, msg = order_repo.save_child_reference_price(
+        child_id=child_id,
+        reference_price=price,
+        staff_user_id=_staff_id(user),
+    )
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_update_time_type(request: Request, user=None):
+    """对齐 Java experimentSubOrder/updateTimeType.ajax。"""
+    data = merge_payload(request)
+    child_id = to_int(data.get("id") or data.get("childId"))
+    if not child_id:
+        return fail("参数错误")
+    ok_flag, msg = order_repo.update_child_time_type(
+        child_id=child_id,
+        time_type=data.get("time_type") if "time_type" in data else data.get("timeType"),
+        staff_user_id=_staff_id(user),
+    )
+    return ok(res_msg=msg) if ok_flag else fail(msg)
 
 
 @api_view(["POST"])
@@ -1293,7 +1433,7 @@ def order_upload_sub_invoice(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_upload_file(request: Request, user=None):
-    """对齐 Java experimentOrder/uploadChildData.ajax（订单资料 type=3）。"""
+    """对齐 Java uploadChildData：订单资料 type=3；测试数据 type=4（可挂 child_of_id）。"""
     del user
     from apps.orders.services import accessory_upload as accessory_upload_svc
 
@@ -1301,9 +1441,8 @@ def order_upload_file(request: Request, user=None):
     if not uploaded:
         return fail("文件为空")
     data = merge_payload(request)
-    oid = _order_id_from(data)
-    if not oid:
-        return fail("参数错误")
+    oid = _order_id_from(data) or 0
+    child_id = to_int(data.get("childId") or data.get("child_of_id") or data.get("ofcId"))
     type_raw = str(data.get("type") or request.POST.get("type") or "3")
     acc_type = int(type_raw) if type_raw.isdigit() else 3
     ok_flag, msg, obj = accessory_upload_svc.save_order_attachment(
@@ -1311,7 +1450,8 @@ def order_upload_file(request: Request, user=None):
         orig_name=uploaded.name or "upload",
         content_type=uploaded.content_type or "application/octet-stream",
         acc_type=acc_type,
-        exp_of_id=oid,
+        exp_of_id=oid or None,
+        child_of_id=child_id,
     )
     return ok(obj, res_msg=msg) if ok_flag else fail(msg)
 

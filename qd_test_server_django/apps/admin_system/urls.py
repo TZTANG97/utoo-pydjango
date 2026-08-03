@@ -24,6 +24,8 @@ urlpatterns = [
     # sys/user
     path("sys/user/queryUsers.ajax", user_views.user_list),
     path("sys/user/queryUsersExcept.ajax", user_views.user_list_except),
+    path("sys/user/queryTestUsers.ajax", user_views.user_query_test_users),
+    path("sys/user/queryTestUsers1.ajax", user_views.user_query_test_users1),
     path("sys/user/getById.ajax", user_views.user_get),
     path("sys/user/add.ajax", user_views.user_add),
     path("sys/user/update.ajax", user_views.user_update),

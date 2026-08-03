@@ -157,6 +157,11 @@ export const fetchSampleOrderList = (p: Record<string, unknown>) =>
 export const fetchSampleOrderOptions = () => postAjax('/inTreasury/options.ajax')
 export const fetchSampleStorePositions = (storeId: string | number, type: 0 | 1 = 0) =>
   postAjax('/samplestoreHouse/queryListByStoreId.ajax', { store_id: storeId, type })
+/** 样品留存仓库下拉（type=2） */
+export const fetchRemainSampleStoreOptions = () =>
+  postAjax('/sampleremainstoreHouse/queryStore.ajax')
+export const fetchRemainSampleStorePositions = (storeId: string | number, type: 0 | 1 = 0) =>
+  postAjax('/sampleremainstoreHouse/queryListByStoreId.ajax', { store_id: storeId, type })
 export const getSampleOrderDetail = (id: string | number) =>
   postAjax('/inTreasury/detail.ajax', { id })
 export const exportSampleOrders = (p: Record<string, unknown>) =>

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div v-loading="loading" class="detail-panel">
     <template v-if="detail">
       <header class="hero">
@@ -361,49 +361,18 @@
             </template>
           </template>
           <el-descriptions-item label="是否开票">{{ detail.invoiceLabel || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="Number(detail.invoiceType) === 1" label="进项开票类型">
+            {{ inBillTypeLabel }}
+          </el-descriptions-item>
+          <el-descriptions-item v-if="Number(detail.invoiceType) === 1" label="税率">
+            {{ detail.taxes || '-' }}
+          </el-descriptions-item>
           <el-descriptions-item label="联系电话">{{ detail.contactPhone || '-' }}</el-descriptions-item>
           <el-descriptions-item label="样品是否回收">
             {{ detail.reversoLabel || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="是否云视频">{{ detail.isVideoLabel || '-' }}</el-descriptions-item>
         </el-descriptions>
-        <!-- type=9：订单资料 + 订单备注（对齐 Java） -->
-        <div v-if="orderType === '9'" class="order-files-block">
-          <div class="files-row">
-            <span class="files-label">订单资料</span>
-            <div class="files-list">
-              <div v-for="f in orderFiles" :key="String(f.id)" class="file-item">
-                <a
-                  class="file-name"
-                  :href="fileUrl(f)"
-                  target="_blank"
-                  rel="noopener"
-                >{{ fileLabel(f) }}</a>
-                <el-button type="success" size="small" @click="onDownloadFile(f)">下载</el-button>
-                <el-button type="danger" size="small" :loading="acting" @click="onDeleteFile(f)">
-                  删除
-                </el-button>
-              </div>
-              <el-upload
-                :show-file-list="false"
-                :http-request="onUploadOrderFile"
-                accept="*/*"
-              >
-                <el-button type="primary">上传文件</el-button>
-              </el-upload>
-            </div>
-          </div>
-          <div class="remark-row">
-            <span class="files-label">订单备注</span>
-            <el-input
-              v-model="orderMsg"
-              type="textarea"
-              :rows="3"
-              placeholder="请输入备注"
-              @blur="onSaveOrderMsg"
-            />
-          </div>
-        </div>
         <el-descriptions v-else-if="orderType === '10'" :column="3" border class="soft-desc">
           <el-descriptions-item label="订单状态">{{ detail.orderStatusLabel || '-' }}</el-descriptions-item>
           <el-descriptions-item label="订单编号">
@@ -480,11 +449,23 @@
           <el-descriptions-item v-if="!isChildKind" label="是否开票">
             {{ detail.invoiceLabel || '-' }}
           </el-descriptions-item>
+          <el-descriptions-item v-if="!isChildKind && Number(detail.invoiceType) === 1" label="出项开票类型">
+            {{ outBillTypeLabel }}
+          </el-descriptions-item>
+          <el-descriptions-item v-if="!isChildKind && Number(detail.invoiceType) === 1" label="税率">
+            {{ detail.taxes || '-' }}
+          </el-descriptions-item>
           <el-descriptions-item v-if="!isChildKind" label="已开票金额">
             {{ detail.invoiceAmount ?? 0 }}
           </el-descriptions-item>
           <el-descriptions-item v-if="!isChildKind" label="成本结清">
             {{ detail.costSettleLabel || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item v-if="!isChildKind" label="分成信息" :span="3">
+            <div>毛利：{{ detail.userScaleLabel || detail.userScaleInfo || '-' }}</div>
+            <div v-if="detail.costScaleLabel || detail.salecbUserScaleInfo">
+              成本：{{ detail.costScaleLabel || detail.salecbUserScaleInfo }}
+            </div>
           </el-descriptions-item>
           <el-descriptions-item label="样品是否回收">{{ detail.reversoLabel || '-' }}</el-descriptions-item>
           <el-descriptions-item label="收件人">{{ detail.shipUser || '-' }}</el-descriptions-item>
@@ -493,10 +474,60 @@
             {{ detail.shipAddress || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="是否云视频">{{ detail.isVideoLabel || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="备注" :span="3">
-            <span class="mark-text">{{ detail.mark || detail.msg || '-' }}</span>
-          </el-descriptions-item>
         </el-descriptions>
+        <!-- 订单资料 / 发票资料 / 订单备注（type=6/8/9，对齐小程序） -->
+        <div v-if="showOrderDocsBlock" class="order-files-block">
+          <div class="files-row">
+            <span class="files-label">订单资料</span>
+            <div class="files-list">
+              <div v-for="f in orderFiles" :key="'of-' + String(f.id)" class="file-item">
+                <a
+                  class="file-name"
+                  :href="fileUrl(f)"
+                  target="_blank"
+                  rel="noopener"
+                >{{ fileLabel(f) }}</a>
+                <el-button type="success" size="small" @click="onDownloadFile(f)">下载</el-button>
+                <el-button type="danger" size="small" :loading="acting" @click="onDeleteFile(f)">
+                  删除
+                </el-button>
+              </div>
+              <span v-if="!orderFiles.length" class="files-empty">暂无</span>
+              <el-upload
+                :show-file-list="false"
+                :http-request="onUploadOrderFile"
+                accept="*/*"
+              >
+                <el-button type="primary">上传文件</el-button>
+              </el-upload>
+            </div>
+          </div>
+          <div class="files-row">
+            <span class="files-label">发票资料</span>
+            <div class="files-list">
+              <div v-for="f in invoiceFiles" :key="'inv-' + String(f.id)" class="file-item">
+                <a
+                  class="file-name"
+                  :href="fileUrl(f)"
+                  target="_blank"
+                  rel="noopener"
+                >{{ fileLabel(f) }}</a>
+                <el-button type="success" size="small" @click="onDownloadFile(f)">下载</el-button>
+              </div>
+              <span v-if="!invoiceFiles.length" class="files-empty">暂无</span>
+            </div>
+          </div>
+          <div class="remark-row">
+            <span class="files-label">订单备注</span>
+            <el-input
+              v-model="orderMsg"
+              type="textarea"
+              :rows="3"
+              placeholder="请输入备注"
+              @blur="onSaveOrderMsg"
+            />
+          </div>
+        </div>
       </section>
 
       <section class="card">
@@ -548,7 +579,12 @@
             width="90"
             align="right"
           />
-          <el-table-column prop="testUserName" label="测试员" width="100" />
+          <el-table-column
+            v-if="isChildKind || isGrabMode"
+            prop="testUserName"
+            label="测试员"
+            width="100"
+          />
           <el-table-column v-if="orderType === '10'" prop="deviceName" label="设备名称" min-width="100" show-overflow-tooltip />
           <el-table-column v-if="orderType === '10'" prop="platformName" label="实验平台" min-width="100" show-overflow-tooltip />
           <el-table-column v-if="orderType === '9'" prop="costPrice" label="分包单价" width="90" align="right" />
@@ -586,7 +622,12 @@
             label="完成时间"
             width="170"
           />
-          <el-table-column prop="orderStatusLabel" label="状态" width="100" />
+          <el-table-column
+            v-if="isChildKind || isGrabMode"
+            prop="orderStatusLabel"
+            label="状态"
+            width="100"
+          />
         </el-table>
       </section>
 
@@ -820,7 +861,7 @@
 
     <el-dialog v-model="sampleVisible" :title="sampleDialogTitle" width="720px">
       <el-alert
-        v-if="sampleAction === 'arrive' || sampleAction === 'ship' || sampleAction === 'video'"
+        v-if="sampleExtraHint"
         type="info"
         :closable="false"
         show-icon
@@ -828,39 +869,63 @@
         :title="sampleExtraHint"
       />
       <el-form v-if="sampleNeedExtra" label-width="90px" class="sample-extra">
-        <el-form-item v-if="sampleAction === 'arrive'" label="仓库名称">
+        <el-form-item
+          v-if="sampleAction === 'arrive' || sampleAction === 'return' || sampleAction === 'pick'"
+          label="仓库名称"
+          :required="sampleAction === 'return' || sampleAction === 'pick'"
+        >
           <el-select
             v-model="sampleStoreId"
             filterable
             clearable
-            placeholder="请选择（可不填）"
+            :placeholder="sampleAction === 'arrive' ? '请选择（可不填）' : '请选择'"
             style="width: 100%"
             @change="onSampleStoreChange"
           >
             <el-option
               v-for="s in sampleStoreOptions"
               :key="String(s.value)"
-              :label="String(s.label || '')"
-              :value="String(s.value)"
+              :label="String(s.label || s.sample_store_name || s.name || '')"
+              :value="String(s.value || s.id || '')"
             />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="sampleAction === 'arrive'" label="仓库位置">
+        <el-form-item
+          v-if="sampleAction === 'arrive' || sampleAction === 'return' || sampleAction === 'pick'"
+          label="仓库位置"
+          :required="sampleAction === 'return' || sampleAction === 'pick'"
+        >
           <el-select
             v-model="sampleStorePosId"
             filterable
             clearable
-            placeholder="请选择（可不填）"
+            :placeholder="
+              sampleAction === 'pick' && sampleExpectedPosLabel
+                ? `请确认：${sampleExpectedPosLabel}`
+                : sampleAction === 'arrive'
+                  ? '请选择（可不填）'
+                  : '请选择'
+            "
             style="width: 100%"
             :disabled="!sampleStoreId"
           >
             <el-option
               v-for="p in samplePosOptions"
-              :key="String(p.value)"
-              :label="String(p.label || '')"
-              :value="String(p.value)"
+              :key="String(p.value || p.id)"
+              :label="String(p.label || p.blockName || p.number || p.id || '')"
+              :value="String(p.value || p.id || '')"
             />
           </el-select>
+        </el-form-item>
+        <el-form-item v-if="sampleAction === 'testStart'" label="实验平台" required>
+          <el-input
+            :model-value="sampleConfirmPlatform"
+            disabled
+            placeholder="请勾选一行以确认实验平台"
+          />
+        </el-form-item>
+        <el-form-item v-if="sampleAction === 'ship'" label="快递公司">
+          <el-input v-model="sampleExpressName" placeholder="快递公司（可选）" clearable />
         </el-form-item>
         <el-form-item v-if="sampleAction === 'ship'" label="快递单号">
           <el-input v-model="sampleExpress" placeholder="快递单号（可选）" clearable />
@@ -874,6 +939,48 @@
             <el-radio value="scrap">样品报废</el-radio>
           </el-radio-group>
         </el-form-item>
+        <template v-if="sampleAction === 'retain' && sampleRetainMode === 'retain'">
+          <el-form-item label="是否入库" required>
+            <el-radio-group v-model="sampleIsPosition">
+              <el-radio value="1">入库到留存仓库</el-radio>
+              <el-radio value="0">不入库（仓库位置无）</el-radio>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item v-if="sampleIsPosition === '1'" label="留存仓库" required>
+            <el-select
+              v-model="sampleRetainStoreId"
+              filterable
+              clearable
+              placeholder="请选择留存仓库"
+              style="width: 100%"
+              @change="onRetainStoreChange"
+            >
+              <el-option
+                v-for="s in remainStoreOptions"
+                :key="String(s.value)"
+                :label="String(s.label || '')"
+                :value="String(s.value)"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item v-if="sampleIsPosition === '1'" label="留存仓位" required>
+            <el-select
+              v-model="sampleRetainStorePosId"
+              filterable
+              clearable
+              placeholder="请选择留存仓位"
+              style="width: 100%"
+              :disabled="!sampleRetainStoreId"
+            >
+              <el-option
+                v-for="p in remainPosOptions"
+                :key="String(p.value)"
+                :label="String(p.label || '')"
+                :value="String(p.value)"
+              />
+            </el-select>
+          </el-form-item>
+        </template>
         <el-form-item v-if="sampleAction === 'confirmDone'" label="备注" required>
           <el-input
             v-model="sampleConfirmMark"
@@ -895,6 +1002,13 @@
         <el-table-column type="selection" width="48" />
         <el-table-column prop="childOrderId" label="子单号" min-width="120" show-overflow-tooltip />
         <el-table-column prop="goodsName" label="产品" min-width="120" show-overflow-tooltip />
+        <el-table-column
+          v-if="sampleAction === 'testStart'"
+          prop="platformName"
+          label="实验平台"
+          min-width="120"
+          show-overflow-tooltip
+        />
         <el-table-column prop="orderStatusLabel" label="状态" width="100" />
         <el-table-column prop="confirmLabel" label="确认" width="80" />
       </el-table>
@@ -906,18 +1020,47 @@
 
     <el-dialog v-model="moreVisible" title="更多信息" width="560px">
       <el-descriptions v-if="moreInfo" :column="1" border>
-        <el-descriptions-item label="订单编号">{{ moreInfo.orderId }}</el-descriptions-item>
-        <el-descriptions-item label="客户">{{ moreInfo.customerName || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="所属公司">{{ moreInfo.supplierName || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="收件人 / 电话">
-          {{ moreInfo.shipUser || '-' }} / {{ moreInfo.shipPhone || '-' }}
+        <el-descriptions-item label="样品寄回地址">
+          {{ moreInfo.shipAddress || '-' }}
         </el-descriptions-item>
-        <el-descriptions-item label="寄回地址">{{ moreInfo.shipAddress || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="分成信息">
-          {{ moreInfo.userScaleInfo || '-' }}
+        <el-descriptions-item label="收件人姓名">
+          {{ moreInfo.shipUser || '-' }}
         </el-descriptions-item>
-        <el-descriptions-item label="备注">{{ moreInfo.mark || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="收件人电话">
+          {{ moreInfo.shipPhone || '-' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="公司汇款账户">
+          {{ moreInfo.companyAccount || moreInfo.bankCardNum || '-' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="实验测试地址">
+          {{ moreInfo.testAddress || '-' }}
+        </el-descriptions-item>
       </el-descriptions>
+    </el-dialog>
+
+    <el-dialog
+      v-model="appointmentVisible"
+      title="生成预约单 · 选择寄送地址"
+      width="560px"
+      destroy-on-close
+    >
+      <el-radio-group v-model="appointmentAddressId" class="addr-radio-group">
+        <el-radio
+          v-for="a in appointmentAddressOpts"
+          :key="String(a.value)"
+          :value="a.value"
+          class="addr-radio"
+        >
+          {{ a.label }}
+        </el-radio>
+      </el-radio-group>
+      <el-empty v-if="!appointmentAddressOpts.length && !appointmentLoading" description="暂无寄送地址，请先在系统中维护" />
+      <template #footer>
+        <el-button @click="appointmentVisible = false">取消</el-button>
+        <el-button type="primary" :loading="acting || appointmentLoading" @click="submitAppointment">
+          确定生成
+        </el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -968,7 +1111,8 @@ import {
   updateExpOrderMsg,
   withdrawExpOrderAudit,
 } from '@admin/api/experiment'
-import { fetchIncomeUsers, fetchSampleOrderOptions, fetchSampleStorePositions } from '@admin/api/inventory'
+import { fetchIncomeUsers, fetchSampleOrderOptions, fetchSampleStorePositions, fetchRemainSampleStoreOptions, fetchRemainSampleStorePositions } from '@admin/api/inventory'
+import { fetchTestAddressList } from '@admin/api/system'
 import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
 type SampleAction =
@@ -992,8 +1136,10 @@ const router = useRouter()
 const tagsViewStore = useTagsViewStore()
 
 function syncDetailTagTitle(ot: string, orderNo?: string) {
-  const from = String(route.query.from || '') || detailFromByOrderType(ot)
-  tagsViewStore.ensureSourceListTag(from)
+  const queryFrom = String(route.query.from || '')
+  const from = queryFrom || detailFromByOrderType(ot)
+  // 仅当显式带列表 from 时补列表标签；勿按 orderType 推断，否则会从资金/支付等页硬插列表标签
+  if (queryFrom) tagsViewStore.ensureSourceListTag(queryFrom)
   const no = String(orderNo || '').trim()
   const title =
     from === 'grab-orders'
@@ -1015,6 +1161,7 @@ const acting = ref(false)
 const detail = ref<Record<string, unknown> | null>(null)
 const editChildren = ref<Record<string, unknown>[]>([])
 const orderFiles = ref<Record<string, unknown>[]>([])
+const invoiceFiles = ref<Record<string, unknown>[]>([])
 const orderMsg = ref('')
 const shareVisible = ref(false)
 const shareUsers = ref<Record<string, unknown>[]>([])
@@ -1039,6 +1186,10 @@ const subInvoiceMoney = ref('')
 const subInvoiceRemark = ref('')
 const moreVisible = ref(false)
 const moreInfo = ref<Record<string, unknown> | null>(null)
+const appointmentVisible = ref(false)
+const appointmentLoading = ref(false)
+const appointmentAddressId = ref<string | number>('')
+const appointmentAddressOpts = ref<{ value: string | number; label: string }[]>([])
 
 const sampleVisible = ref(false)
 const sampleAction = ref<SampleAction>('arrive')
@@ -1049,9 +1200,15 @@ const sampleStorePosId = ref('')
 const sampleStoreOptions = ref<Record<string, unknown>[]>([])
 const samplePosOptions = ref<Record<string, unknown>[]>([])
 const sampleExpress = ref('')
+const sampleExpressName = ref('')
 const sampleMeeting = ref('')
 const sampleConfirmMark = ref('')
 const sampleRetainMode = ref<'retain' | 'scrap'>('retain')
+const sampleIsPosition = ref('1')
+const sampleRetainStoreId = ref('')
+const sampleRetainStorePosId = ref('')
+const remainStoreOptions = ref<Record<string, unknown>[]>([])
+const remainPosOptions = ref<Record<string, unknown>[]>([])
 
 const logs = computed(() => (detail.value?.logs as Record<string, unknown>[]) || [])
 const linkedOrders = computed(
@@ -1062,6 +1219,19 @@ const relatedOrders = computed(
 )
 const orderType = computed(() => String(detail.value?.orderType || ''))
 const isChildKind = computed(() => ['9', '10'].includes(orderType.value))
+const showOrderDocsBlock = computed(() => ['6', '8', '9', '10'].includes(orderType.value))
+const outBillTypeLabel = computed(() => {
+  const d = detail.value
+  if (!d) return '-'
+  const nested = d.outBillType as Record<string, unknown> | undefined
+  return String(d.outBillTypeName || nested?.name || '-').trim() || '-'
+})
+const inBillTypeLabel = computed(() => {
+  const d = detail.value
+  if (!d) return '-'
+  const nested = d.inBillType as Record<string, unknown> | undefined
+  return String(d.inBillTypeName || nested?.name || '-').trim() || '-'
+})
 /** 抢单列表进入：对齐 Java qdorderdetail，精简财务操作，子单可单独抢单 */
 const isGrabMode = computed(() => String(route.query.from || '') === 'grab-orders')
 
@@ -1111,15 +1281,43 @@ const SAMPLE_TITLES: Record<SampleAction, string> = {
 
 const sampleDialogTitle = computed(() => SAMPLE_TITLES[sampleAction.value] || '选择子单行')
 const sampleNeedExtra = computed(() =>
-  ['arrive', 'ship', 'video', 'confirmDone', 'retain'].includes(sampleAction.value)
+  ['arrive', 'return', 'pick', 'ship', 'video', 'confirmDone', 'retain', 'testStart'].includes(
+    sampleAction.value,
+  ),
 )
+const sampleExpectedPosLabel = computed(() => {
+  if (sampleAction.value !== 'pick' || sampleSelected.value.length !== 1) return ''
+  const row = sampleSelected.value[0]
+  const store = String(row.sampleStoreName || '')
+  const block = String(row.storeBlock || '')
+  const num = String(row.storeNumber || '')
+  const slot = [block, num].filter(Boolean).join('-')
+  if (!store && !slot) return ''
+  return [store, slot].filter(Boolean).join(' ')
+})
+const sampleConfirmPlatform = computed(() => {
+  if (sampleSelected.value.length !== 1) return ''
+  const row = sampleSelected.value[0]
+  return String(row.platformName || row.lineId || '')
+})
 const sampleExtraHint = computed(() => {
   if (sampleAction.value === 'arrive')
     return '请勾选已处理(状态2)的子行；仓库名称/位置可不填，填了则入库到对应仓位（选仓位时请只勾选一行）'
-  if (sampleAction.value === 'ship') return '请勾选已归还(状态41)的子行'
+  if (sampleAction.value === 'return')
+    return '请勾选测试完成(状态39)的子行，并选择归还仓库位置（每次仅一行）'
+  if (sampleAction.value === 'pick')
+    return sampleExpectedPosLabel.value
+      ? `请勾选样品到货(状态36)的子行，并确认出库仓库位置（${sampleExpectedPosLabel.value}）`
+      : '请勾选样品到货(状态36)的子行；若已入库则须确认仓库位置出库'
+  if (sampleAction.value === 'ship')
+    return '请勾选已归还(状态41)的子行；寄回后子行变为已完成，全部完成后订单变为已完成'
   if (sampleAction.value === 'video') return '请勾选尚未预约会议的子行'
-  if (sampleAction.value === 'retain') return '请勾选已归还(状态41)的子行，并选择留存或报废'
-  if (sampleAction.value === 'confirmDone') return '请勾选测试完成且未确认的子行，备注必填'
+  if (sampleAction.value === 'testStart')
+    return '请勾选已领用(状态37)的子行（单行），并确认实验平台与创建子单时一致'
+  if (sampleAction.value === 'retain')
+    return '请勾选已归还(状态41)的子行；可入库到留存仓库，完成后子行/订单变为已完成'
+  if (sampleAction.value === 'confirmDone')
+    return '请勾选测试完成且未确认的子行，备注必填（确认完成≠订单已完成）'
   return ''
 })
 
@@ -1158,6 +1356,7 @@ async function load() {
       detail.value = null
       editChildren.value = []
       orderFiles.value = []
+      invoiceFiles.value = []
       orderMsg.value = ''
       ElMessage.error(ajaxErrorMessage(res, '加载详情失败'))
       return
@@ -1168,7 +1367,10 @@ async function load() {
     orderFiles.value = Array.isArray(detail.value.files)
       ? (detail.value.files as Record<string, unknown>[])
       : []
-    orderMsg.value = String(detail.value.msg || detail.value.mark || '')
+    invoiceFiles.value = Array.isArray(detail.value.invoiceFiles)
+      ? (detail.value.invoiceFiles as Record<string, unknown>[])
+      : []
+    orderMsg.value = String(detail.value.msg || '')
     const ot = String(detail.value.orderType || '')
     const orderNo = String(detail.value.orderId || '')
     syncDetailTagTitle(ot, orderNo)
@@ -1233,7 +1435,7 @@ async function onUploadOrderFile(options: { file: File }) {
 
 async function onSaveOrderMsg() {
   if (!props.orderId || !detail.value) return
-  const prev = String(detail.value.msg || detail.value.mark || '')
+  const prev = String(detail.value.msg || '')
   if (orderMsg.value === prev) return
   const res = await updateExpOrderMsg(props.orderId, orderMsg.value)
   if (!isAjaxOk(res)) {
@@ -1241,7 +1443,6 @@ async function onSaveOrderMsg() {
     return
   }
   detail.value.msg = orderMsg.value
-  detail.value.mark = orderMsg.value
 }
 
 function goDetail(
@@ -1536,12 +1737,16 @@ async function onSaveReceive() {
 
 async function onSaveFinish() {
   await runAction(async () => {
+    const items = editChildren.value.map((c) => ({
+      id: c.id,
+      finishTime: c.finishTime || c.expectFinishTime || '',
+    }))
     const res = await saveExpOrderFinish({
       id: props.orderId,
-      items: editChildren.value.map((c) => ({
-        id: c.id,
-        finishTime: c.finishTime || '',
-      })),
+      // 网关/表单序列化场景下对象数组易丢结构，同时传 JSON 字符串兜底
+      items: JSON.stringify(items),
+      childIds: items.map((x) => x.id).join(','),
+      finishTimes: items.map((x) => String(x.finishTime || '')).join(','),
     })
     if (!isAjaxOk(res)) {
       ElMessage.error(ajaxErrorMessage(res, '保存失败'))
@@ -1720,21 +1925,70 @@ async function onConfirmCustomer() {
 }
 
 async function onGenerateAppointment() {
-  await ElMessageBox.confirm('确认生成预约单？', '生成预约单', { type: 'warning' })
+  appointmentAddressId.value = ''
+  appointmentVisible.value = true
+  appointmentLoading.value = true
+  try {
+    const res = await fetchTestAddressList({ start: 0, length: 500, draw: 1 })
+    const rows = Array.isArray(res.data) ? res.data : []
+    appointmentAddressOpts.value = rows
+      .map((a) => {
+        const row = a as Record<string, unknown>
+        const label = String(
+          row.name ||
+            [row.trueName || row.true_name, row.mobile, row.address].filter(Boolean).join(' · ') ||
+            row.id ||
+            ''
+        )
+        return { value: (row.id ?? '') as string | number, label }
+      })
+      .filter((o) => o.value !== '' && o.value != null)
+    const preset = detail.value?.testAddressId
+    if (preset != null && preset !== '' && appointmentAddressOpts.value.some((o) => String(o.value) === String(preset))) {
+      appointmentAddressId.value = preset as string | number
+    }
+  } catch {
+    appointmentAddressOpts.value = []
+  } finally {
+    appointmentLoading.value = false
+  }
+}
+
+async function submitAppointment() {
+  if (!appointmentAddressId.value && appointmentAddressId.value !== 0) {
+    ElMessage.warning('请选择寄送地址')
+    return
+  }
   await runAction(async () => {
-    const res = await generateExpOrderAppointment({ id: props.orderId })
+    const res = await generateExpOrderAppointment({
+      id: props.orderId,
+      testAddressId: appointmentAddressId.value,
+      test_address_id: appointmentAddressId.value,
+    })
     if (!isAjaxOk(res)) {
       ElMessage.error(ajaxErrorMessage(res, '生成失败'))
       return
     }
     ElMessage.success(String(res.resMsg || '已生成预约单'))
+    appointmentVisible.value = false
     await load()
     emit('refreshed')
   })
 }
 
-function onSampleSelectionChange(rows: Record<string, unknown>[]) {
+async function onSampleSelectionChange(rows: Record<string, unknown>[]) {
   sampleSelected.value = rows
+  // 领用：勾选一行时预填其入库仓库/仓位便于确认出库
+  if (sampleAction.value === 'pick' && rows.length === 1) {
+    const row = rows[0]
+    const sid = row.storeId != null ? String(row.storeId) : ''
+    const pid = row.storePosId != null ? String(row.storePosId) : ''
+    if (sid) {
+      sampleStoreId.value = sid
+      await onSampleStoreChange(sid)
+      if (pid) sampleStorePosId.value = pid
+    }
+  }
 }
 
 async function loadSampleStoreOptions() {
@@ -1743,7 +1997,12 @@ async function loadSampleStoreOptions() {
     if (isAjaxOk(res) && res.obj) {
       const obj = res.obj as Record<string, unknown>
       const stores = (obj.stores || res.obj) as Record<string, unknown>[]
-      sampleStoreOptions.value = Array.isArray(stores) ? stores : []
+      const rows = Array.isArray(stores) ? stores : []
+      sampleStoreOptions.value = rows.map((s) => ({
+        ...s,
+        value: s.value ?? s.id,
+        label: s.label || s.sample_store_name || s.sampleStoreName || s.name || s.id,
+      }))
     }
   } catch {
     sampleStoreOptions.value = []
@@ -1755,12 +2014,60 @@ async function onSampleStoreChange(storeId: string) {
   samplePosOptions.value = []
   if (!storeId) return
   try {
-    const res = await fetchSampleStorePositions(storeId, 0)
+    // 领用确认：含已占用仓位；到货/归还：空闲仓位
+    const posType = sampleAction.value === 'pick' ? 1 : 0
+    const res = await fetchSampleStorePositions(storeId, posType as 0 | 1)
     if (isAjaxOk(res) && Array.isArray(res.obj)) {
-      samplePosOptions.value = res.obj as Record<string, unknown>[]
+      samplePosOptions.value = (res.obj as Record<string, unknown>[]).map((p) => ({
+        ...p,
+        value: p.value ?? p.id,
+        label:
+          p.label ||
+          [p.block || p.blockName, p.number || p.posNumber].filter(Boolean).join('-') ||
+          p.id,
+      }))
     }
   } catch {
     samplePosOptions.value = []
+  }
+}
+
+async function loadRemainStoreOptions() {
+  try {
+    const res = await fetchRemainSampleStoreOptions()
+    if (isAjaxOk(res) && res.obj) {
+      const obj = res.obj as Record<string, unknown>
+      const stores = (obj.stores || res.obj) as Record<string, unknown>[]
+      const rows = Array.isArray(stores) ? stores : []
+      remainStoreOptions.value = rows.map((s) => ({
+        ...s,
+        value: s.value ?? s.id,
+        label: s.label || s.sample_store_name || s.sampleStoreName || s.name || s.id,
+      }))
+    }
+  } catch {
+    remainStoreOptions.value = []
+  }
+}
+
+async function onRetainStoreChange(storeId: string) {
+  sampleRetainStorePosId.value = ''
+  remainPosOptions.value = []
+  if (!storeId) return
+  try {
+    const res = await fetchRemainSampleStorePositions(storeId, 0)
+    if (isAjaxOk(res) && Array.isArray(res.obj)) {
+      remainPosOptions.value = (res.obj as Record<string, unknown>[]).map((p) => ({
+        ...p,
+        value: p.value ?? p.id,
+        label:
+          p.label ||
+          [p.block || p.blockName, p.number || p.posNumber].filter(Boolean).join('-') ||
+          p.id,
+      }))
+    }
+  } catch {
+    remainPosOptions.value = []
   }
 }
 
@@ -1771,12 +2078,20 @@ async function openSampleAction(act: SampleAction) {
   sampleStorePosId.value = ''
   samplePosOptions.value = []
   sampleExpress.value = ''
+  sampleExpressName.value = ''
   sampleMeeting.value = ''
   sampleConfirmMark.value = ''
   sampleRetainMode.value = 'retain'
+  sampleIsPosition.value = '1'
+  sampleRetainStoreId.value = ''
+  sampleRetainStorePosId.value = ''
+  remainPosOptions.value = []
   sampleVisible.value = true
-  if (act === 'arrive') {
+  if (act === 'arrive' || act === 'return' || act === 'pick') {
     await loadSampleStoreOptions()
+  }
+  if (act === 'retain') {
+    await loadRemainStoreOptions()
   }
   await nextTick()
   sampleTableRef.value?.clearSelection()
@@ -1808,6 +2123,52 @@ async function onSubmitSampleAction() {
       return
     }
   }
+  if (sampleAction.value === 'return') {
+    if (!sampleStoreId.value || !sampleStorePosId.value) {
+      ElMessage.warning('请选择仓库位置')
+      return
+    }
+    if (ids.length > 1) {
+      ElMessage.warning('选择仓库位置时请只勾选一行')
+      return
+    }
+  }
+  if (sampleAction.value === 'pick') {
+    const needPos = sampleSelected.value.some(
+      (r) => r.storePosId != null && String(r.storePosId) !== ''
+    )
+    if (needPos && !sampleStorePosId.value) {
+      ElMessage.warning('请输入样本仓库位置!')
+      return
+    }
+    if (needPos && ids.length > 1) {
+      ElMessage.warning('确认仓库位置出库时请只勾选一行')
+      return
+    }
+  }
+  if (sampleAction.value === 'testStart') {
+    if (ids.length !== 1) {
+      ElMessage.warning('开始测试请只勾选一行')
+      return
+    }
+    const row = sampleSelected.value[0]
+    if (!row.lineId && !row.platformName) {
+      ElMessage.warning('该子行缺少实验平台，无法开始测试')
+      return
+    }
+  }
+  if (sampleAction.value === 'retain' && sampleRetainMode.value === 'retain') {
+    if (ids.length !== 1) {
+      ElMessage.warning('样品留存请只勾选一行')
+      return
+    }
+    if (sampleIsPosition.value === '1') {
+      if (!sampleRetainStoreId.value || !sampleRetainStorePosId.value) {
+        ElMessage.warning('请选择留存仓库位置')
+        return
+      }
+    }
+  }
   const act = sampleAction.value
   await runAction(async () => {
     let res
@@ -1819,19 +2180,39 @@ async function onSubmitSampleAction() {
         storePosId: sampleStorePosId.value || '',
       })
     } else if (act === 'pick') {
-      res = await samplePickExpOrder(base)
+      res = await samplePickExpOrder({
+        ...base,
+        storeId: sampleStoreId.value || '',
+        storePosId: sampleStorePosId.value || '',
+      })
     } else if (act === 'testStart') {
-      res = await testStartExpOrder(base)
+      const row = sampleSelected.value[0] || {}
+      res = await testStartExpOrder({
+        ...base,
+        lineId: String(row.lineId || ''),
+      })
     } else if (act === 'testEnd') {
       res = await testEndExpOrder(base)
     } else if (act === 'return') {
-      res = await sampleReturnExpOrder(base)
+      res = await sampleReturnExpOrder({
+        ...base,
+        storeId: sampleStoreId.value || '',
+        storePosId: sampleStorePosId.value || '',
+      })
     } else if (act === 'ship') {
-      res = await sampleShipExpOrder({ ...base, expressNo: sampleExpress.value })
+      res = await sampleShipExpOrder({
+        ...base,
+        expressNo: sampleExpress.value,
+        expressName: sampleExpressName.value,
+        storePosId: sampleStorePosId.value || '',
+      })
     } else if (act === 'retain' || act === 'scrap') {
       res = await sampleRetainExpOrder({
         ...base,
         scrap: act === 'scrap' || sampleRetainMode.value === 'scrap',
+        isPosition: sampleIsPosition.value,
+        newStorePosId: sampleRetainStorePosId.value || '',
+        storePosId: String(sampleSelected.value[0]?.storePosId || sampleStorePosId.value || ''),
       })
     } else if (act === 'retest') {
       res = await retestExpOrder(base)
@@ -2036,6 +2417,11 @@ defineExpose({ reload: load })
   gap: 8px;
   align-items: flex-start;
 }
+.files-empty {
+  font-size: 13px;
+  color: var(--muted);
+  padding-top: 6px;
+}
 .file-item {
   display: inline-flex;
   align-items: center;
@@ -2115,5 +2501,21 @@ defineExpose({ reload: load })
   gap: 10px;
   margin-bottom: 8px;
   flex-wrap: wrap;
+}
+.addr-radio-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  max-height: 360px;
+  overflow: auto;
+}
+.addr-radio {
+  margin-right: 0;
+  height: auto;
+  white-space: normal;
+  align-items: flex-start;
+  line-height: 1.4;
 }
 </style>

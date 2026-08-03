@@ -78,6 +78,8 @@ urlpatterns = [
     path("inTreasury/options.ajax", inv.sample_order_options),
     path("samplestoreHouse/queryStore.ajax", inv.sample_order_options),
     path("samplestoreHouse/queryListByStoreId.ajax", inv.sample_store_positions),
+    path("sampleremainstoreHouse/queryStore.ajax", inv.remain_sample_order_options),
+    path("sampleremainstoreHouse/queryListByStoreId.ajax", inv.sample_store_positions),
     path("inTreasury/detail.ajax", inv.sample_order_detail),
     path("inTreasury/export.ajax", inv.sample_order_export),
     # 设备预约

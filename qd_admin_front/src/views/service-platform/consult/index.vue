@@ -1,8 +1,8 @@
 <template>
   <admin-page-card title="咨询管理">
     <el-form :inline="true" @submit.prevent="reload">
-      <el-form-item label="用户名">
-        <el-input v-model="userName" placeholder="用户名" clearable />
+      <el-form-item label="姓名">
+        <el-input v-model="userName" placeholder="姓名" clearable />
       </el-form-item>
       <el-form-item label="手机号">
         <el-input v-model="mobile" placeholder="手机号" clearable />
@@ -13,19 +13,28 @@
     </el-form>
 
     <el-table v-loading="loading" :data="rows" border stripe>
-      <el-table-column type="index" width="60" label="#" />
-      <el-table-column prop="userName" label="用户名" min-width="120" />
-      <el-table-column prop="mobile" label="手机号" min-width="120" />
-      <el-table-column prop="title" label="咨询标题" min-width="160" show-overflow-tooltip />
-      <el-table-column prop="addTime" label="提交时间" min-width="160" />
-      <el-table-column label="状态" min-width="100">
-        <template #default="{ row }">{{ statusLabel(row.status) }}</template>
+      <el-table-column type="index" width="55" label="#" />
+      <el-table-column label="订单号" min-width="120" show-overflow-tooltip>
+        <template #default="{ row }">{{ row.orderNum || row.order_num || '' }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="160" fixed="right">
+      <el-table-column prop="addTime" label="咨询时间" min-width="160" />
+      <el-table-column prop="className" label="测试分类" min-width="120" show-overflow-tooltip />
+      <el-table-column prop="userName" label="姓名" min-width="100" />
+      <el-table-column prop="mobile" label="手机号" min-width="120" />
+      <el-table-column label="公司名" min-width="140" show-overflow-tooltip>
+        <template #default="{ row }">{{ row.companyName || row.company_name || '' }}</template>
+      </el-table-column>
+      <el-table-column prop="content" label="咨询详情" min-width="180" show-overflow-tooltip />
+      <el-table-column prop="syUserName" label="客服人员" min-width="100" />
+      <el-table-column label="状态" min-width="100">
+        <template #default="{ row }">{{ row.statusLabel || statusLabel(row.status) }}</template>
+      </el-table-column>
+      <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openDetail(row)">详情</el-button>
+          <el-button link type="primary" @click="goDetail(row, 'edit')">查看</el-button>
+          <el-button link type="primary" @click="goDetail(row, 'view')">详情</el-button>
           <el-button
-            v-if="String(row.status) !== '3'"
+            v-if="Number(row.status) !== 3"
             link
             type="danger"
             @click="handleCancel(row)"
@@ -45,47 +54,36 @@
         @current-change="reload"
       />
     </div>
-
-    <el-dialog v-model="detailVisible" title="咨询详情" width="640px">
-      <el-descriptions v-if="detail" :column="1" border>
-        <el-descriptions-item label="用户名">{{ detail.userName || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="手机号">{{ detail.mobile || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="标题">{{ detail.title || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="内容">{{ detail.content || detail.remark || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="提交时间">{{ detail.addTime || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="状态">{{ statusLabel(detail.status) }}</el-descriptions-item>
-      </el-descriptions>
-      <template #footer>
-        <el-button @click="detailVisible = false">关闭</el-button>
-      </template>
-    </el-dialog>
   </admin-page-card>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminPageCard from '@/components/AdminPageCard.vue'
-import { cancelConsult, fetchConsultList, getConsultDetail } from '@/api/service-platform'
+import { cancelConsult, fetchConsultList } from '@/api/service-platform'
 import { useDataTable } from '@/composables/useDataTable'
 import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
 
+const router = useRouter()
 const userName = ref('')
 const mobile = ref('')
-const detailVisible = ref(false)
-const detail = ref<Record<string, unknown> | null>(null)
 const { loading, rows, total, pagination, load } = useDataTable(fetchConsultList)
 
-const STATUS_MAP: Record<string, string> = {
-  '1': '待处理',
-  '2': '已处理',
-  '3': '已取消',
+const STATUS_MAP: Record<number, string> = {
+  0: '待处理',
+  1: '已处理',
+  2: '已生成订单',
+  3: '已取消',
 }
 
 onMounted(() => reload())
 
 function statusLabel(val: unknown) {
-  return STATUS_MAP[String(val)] || String(val ?? '-')
+  const n = Number(val)
+  if (Number.isNaN(n) || n < 0) return '未回复'
+  return STATUS_MAP[n] ?? '未回复'
 }
 
 function reload() {
@@ -95,14 +93,12 @@ function reload() {
   })
 }
 
-async function openDetail(row: Record<string, unknown>) {
-  const res = await getConsultDetail(String(row.id))
-  if (!isAjaxOk(res) || !res.obj) {
-    ElMessage.error(ajaxErrorMessage(res, '加载详情失败'))
-    return
-  }
-  detail.value = res.obj as Record<string, unknown>
-  detailVisible.value = true
+function goDetail(row: Record<string, unknown>, mode: 'edit' | 'view') {
+  router.push({
+    name: 'ServiceConsultDetail',
+    params: { id: String(row.id) },
+    query: { mode },
+  })
 }
 
 async function handleCancel(row: Record<string, unknown>) {

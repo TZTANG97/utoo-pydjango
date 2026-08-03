@@ -65,7 +65,45 @@ def insert_accessory(
     info: str,
     acc_type: int,
     exp_of_id: int | None = None,
+    child_of_id: int | None = None,
 ) -> int:
+    params = {
+        "t": add_time,
+        "name": name,
+        "path": path,
+        "ext": ext,
+        "info": info,
+        "acc_type": acc_type,
+        "exp_of_id": exp_of_id,
+        "child_of_id": child_of_id,
+    }
+    if exp_of_id is not None and child_of_id is not None:
+        try:
+            return execute_insert(
+                """
+                INSERT INTO accessory
+                    (addTime, deleteStatus, name, path, ext, info, type, exp_of_id, child_of_id)
+                VALUES
+                    (%(t)s, 0, %(name)s, %(path)s, %(ext)s, %(info)s, %(acc_type)s,
+                     %(exp_of_id)s, %(child_of_id)s)
+                """,
+                params,
+            )
+        except Exception:
+            pass
+    if child_of_id is not None and exp_of_id is None:
+        try:
+            return execute_insert(
+                """
+                INSERT INTO accessory
+                    (addTime, deleteStatus, name, path, ext, info, type, child_of_id)
+                VALUES
+                    (%(t)s, 0, %(name)s, %(path)s, %(ext)s, %(info)s, %(acc_type)s, %(child_of_id)s)
+                """,
+                params,
+            )
+        except Exception:
+            pass
     if exp_of_id is not None:
         return execute_insert(
             """
@@ -74,15 +112,7 @@ def insert_accessory(
             VALUES
                 (%(t)s, 0, %(name)s, %(path)s, %(ext)s, %(info)s, %(acc_type)s, %(exp_of_id)s)
             """,
-            {
-                "t": add_time,
-                "name": name,
-                "path": path,
-                "ext": ext,
-                "info": info,
-                "acc_type": acc_type,
-                "exp_of_id": exp_of_id,
-            },
+            params,
         )
     return execute_insert(
         """
@@ -91,12 +121,5 @@ def insert_accessory(
         VALUES
             (%(t)s, 0, %(name)s, %(path)s, %(ext)s, %(info)s, %(acc_type)s)
         """,
-        {
-            "t": add_time,
-            "name": name,
-            "path": path,
-            "ext": ext,
-            "info": info,
-            "acc_type": acc_type,
-        },
+        params,
     )

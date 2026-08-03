@@ -197,8 +197,7 @@ def _nosplit_bills(order_id: int) -> list[dict[str, Any]]:
         """
         SELECT id, money, IFNULL(is_split, 0) AS is_split, IFNULL(is_sj, 0) AS is_sj
         FROM qd_bill
-        WHERE IFNULL(delete_status, 0) = 0
-          AND type = 2 AND exp_of_id = %(oid)s AND IFNULL(is_split, 0) = 0
+        WHERE type = 2 AND exp_of_id = %(oid)s AND IFNULL(is_split, 0) = 0
         """,
         {"oid": order_id},
     )
@@ -210,8 +209,7 @@ def _nosplit_sum(order_id: int) -> Decimal:
             """
             SELECT IFNULL(SUM(money), 0)
             FROM qd_bill
-            WHERE IFNULL(delete_status, 0) = 0
-              AND type = 2 AND exp_of_id = %(oid)s AND IFNULL(is_split, 0) = 0
+            WHERE type = 2 AND exp_of_id = %(oid)s AND IFNULL(is_split, 0) = 0
             """,
             {"oid": order_id},
             0,
@@ -225,7 +223,7 @@ def _all_receive_sum(order_id: int) -> Decimal:
             """
             SELECT IFNULL(SUM(money), 0)
             FROM qd_bill
-            WHERE IFNULL(delete_status, 0) = 0 AND type = 2 AND exp_of_id = %(oid)s
+            WHERE type = 2 AND exp_of_id = %(oid)s
             """,
             {"oid": order_id},
             0,
@@ -319,7 +317,7 @@ def _collections_complete(order: dict[str, Any]) -> bool:
         scalar(
             """
             SELECT COUNT(*) FROM qd_bill
-            WHERE IFNULL(delete_status, 0) = 0 AND type = 2 AND exp_of_id = %(oid)s
+            WHERE type = 2 AND exp_of_id = %(oid)s
             """,
             {"oid": order["id"]},
             0,
@@ -555,7 +553,7 @@ def try_split_on_settle(order_id: int) -> bool:
         scalar(
             """
             SELECT COUNT(*) FROM qd_bill
-            WHERE IFNULL(delete_status, 0) = 0 AND type = 2 AND exp_of_id = %(oid)s
+            WHERE type = 2 AND exp_of_id = %(oid)s
             """,
             {"oid": order_id},
             0,

@@ -83,6 +83,37 @@ def user_list(request: Request, user=None):
 @authentication_classes([])
 @permission_classes([AllowAny])
 @admin_ajax_view(require_staff=False)
+def user_query_test_users(request: Request, user=None):
+    """对齐 Java sys/user/queryTestUsers.ajax（管理员+测试人员+测试主管+分类绑定）。"""
+    del user
+    data = merge_payload(request)
+    type_raw = str(data.get("type") if data.get("type") is not None else "").strip()
+    if not type_raw:
+        return Response(ajax_fail("参数错误,请重试"))
+    class_id = str(data.get("classid") or data.get("classId") or data.get("class_id") or "").strip()
+    rows = user_repo.list_test_users(class_id=class_id, with_admin=True)
+    return Response(ajax_ok(obj=rows, res_msg="获取成功!"))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view(require_staff=False)
+def user_query_test_users1(request: Request, user=None):
+    """对齐 Java sys/user/queryTestUsers1.ajax（仅测试人员+测试主管）。"""
+    del user
+    data = merge_payload(request)
+    type_raw = str(data.get("type") if data.get("type") is not None else "").strip()
+    if not type_raw:
+        return Response(ajax_fail("参数错误,请重试"))
+    rows = user_repo.list_test_users(class_id="", with_admin=False)
+    return Response(ajax_ok(obj=rows, res_msg="获取成功!"))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view(require_staff=False)
 def user_list_except(request: Request, user=None):
     """小程序分成人选 — sys/user/queryUsersExcept.ajax → {res,obj:[...]}。"""
     del user

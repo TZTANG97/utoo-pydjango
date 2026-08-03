@@ -143,6 +143,10 @@ export const delExpOrderRelated = (data: Record<string, unknown>) =>
   postAjax(`${BASE}/order/delRelated.ajax`, data)
 export const saveExpOrderFinish = (data: Record<string, unknown>) =>
   postAjax(`${BASE}/order/saveFinish.ajax`, data)
+export const saveExpChildReferencePrice = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/saveReferencePrice.ajax`, data)
+export const updateExpChildTimeType = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/updateTimeType.ajax`, data)
 export const fetchExpOrderMoreInfo = (id: string | number) =>
   postAjax(`${BASE}/order/moreInfo.ajax`, { id })
 export const fetchExpOrderStatusOptions = (p: Record<string, unknown> = {}) =>

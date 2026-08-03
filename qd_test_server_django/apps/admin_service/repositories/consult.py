@@ -167,9 +167,15 @@ def get_consult_detail(consult_id: int) -> dict[str, Any] | None:
         if goods_id not in (None, ""):
             exp_goods = fetch_one(
                 """
-                SELECT id, goods_name, goods_model, goods_brand_id
-                FROM experiment_goods
-                WHERE id = %(id)s
+                SELECT
+                    g.id,
+                    g.goods_name,
+                    g.goods_model,
+                    g.goods_brand_id,
+                    b.name AS brand_name
+                FROM experiment_goods g
+                LEFT JOIN goodsbrand b ON g.goods_brand_id = b.id
+                WHERE g.id = %(id)s
                 LIMIT 1
                 """,
                 {"id": goods_id},
@@ -177,6 +183,10 @@ def get_consult_detail(consult_id: int) -> dict[str, Any] | None:
         item["expGoods"] = exp_goods
         if exp_goods and not item.get("goods_spec"):
             item["goods_spec"] = exp_goods.get("goods_model") or ""
+        if exp_goods and not item.get("goods_brand_name"):
+            item["goods_brand_name"] = exp_goods.get("brand_name") or ""
+        if exp_goods and not item.get("goods_brand_id"):
+            item["goods_brand_id"] = exp_goods.get("goods_brand_id")
         childs.append(item)
 
     files = fetch_all(
@@ -367,7 +377,15 @@ def _normalize_child_payload(
     brand_id = _to_int(raw.get("goods_brand_id") or (goods or {}).get("goods_brand_id"))
     brand_name = str(raw.get("goods_brand_name") or "")
     if brand_id and not brand_name:
-        br = fetch_one("SELECT name FROM goods_brand WHERE id = %(id)s LIMIT 1", {"id": brand_id})
+        br = fetch_one(
+            "SELECT name FROM goodsbrand WHERE id = %(id)s LIMIT 1",
+            {"id": brand_id},
+        )
+        if not br:
+            br = fetch_one(
+                "SELECT name FROM goods_brand WHERE id = %(id)s LIMIT 1",
+                {"id": brand_id},
+            )
         if not br:
             br = fetch_one(
                 "SELECT name FROM experiment_brand WHERE id = %(id)s LIMIT 1",

@@ -611,3 +611,38 @@ def digital_overview(request: Request, user=None):
 
         year = str(datetime.now().year)
     return Response(ajax_ok(obj=digital_repo.overview(year)))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def digital_company_sale_by_year(request: Request, user=None):
+    """公司列表实验金额：/digitalManage/selCompanySaleByYear.ajax"""
+    del user
+    data = merge_payload(request)
+    year = str(data.get("year") or "").strip()
+    type_code = str(data.get("type") or "1").strip() or "1"
+    return Response(
+        ajax_ok(obj=digital_repo.sel_company_sale_by_year(year=year, type_code=type_code))
+    )
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def digital_exp_sale_by_year(request: Request, user=None):
+    """实验/分包月度金额柱图：/digitalManage/selExpSaleByYear.ajax"""
+    del user
+    data = merge_payload(request)
+    year = str(data.get("year") or "").strip()
+    test_type = str(data.get("test_type") or data.get("testType") or "").strip()
+    order_type = data.get("order_type") or data.get("orderType") or 6
+    return Response(
+        ajax_ok(
+            obj=digital_repo.sel_exp_sale_by_year(
+                year=year, test_type=test_type, order_type=order_type
+            )
+        )
+    )

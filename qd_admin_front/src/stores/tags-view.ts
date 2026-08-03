@@ -116,7 +116,10 @@ export const useTagsViewStore = defineStore('tagsView', {
     ensureSourceListTag(from: string) {
       const meta = LIST_TAG_BY_FROM[from]
       if (!meta) return
-      const exists = this.visitedViews.find((item) => item.path === meta.path)
+      // 用 name 或 path 判断，避免路径不一致时重复插入幽灵标签
+      const exists = this.visitedViews.find(
+        (item) => item.name === meta.name || item.path === meta.path
+      )
       if (exists) return
       const detailIdx = this.visitedViews.findIndex((item) =>
         item.path.startsWith('/experiment/order-detail/')

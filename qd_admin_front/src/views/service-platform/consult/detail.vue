@@ -367,20 +367,20 @@ import {
   fetchManageOptions,
   fetchExpGoodsList,
   fetchProjectList,
-} from '@admin/api/experiment'
+} from '@/api/experiment'
 import {
   cancelConsult,
   getConsultDetail,
   saveConsultOrder,
   updateConsult,
-} from '@admin/api/service-platform'
+} from '@/api/service-platform'
 import {
   fetchCompanyAccountList,
   fetchSupplierAll,
   fetchTestAddressList,
   fetchUserList,
-} from '@admin/api/system'
-import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
+} from '@/api/system'
+import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
 
 type Opt = { value: string | number; label: string }
 type ChildRow = Record<string, unknown>

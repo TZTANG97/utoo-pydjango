@@ -62,6 +62,18 @@ export function fetchEnterpriseList(params: Record<string, unknown>) {
   return fetchDatatable('/userCompany/getUserCompanyList.ajax', { type: 3, ...params })
 }
 
+/** 客户名称下拉（qd_user_company type=1） */
+export function fetchCustomerNames() {
+  return postAjax('/member/loadCustomerNames.ajax')
+}
+
+/** 客户账号下拉（exp_user.mobile）；可按企业 parentId 过滤 */
+export function fetchCustomerAccounts(parentId?: string | number) {
+  return postAjax('/member/queryAllCompanykh.ajax', {
+    parentId: parentId != null && parentId !== '' ? parentId : '',
+  })
+}
+
 export function getEnterprise(id: string | number) {
   return postAjax('/userCompany/getById.ajax', { id })
 }

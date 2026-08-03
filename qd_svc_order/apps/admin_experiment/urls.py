@@ -47,6 +47,8 @@ urlpatterns = [
     path("adminExperiment/order/addRelated.ajax", views.order_add_related),
     path("adminExperiment/order/delRelated.ajax", views.order_del_related),
     path("adminExperiment/order/saveFinish.ajax", views.order_save_finish),
+    path("adminExperiment/order/saveReferencePrice.ajax", views.order_save_reference_price),
+    path("adminExperiment/order/updateTimeType.ajax", views.order_update_time_type),
     path("adminExperiment/order/moreInfo.ajax", views.order_more_info),
     path("adminExperiment/order/export.ajax", views.order_export),
     path("adminExperiment/order/statusOptions.ajax", views.order_status_options),

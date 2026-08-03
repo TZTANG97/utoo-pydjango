@@ -14,12 +14,16 @@
 
     <el-table v-loading="loading" :data="rows" border stripe>
       <el-table-column type="index" width="55" label="#" />
-      <el-table-column prop="order_num" label="订单号" min-width="120" show-overflow-tooltip />
+      <el-table-column label="订单号" min-width="120" show-overflow-tooltip>
+        <template #default="{ row }">{{ row.orderNum || row.order_num || '' }}</template>
+      </el-table-column>
       <el-table-column prop="addTime" label="咨询时间" min-width="160" />
       <el-table-column prop="className" label="测试分类" min-width="120" show-overflow-tooltip />
       <el-table-column prop="userName" label="姓名" min-width="100" />
       <el-table-column prop="mobile" label="手机号" min-width="120" />
-      <el-table-column prop="company_name" label="公司名" min-width="140" show-overflow-tooltip />
+      <el-table-column label="公司名" min-width="140" show-overflow-tooltip>
+        <template #default="{ row }">{{ row.companyName || row.company_name || '' }}</template>
+      </el-table-column>
       <el-table-column prop="content" label="咨询详情" min-width="180" show-overflow-tooltip />
       <el-table-column prop="syUserName" label="客服人员" min-width="100" />
       <el-table-column label="状态" min-width="100">

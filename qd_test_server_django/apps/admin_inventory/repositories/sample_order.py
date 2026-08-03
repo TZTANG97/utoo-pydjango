@@ -172,6 +172,19 @@ def list_sample_store_options() -> list[dict[str, Any]]:
     )
 
 
+def list_remain_sample_store_options() -> list[dict[str, Any]]:
+    """样品留存仓库下拉（type=2），对齐 Java sampleremainstoreHouse/queryStore.ajax。"""
+    return fetch_all(
+        """
+        SELECT id AS value, sample_store_name AS label, sample_store_num AS storeNum
+        FROM sample_goods_storehouse
+        WHERE IFNULL(deleteStatus, 0) = 0 AND type = 2 AND IFNULL(status, 1) = 1
+        ORDER BY sample_store_name ASC
+        LIMIT 500
+        """
+    )
+
+
 def list_sample_store_positions(
     *, store_id: int | str, free_only: bool = True
 ) -> list[dict[str, Any]]:

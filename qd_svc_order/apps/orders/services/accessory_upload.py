@@ -24,6 +24,7 @@ def save_order_attachment(
     content_type: str,
     acc_type: int = 7,
     exp_of_id: int | None = None,
+    child_of_id: int | None = None,
 ) -> tuple[bool, str, dict[str, Any]]:
     if not data:
         return False, "文件为空", {}
@@ -53,6 +54,7 @@ def save_order_attachment(
             info=orig_name or "upload",
             acc_type=acc_type,
             exp_of_id=exp_of_id,
+            child_of_id=child_of_id,
         )
         url_base = image_base.rstrip("/")
         return True, "上传成功", {
@@ -62,6 +64,7 @@ def save_order_attachment(
             "info": orig_name or "upload",
             "ext": content_type or "application/octet-stream",
             "type": acc_type,
+            "childOfId": child_of_id,
             "url": f"{url_base}/{path_store}/{filename}",
         }
     except Exception as exc:

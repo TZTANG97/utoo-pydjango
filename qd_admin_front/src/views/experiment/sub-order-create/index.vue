@@ -207,7 +207,7 @@
         title="仅显示主单中待处理（op_status=1）的产品行。创建后将生成子订单并挂接所选行。"
       />
 
-      <!-- 实验子订单：对齐 Java purchase_create_orders -->
+      <!-- 实验子订单：对齐小程序 add_em_sub_order -->
       <section v-if="isExperiment" class="form-card">
         <el-form label-width="120px" class="create-form">
           <el-row :gutter="16">
@@ -241,6 +241,61 @@
                     :key="String(u.id)"
                     :label="userLabel(u)"
                     :value="String(u.id)"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="客户名称" required>
+                <el-select
+                  v-model="form.customerName"
+                  filterable
+                  clearable
+                  placeholder="请选择"
+                  style="width: 100%"
+                  @change="onCustomerChange"
+                >
+                  <el-option
+                    v-for="c in customerOptions"
+                    :key="String(c.id)"
+                    :label="String(c.name || '')"
+                    :value="String(c.id)"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="所属公司" required>
+                <el-select
+                  v-model="form.supplierName"
+                  filterable
+                  clearable
+                  placeholder="请选择"
+                  style="width: 100%"
+                >
+                  <el-option
+                    v-for="s in supplierOptions"
+                    :key="String(s.id)"
+                    :label="String(s.companyName || s.company_name || s.name || '')"
+                    :value="String(s.id)"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="客户账号" required>
+                <el-select
+                  v-model="form.customUserId"
+                  filterable
+                  clearable
+                  placeholder="请选择"
+                  style="width: 100%"
+                >
+                  <el-option
+                    v-for="a in accountOptions"
+                    :key="String(a.id)"
+                    :label="String(a.mobile || a.id || '')"
+                    :value="String(a.id)"
                   />
                 </el-select>
               </el-form-item>
@@ -293,6 +348,25 @@
               </el-form-item>
             </el-col>
             <el-col :span="24">
+              <el-form-item label="订单资料">
+                <div class="file-ops">
+                  <el-upload
+                    :show-file-list="false"
+                    :http-request="onUploadOrderFile"
+                    accept="*/*"
+                  >
+                    <el-button type="primary" link :loading="uploading">上传</el-button>
+                  </el-upload>
+                  <div v-if="orderFiles.length" class="file-list">
+                    <div v-for="(f, idx) in orderFiles" :key="String(f.id || idx)" class="file-item">
+                      <span>{{ String(f.info || f.name || '附件') }}</span>
+                      <el-button type="danger" link @click="removeOrderFile(idx)">删除</el-button>
+                    </div>
+                  </div>
+                </div>
+              </el-form-item>
+            </el-col>
+            <el-col :span="24">
               <el-form-item label="备注">
                 <el-input v-model="form.msg" type="textarea" :rows="3" placeholder="请输入内容" />
               </el-form-item>
@@ -313,20 +387,27 @@
         <el-table-column prop="goodsName" label="产品名称" min-width="120" show-overflow-tooltip />
         <el-table-column prop="goodsSpec" label="产品型号" min-width="100" show-overflow-tooltip />
         <el-table-column
-          v-if="isSubcontract"
+          v-if="isSubcontract || isExperiment"
           prop="goodsBrand"
           label="产品品牌"
           min-width="90"
           show-overflow-tooltip
         />
         <el-table-column
-          v-if="isSubcontract"
+          v-if="isSubcontract || isExperiment"
           prop="goodsCount"
           label="数量"
           width="70"
           align="center"
         />
         <el-table-column prop="projectName" label="实验测试项目" min-width="120" show-overflow-tooltip />
+        <el-table-column
+          v-if="isExperiment"
+          prop="className"
+          label="实验分类"
+          min-width="100"
+          show-overflow-tooltip
+        />
         <el-table-column v-if="isSubcontract || isExperiment" label="测试人员" width="150">
           <template #default="{ row }">
             <el-select
@@ -338,10 +419,28 @@
             >
               <el-option label="抢单" value="22" />
               <el-option
-                v-for="u in staffOptions"
+                v-for="u in testerOptionsForRow(row)"
                 :key="String(u.id)"
                 :label="userLabel(u)"
                 :value="String(u.id)"
+              />
+            </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column v-if="isExperiment" label="实验平台" width="170">
+          <template #default="{ row }">
+            <el-select
+              v-model="row._lineId"
+              filterable
+              clearable
+              placeholder="请选择"
+              style="width: 150px"
+            >
+              <el-option
+                v-for="p in platformOptions"
+                :key="String(p.id)"
+                :label="String(p.lineNum || p.line_num || p.id || '')"
+                :value="String(p.id)"
               />
             </el-select>
           </template>
@@ -391,15 +490,16 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { createExpSubOrder, getExpOrderDetail } from '@/api/experiment'
-import { fetchEnterpriseList } from '@/api/member'
+import { createExpSubOrder, getExpOrderDetail, uploadExpOrderFile } from '@/api/experiment'
+import { fetchCustomerAccounts, fetchCustomerNames, fetchEnterpriseList } from '@/api/member'
+import { fetchLabLineList } from '@/api/inventory'
 import {
   fetchBillTypeAll,
   fetchPaytypeAll,
   fetchTaxAll,
   formatTaxDisplay,
 } from '@/api/order-settings'
-import { fetchUserList } from '@/api/system'
+import { fetchSupplierAll, fetchTestUsers, fetchUserList } from '@/api/system'
 import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
 
 const route = useRoute()
@@ -415,10 +515,19 @@ const selected = ref<Record<string, unknown>[]>([])
 const managerOptions = ref<Record<string, unknown>[]>([])
 const testManagerOptions = ref<Record<string, unknown>[]>([])
 const staffOptions = ref<Record<string, unknown>[]>([])
+/** 实验子单测试人员：按 classId 缓存 queryTestUsers 结果 */
+const testerByClass = ref<Record<string, Record<string, unknown>[]>>({})
+const testerDefault = ref<Record<string, unknown>[]>([])
 const companyOptions = ref<Record<string, unknown>[]>([])
+const customerOptions = ref<Record<string, unknown>[]>([])
+const supplierOptions = ref<Record<string, unknown>[]>([])
+const accountOptions = ref<Record<string, unknown>[]>([])
+const platformOptions = ref<Record<string, unknown>[]>([])
 const paytypeOptions = ref<Record<string, unknown>[]>([])
 const billTypeOptions = ref<Record<string, unknown>[]>([])
 const taxOptions = ref<Record<string, unknown>[]>([])
+const orderFiles = ref<Record<string, unknown>[]>([])
+const uploading = ref(false)
 
 const form = reactive({
   saleManager: '',
@@ -426,6 +535,9 @@ const form = reactive({
   stockUser: '',
   testManager: '',
   stockCompanyName: '',
+  customerName: '',
+  supplierName: '',
+  customUserId: '',
   invoiceOn: true,
   inBillTypeId: '',
   taxes: '',
@@ -461,6 +573,43 @@ function userLabel(u: Record<string, unknown>) {
   const name = String(u.trueName || u.userName || '')
   const uname = String(u.userName || '')
   return name && uname && name !== uname ? `${name}（${uname}）` : name || uname || String(u.id)
+}
+
+function testerOptionsForRow(row: Record<string, unknown>) {
+  if (isSubcontract.value) return staffOptions.value
+  const cid = String(row.classId || parent.value?.classId || '')
+  if (cid && testerByClass.value[cid]?.length) return testerByClass.value[cid]
+  return testerDefault.value
+}
+
+async function loadTestersForClasses(classIds: string[]) {
+  const silent = { silentError: true } as const
+  const uniq = Array.from(new Set(classIds.map((x) => String(x || '').trim()).filter(Boolean)))
+  if (!uniq.length) {
+    try {
+      const res = await fetchTestUsers('', silent)
+      testerDefault.value = Array.isArray(res.obj) ? (res.obj as Record<string, unknown>[]) : []
+    } catch {
+      testerDefault.value = []
+    }
+    return
+  }
+  await Promise.all(
+    uniq.map(async (cid) => {
+      if (testerByClass.value[cid]?.length) return
+      try {
+        const res = await fetchTestUsers(cid, silent)
+        testerByClass.value[cid] = Array.isArray(res.obj)
+          ? (res.obj as Record<string, unknown>[])
+          : []
+      } catch {
+        testerByClass.value[cid] = []
+      }
+    })
+  )
+  // 默认取第一个分类列表，便于无 classId 行回退
+  const first = uniq[0]
+  if (first) testerDefault.value = testerByClass.value[first] || []
 }
 
 function taxLabel(t: Record<string, unknown>) {
@@ -501,6 +650,43 @@ async function reloadCompanies() {
   }
 }
 
+async function reloadCustomerAccounts(parentId?: string) {
+  try {
+    const res = await fetchCustomerAccounts(parentId || '')
+    const list = Array.isArray(res.obj) ? res.obj : Array.isArray(res.data) ? res.data : []
+    accountOptions.value = list as Record<string, unknown>[]
+  } catch {
+    accountOptions.value = []
+  }
+}
+
+async function onCustomerChange(id: string) {
+  form.customUserId = ''
+  await reloadCustomerAccounts(id || '')
+}
+
+async function onUploadOrderFile(options: { file: File }) {
+  uploading.value = true
+  try {
+    const fd = new FormData()
+    fd.append('orderdata', options.file)
+    fd.append('type', '3')
+    const res = await uploadExpOrderFile(fd)
+    if (!isAjaxOk(res) || !res.obj) {
+      ElMessage.error(ajaxErrorMessage(res, '上传失败'))
+      return
+    }
+    orderFiles.value.push(res.obj as Record<string, unknown>)
+    ElMessage.success('上传成功')
+  } finally {
+    uploading.value = false
+  }
+}
+
+function removeOrderFile(idx: number) {
+  orderFiles.value.splice(idx, 1)
+}
+
 async function loadOptions() {
   const silent = { silentError: true } as const
   const [mgr, testMgr, staff, payRes, billRes, taxRes] = await Promise.all([
@@ -522,6 +708,34 @@ async function loadOptions() {
     taxOptions.value = taxRes.data as Record<string, unknown>[]
   }
   await reloadCompanies()
+  if (isExperiment.value) {
+    try {
+      const cust = await fetchCustomerNames()
+      const list = Array.isArray(cust.obj) ? cust.obj : Array.isArray(cust.data) ? cust.data : []
+      customerOptions.value = list as Record<string, unknown>[]
+    } catch {
+      customerOptions.value = []
+    }
+    try {
+      const sup = await fetchSupplierAll(silent)
+      const list = Array.isArray(sup.obj) ? sup.obj : Array.isArray(sup.data) ? sup.data : []
+      supplierOptions.value = list as Record<string, unknown>[]
+    } catch {
+      supplierOptions.value = []
+    }
+    try {
+      const lines = await fetchLabLineList({ start: 0, length: 999, draw: 1, line_num: '' })
+      platformOptions.value = lines.data || []
+    } catch {
+      platformOptions.value = []
+    }
+    const classIds = children.value
+      .map((c) => String(c.classId || parent.value?.classId || ''))
+      .filter(Boolean)
+    if (parent.value?.classId) classIds.push(String(parent.value.classId))
+    await loadTestersForClasses(classIds)
+    await reloadCustomerAccounts(form.customerName || '')
+  }
 }
 
 function nowOrderTime() {
@@ -548,12 +762,19 @@ async function load() {
     parent.value = obj
     children.value = ((obj.children as Record<string, unknown>[]) || []).map((c) => ({
       ...c,
-      _testUserId: '',
+      _testUserId: c.testUserId != null ? String(c.testUserId) : '',
+      _lineId: c.lineId != null ? String(c.lineId) : '',
       _costPrice: c.price != null ? String(c.price) : '',
       _finishTime: '',
     }))
     const ot = String(obj.orderType || '')
     if (ot === '8' || ot === '6') {
+      form.customerName = obj.customerId != null ? String(obj.customerId) : ''
+      form.supplierName = obj.supplierId != null ? String(obj.supplierId) : ''
+      form.customUserId = obj.customUserId != null ? String(obj.customUserId) : ''
+      form.saleManager = obj.saleManagerId != null ? String(obj.saleManagerId) : ''
+      form.saleUser = obj.saleUserId != null ? String(obj.saleUserId) : ''
+      form.stockUser = obj.warehouseUserId != null ? String(obj.warehouseUserId) : ''
       await loadOptions()
       form.orderTime = nowOrderTime()
     }
@@ -589,9 +810,16 @@ function validateSubcontract(): string | null {
 function validateExperiment(): string | null {
   if (!form.orderTime) return '请填写下单时间'
   if (!form.saleManager) return '请选择实验室主管'
+  if (!form.customerName) return '请选择客户名称'
+  if (!form.supplierName) return '请选择所属公司'
+  if (!form.customUserId) return '请选择客户账号'
   if (!form.saleUser) return '请选择销售人员'
   if (!form.stockUser) return '请选择仓库管理员'
   if (!form.deliveryTime) return '请填写预计收货时间'
+  for (const row of selected.value) {
+    if (!row._testUserId) return '请选择测试人员'
+    if (!row._lineId) return '请选择实验平台'
+  }
   return null
 }
 
@@ -640,11 +868,19 @@ async function onCreate() {
     } else if (isExperiment.value) {
       payload.saleManager = form.saleManager
       payload.saleUser = form.saleUser
-      payload.stockUser = form.stockUser
+      payload.warehouseUser = form.stockUser
+      payload.customerName = form.customerName
+      payload.supplierName = form.supplierName
+      payload.customUserId = form.customUserId
       payload.orderTime = form.orderTime
       payload.deliveryTime = form.deliveryTime
       payload.msg = form.msg
+      payload.orderdata = orderFiles.value
+        .map((f) => f.id)
+        .filter((id) => id != null && String(id) !== '')
+        .join(',')
       payload.testUserIds = selected.value.map((r) => String(r._testUserId || '22'))
+      payload.lineIds = selected.value.map((r) => String(r._lineId || ''))
       payload.finishTimes = selected.value.map((r) => String(r._finishTime || ''))
     }
     const res = await createExpSubOrder(payload)
@@ -723,5 +959,21 @@ onMounted(load)
   font-size: 16px;
   font-weight: 600;
   color: #1f2a24;
+}
+.file-ops {
+  width: 100%;
+}
+.file-list {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #3a4a43;
+  font-size: 13px;
 }
 </style>

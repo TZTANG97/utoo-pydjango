@@ -129,3 +129,11 @@ export const saveProjectPay = (list: Record<string, unknown>[]) =>
 
 export const fetchDigitalManageOverview = (p: Record<string, unknown> = {}) =>
   postAjax('/digitalManage/overview.ajax', p)
+
+/** 公司列表实验金额（对齐 Java/MP selCompanySaleByYear） */
+export const fetchCompanySaleByYear = (p: Record<string, unknown> = {}) =>
+  postAjax('/digitalManage/selCompanySaleByYear.ajax', p)
+
+/** 实验/分包月度金额柱图（对齐 Java/MP selExpSaleByYear） */
+export const fetchExpSaleByYear = (p: Record<string, unknown> = {}) =>
+  postAjax('/digitalManage/selExpSaleByYear.ajax', p)
