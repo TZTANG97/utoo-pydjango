@@ -8,7 +8,7 @@
         </el-select>
       </el-form-item>
       <el-form-item>
-        <el-button type="primary" :loading="loading" @click="reloadAll">查询</el-button>
+        <el-button type="primary" :loading="tableLoading" @click="reloadCompany">查询</el-button>
       </el-form-item>
     </el-form>
 
@@ -21,8 +21,9 @@
           size="small"
           max-height="420"
           class="company-table"
+          :row-class-name="rowClassName"
         >
-          <el-table-column type="index" label="#" width="56" :index="indexMethod" />
+          <el-table-column prop="index" label="#" width="56" />
           <el-table-column prop="company_name" label="公司名称" min-width="280" show-overflow-tooltip />
           <el-table-column prop="syrmb" label="实验(RMB)" width="180" align="right">
             <template #default="{ row }">
@@ -51,7 +52,7 @@
           </div>
           <div ref="chart6Ref" class="chart-box" v-loading="chart6Loading" />
           <p class="chart-total">
-            {{ chartYearLabel(chartYear6) }}销售总额：人民币 {{ formatMoney(total6) }}
+            {{ chartFooter(chartYear6) }}人民币 {{ formatMoney(total6) }}
           </p>
         </div>
       </el-col>
@@ -72,7 +73,7 @@
           </div>
           <div ref="chart8Ref" class="chart-box" v-loading="chart8Loading" />
           <p class="chart-total">
-            {{ chartYearLabel(chartYear8) }}销售总额（包含未审核订单)：人民币 {{ formatMoney(total8) }}
+            {{ chartFooter(chartYear8) }}人民币 {{ formatMoney(total8) }}
           </p>
         </div>
       </el-col>
@@ -81,30 +82,31 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import * as echarts from 'echarts'
 import type { ECharts } from 'echarts'
-import AdminPageCard from '@/components/AdminPageCard.vue'
+import AdminPageCard from '@admin/components/AdminPageCard.vue'
 import {
   fetchCompanySaleByYear,
   fetchExpSaleByYear,
   isAjaxOk,
-} from '@/api/fund'
+} from '@admin/api/fund'
 
 type CompanyRow = {
+  index?: number
   id?: number | string
   company_name?: string
   syrmb?: number
   isTotal?: boolean
 }
 
-const loading = computed(() => tableLoading.value || chart6Loading.value || chart8Loading.value)
 const tableLoading = ref(false)
 const chart6Loading = ref(false)
 const chart8Loading = ref(false)
 
 const nowYear = new Date().getFullYear()
-const yearOptions = Array.from({ length: 8 }, (_, i) => nowYear - i)
+/** 对齐 Java：自 2019 年起 */
+const yearOptions = Array.from({ length: nowYear - 2019 + 1 }, (_, i) => nowYear - i)
 
 const year = ref('')
 const chartYear6 = ref('')
@@ -125,13 +127,14 @@ function formatMoney(v: unknown) {
   })
 }
 
-function chartYearLabel(y: string) {
-  return y ? `${y}年` : '全年'
+/** 对齐 Java：`{year}全年销售总额(包含未审核订单)：` */
+function chartFooter(y: string) {
+  const prefix = y ? `${y}` : ''
+  return `${prefix}全年销售总额(包含未审核订单)：`
 }
 
-function indexMethod(index: number) {
-  // 总额行仍给序号，与 Java 图一致（奇数号视觉不强制）
-  return index + 1
+function rowClassName({ row }: { row: CompanyRow }) {
+  return row.isTotal ? 'is-total-row' : ''
 }
 
 function ensureChart(kind: 6 | 8) {
@@ -214,9 +217,12 @@ async function loadChart(orderType: 6 | 8) {
   }
 }
 
+/** 顶部年份只刷新公司表（与 Java #year1 一致）；图表年份各自独立。 */
+async function reloadCompany() {
+  await loadCompany()
+}
+
 async function reloadAll() {
-  chartYear6.value = year.value
-  chartYear8.value = year.value
   await Promise.all([loadCompany(), loadChart(6), loadChart(8)])
 }
 
@@ -277,5 +283,9 @@ onBeforeUnmount(() => {
   margin: 8px 0 0;
   font-size: 13px;
   color: #606266;
+}
+.company-table :deep(.is-total-row) {
+  font-weight: 600;
+  background: #fafafa;
 }
 </style>
