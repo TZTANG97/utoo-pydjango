@@ -24,10 +24,17 @@ variables:
   # 兼容旧变量名
   UTOO_STATIC_C: "/var/www/utoo-web"
   UTOO_STATIC_ADMIN: "/var/www/utoo-web"
+  # WinPS shell executor 会把 commit body 写进生成的 .ps1；多行/中文/引号易 ParserError，
+  # 导致 env（含 CI_PROJECT_DIR）注入失败、后续 cmd 路径找不到。发版不依赖这些变量。
+  CI_COMMIT_DESCRIPTION: "-"
+  CI_COMMIT_MESSAGE: "-"
 
 .utoo_windows_runner:
   tags:
     - utoo-windows
+  variables:
+    CI_COMMIT_DESCRIPTION: "-"
+    CI_COMMIT_MESSAGE: "-"
 
 # GitLab 会展开 $CI_PROJECT_DIR；此处不再写任何 PowerShell $ 变量。
 .utoo_run_deploy: &utoo_run_deploy

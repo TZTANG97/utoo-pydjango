@@ -1,3 +1,2 @@
-﻿# WinPS 5.1: keep CRLF for CI scripts
+# Keep CRLF for Windows CI PowerShell scripts
 deploy/utoo-windows/*.ps1 text eol=crlf
-
