@@ -415,7 +415,7 @@ try {
 		Write-Host ("[deploy] active {0}=:{1}; deploy {2} to idle {3}=:{4}" -f $DeployService, $activePort, $SingleServiceUnit.Service, $Slot, $targetPort) -ForegroundColor Cyan
 	}
 
-	function Deploy-DjangoUnit {
+	function Sync-DjangoUnitCode {
 		param(
 			[Parameter(Mandatory)][hashtable]$Unit,
 			[Parameter(Mandatory)][string]$SlotRoot
@@ -428,11 +428,8 @@ try {
 			throw "Local service directory missing: $localDir"
 		}
 		$remoteDir = "{0}/{1}" -f $SlotRoot, $dir
-		$healthUrl = "http://127.0.0.1:{0}/health" -f $port
 
-		Write-Host ("[deploy] === {0} ({1} :{2}) ===" -f $dir, $svc, $port) -ForegroundColor Cyan
-
-		Write-Host ("[deploy] sync {0}..." -f $dir)
+		Write-Host ("[deploy] === sync {0} ({1} :{2}) ===" -f $dir, $svc, $port) -ForegroundColor Cyan
 		Sync-DirToRemote `
 			-LocalDir $localDir `
 			-RemoteDir $remoteDir `
@@ -444,6 +441,19 @@ try {
 
 		$envCheck = ("if [ ! -f {0}/.env ] && [ ! -f {1}/config/shared-database.env ]; then echo deploy_error_missing_env:{2}; exit 1; fi" -f $remoteDir, $SlotRoot, $dir)
 		Invoke-Remote $envCheck
+	}
+
+	function Deploy-DjangoUnit {
+		param(
+			[Parameter(Mandatory)][hashtable]$Unit,
+			[Parameter(Mandatory)][string]$SlotRoot
+		)
+		$dir = $Unit.Dir
+		$svc = $Unit.Service
+		$port = $Unit.Port
+		$healthUrl = "http://127.0.0.1:{0}/health" -f $port
+
+		Sync-DjangoUnitCode -Unit $Unit -SlotRoot $SlotRoot
 
 		Write-Host ("[deploy] pip {0}..." -f $dir)
 		Invoke-RemoteBashScript -LocalScriptPath (Join-Path $PSScriptRoot 'ci-remote-pip-install.sh') -Replacements @{
@@ -458,7 +468,7 @@ try {
 
 		Write-Host ("[deploy] systemctl restart {0}" -f $svc)
 		Invoke-RemoteSudo ("systemctl restart {0}" -f $svc)
-		$healthWait = ('j=1; while [ $j -le 60 ]; do if curl -sf "{0}" >/dev/null; then echo deploy_health_ok:{1}; exit 0; fi; sleep 2; j=$((j+1)); done; echo deploy_health_fail:{1} >&2; systemctl --no-pager status {1} -l || true; journalctl -u {1} -n 80 --no-pager || true; exit 1' -f $healthUrl, $svc)
+		$healthWait = ('j=1; while [ $j -le 60 ]; do if curl -sf "{0}" >/dev/null; then echo deploy_health_ok:{1}; exit 0; fi; sleep 1; j=$((j+1)); done; echo deploy_health_fail:{1} >&2; systemctl --no-pager status {1} -l || true; journalctl -u {1} -n 80 --no-pager || true; exit 1' -f $healthUrl, $svc)
 		Invoke-RemoteSudo $healthWait
 	}
 
@@ -491,8 +501,29 @@ try {
 			-Exclude @('.venv', '__pycache__', '*.pyc', '.git', '*.egg-info') `
 			-PreserveNames @('.keep')
 		Invoke-RemoteSudo ("mkdir -p {0}/config {1}" -f $RemoteRoot, $SharedConfig)
+
+		# Sync code sequentially (SCP from Windows), then pip/restart in parallel on the server.
+		$specParts = @()
 		foreach ($unit in $UpstreamUnits) {
-			Deploy-DjangoUnit -Unit $unit -SlotRoot $RemoteRoot
+			Sync-DjangoUnitCode -Unit $unit -SlotRoot $RemoteRoot
+			$specParts += ("{0}|{1}|{2}" -f $unit.Dir, $unit.Service, $unit.Port)
+		}
+		Write-Host ('[deploy] parallel pip/restart for {0} services...' -f $UpstreamUnits.Count) -ForegroundColor Cyan
+		Invoke-RemoteBashScript -LocalScriptPath (Join-Path $PSScriptRoot 'ci-remote-units-parallel.sh') -Replacements @{
+			'__ROOT__' = $RemoteRoot
+			'__SPECS__' = ($specParts -join ';')
+		}
+
+		# Align internal :190xx upstreams with idle slot (one nginx reload).
+		$portByDir = @{}
+		foreach ($unit in $UpstreamUnits) { $portByDir[$unit.Dir] = [string]$unit.Port }
+		Write-Host '[deploy] batch switch service upstreams (single nginx reload)' -ForegroundColor Cyan
+		Invoke-RemoteBashScript -LocalScriptPath (Join-Path $PSScriptRoot 'ci-remote-switch-services-batch.sh') -Replacements @{
+			'__NGINX_CONF_DIR__' = $ServiceUpstreamConfDir
+			'__ORDER_PORT__' = $portByDir['qd_svc_order']
+			'__PAYMENT_PORT__' = $portByDir['qd_svc_payment']
+			'__ASSET_PORT__' = $portByDir['qd_svc_admin_asset']
+			'__PLATFORM_PORT__' = $portByDir['qd_svc_admin_platform']
 		}
 		Write-Host '[deploy] phase libs_services done.'
 	}
