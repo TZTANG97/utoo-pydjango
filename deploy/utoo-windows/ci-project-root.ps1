@@ -1,4 +1,6 @@
-﻿# Resolve repo root in GitLab CI (Windows shell runner may leave cwd on an unrelated local clone).
+﻿# Resolve repo root in GitLab CI (Windows bash runner may set wrong CI_PROJECT_DIR).
+# Align with factoryproductsystem2/deploy/emku-windows/ci-project-root.ps1:
+# prefer cwd (after bash pwd -W checkout) then script path, then CI_PROJECT_DIR.
 function Get-UtooCiProjectRoot {
 	$fromScript = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 	$cwd = (Get-Location).Path
@@ -39,7 +41,19 @@ function Get-UtooCiProjectRoot {
 		}
 	}
 
-	# In CI: ONLY trust CI_PROJECT_DIR (never fall back to a local developer clone).
+	# Factory order: cwd first (bash executor leaves cwd at repo root)
+	if (Test-RepoRoot $cwd) {
+		$full = [IO.Path]::GetFullPath($cwd)
+		Write-Host ("[ci] project root from cwd: {0}" -f $full)
+		if ($inCi) { Assert-CiCheckout $full }
+		return $full
+	}
+	if (Test-RepoRoot $fromScript) {
+		Write-Host ("[ci] project root from script path: {0}" -f $fromScript)
+		if ($inCi) { Assert-CiCheckout $fromScript }
+		return $fromScript
+	}
+
 	$ci = $env:CI_PROJECT_DIR
 	if (-not [string]::IsNullOrWhiteSpace($ci)) {
 		$ci = $ci.Trim().TrimEnd('\', '/')
@@ -50,22 +64,10 @@ function Get-UtooCiProjectRoot {
 			return $full
 		}
 		Write-Host "[ci] ignore invalid CI_PROJECT_DIR: $ci" -ForegroundColor Yellow
-		if ($inCi) {
-			throw "CI_PROJECT_DIR is set but is not a valid utoo repo root: $ci"
-		}
-	} elseif ($inCi) {
-		throw 'CI_PROJECT_DIR is empty while running under GitLab CI'
 	}
 
-	if (Test-RepoRoot $cwd) {
-		$full = [IO.Path]::GetFullPath($cwd)
-		Write-Host ("[ci] project root from cwd: {0}" -f $full)
-		return $full
+	if ($inCi) {
+		throw 'Cannot resolve utoo repo root under GitLab CI (cwd/script/CI_PROJECT_DIR all invalid)'
 	}
-	if (Test-RepoRoot $fromScript) {
-		Write-Host ("[ci] project root from script path: {0}" -f $fromScript)
-		return $fromScript
-	}
-
 	return $fromScript
 }
