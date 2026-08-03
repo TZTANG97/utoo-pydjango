@@ -6,10 +6,12 @@
 # - stage deploy_all：1 个一键全发（写在单发后面，单独一列；needs:[] 不挡单发）
 # 前四者按各自 upstream 的空闲蓝绿实例发布并切流；gateway 独立切公网入口。
 #
-# Runner shell 多为 Windows PowerShell 5.1。
-# 禁止在 script 里写 $$var：Runner 19 可能把 $$ 原样交给 PowerShell，解析失败却仍 Job succeeded（假绿）。
-# 入口一律走 cmd -> powershell -File，用 ERRORLEVEL 保证失败能红。
+# Runner（utoo-windows）已切 shell=cmd。
+# 原因：PowerShell executor 把真实 CI_COMMIT_DESCRIPTION 写进生成的 .ps1；多行中文 / Co-authored-by <email>
+# 会 ParserError，env（含 CI_PROJECT_DIR）注入失败；YAML 覆盖 CI_COMMIT_* 对 Runner 19 不生效。
+# 入口走 cmd -> powershell -File，用 ERRORLEVEL 保证失败能红。
 # 禁止复用 emku-windows /opt/emku-* / emku_upstream_*
+# 约定：发版分支 commit 尽量单行标题、少写正文，避免特殊字符。
 stages:
   - deploy
   - deploy_all
@@ -24,27 +26,20 @@ variables:
   # 兼容旧变量名
   UTOO_STATIC_C: "/var/www/utoo-web"
   UTOO_STATIC_ADMIN: "/var/www/utoo-web"
-  # WinPS shell executor 会把 commit body 写进生成的 .ps1；多行/中文/引号易 ParserError，
-  # 导致 env（含 CI_PROJECT_DIR）注入失败、后续 cmd 路径找不到。发版不依赖这些变量。
-  CI_COMMIT_DESCRIPTION: "-"
-  CI_COMMIT_MESSAGE: "-"
 
 .utoo_windows_runner:
   tags:
     - utoo-windows
-  variables:
-    CI_COMMIT_DESCRIPTION: "-"
-    CI_COMMIT_MESSAGE: "-"
 
-# GitLab 会展开 $CI_PROJECT_DIR；此处不再写任何 PowerShell $ 变量。
+# cmd shell：用 %CI_PROJECT_DIR%（不要写 PowerShell $ 变量）
 .utoo_run_deploy: &utoo_run_deploy
-  - cmd.exe /c "$CI_PROJECT_DIR\\deploy\\utoo-windows\\ci-entry-deploy.cmd"
+  - cmd.exe /c "%CI_PROJECT_DIR%\\deploy\\utoo-windows\\ci-entry-deploy.cmd"
 
 .utoo_run_frontend: &utoo_run_frontend
-  - cmd.exe /c "$CI_PROJECT_DIR\\deploy\\utoo-windows\\ci-entry-frontend.cmd"
+  - cmd.exe /c "%CI_PROJECT_DIR%\\deploy\\utoo-windows\\ci-entry-frontend.cmd"
 
 .utoo_run_all: &utoo_run_all
-  - cmd.exe /c "$CI_PROJECT_DIR\\deploy\\utoo-windows\\ci-entry-all.cmd"
+  - cmd.exe /c "%CI_PROJECT_DIR%\\deploy\\utoo-windows\\ci-entry-all.cmd"
 
 # --- dev：先 6 个单发，再一键全发 ---
 
