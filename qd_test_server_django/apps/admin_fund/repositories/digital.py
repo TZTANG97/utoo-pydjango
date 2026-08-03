@@ -126,6 +126,16 @@ def _parse_test_type(test_type: str | int | None) -> int | None:
 
 _STAT_COMPANY_FROM: str | None = None
 _STAT_EXP_FROM: str | None = None
+_STAT_OVERDUE_FROM: str | None = None
+
+
+def _as_int_id(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _stat_company_from() -> str:
@@ -159,6 +169,21 @@ def _stat_exp_from() -> str:
     return _STAT_EXP_FROM
 
 
+def _stat_overdue_from() -> str:
+    global _STAT_OVERDUE_FROM
+    if _STAT_OVERDUE_FROM:
+        return _STAT_OVERDUE_FROM
+    try:
+        fetch_one("SELECT 1 AS ok FROM statistic_company_overdue_receive LIMIT 1")
+        _STAT_OVERDUE_FROM = (
+            "(SELECT pt.* FROM statistic_company_overdue_receive pt "
+            "UNION ALL SELECT ut.* FROM statistic_company_overdue_receive_utoo ut)"
+        )
+    except Exception:
+        _STAT_OVERDUE_FROM = "statistic_company_overdue_receive_utoo"
+    return _STAT_OVERDUE_FROM
+
+
 def sel_company_sale_by_year(year: str = "", type_code: str = "1") -> dict[str, Any]:
     """公司实验金额列表 — 对齐 Java DigitalManageCenterAction.selCompanySaleByYear。
 
@@ -183,7 +208,10 @@ def sel_company_sale_by_year(year: str = "", type_code: str = "1") -> dict[str, 
         """
         SELECT
             u.id AS id,
-            IFNULL(NULLIF(TRIM(u.company_name), ''), CONCAT('公司#', u.id)) AS company_name
+            IFNULL(
+                NULLIF(TRIM(u.company_name), ''),
+                CONCAT('公司#', u.id)
+            ) AS company_name
         FROM `user` u
         WHERE u.deleteStatus = 0 AND u.userType = 6
         ORDER BY u.id
@@ -205,9 +233,11 @@ def sel_company_sale_by_year(year: str = "", type_code: str = "1") -> dict[str, 
         params,
     )
 
-    by_company: dict[Any, list[dict[str, Any]]] = {}
+    by_company: dict[int, list[dict[str, Any]]] = {}
     for r in sale_rows:
-        cid = r.get("company_id")
+        cid = _as_int_id(r.get("company_id"))
+        if cid is None:
+            continue
         by_company.setdefault(cid, []).append(r)
 
     fx = _us_exchange_rate()
@@ -221,9 +251,9 @@ def sel_company_sale_by_year(year: str = "", type_code: str = "1") -> dict[str, 
     zrmb = 0.0
 
     for idx, u in enumerate(companies):
-        cid = u.get("id")
+        cid = _as_int_id(u.get("id"))
         rmb = us = syrmb = syus = rentrmb = rentus = 0.0
-        for map_row in by_company.get(cid, []):
+        for map_row in by_company.get(cid if cid is not None else -1, []):
             amt = float(map_row.get("totalAmount") or 0)
             account_type = int(map_row.get("account_type") or 1)
             order_type = int(map_row.get("order_type") or 0)
@@ -265,14 +295,10 @@ def sel_company_sale_by_year(year: str = "", type_code: str = "1") -> dict[str, 
             }
         )
 
-    # 精简页只展示实验列：隐藏实验金额为 0 的公司（总额行仍保留），与小程序一致
-    visible = [r for r in company_info if float(r.get("syrmb") or 0) > 0]
-    for i, r in enumerate(visible):
-        r["index"] = i + 1
-
-    visible.append(
+    # 对齐 Java：列出全部 userType=6 分公司（含 0 金额行）+ 总额行
+    company_info.append(
         {
-            "index": len(visible) + 1,
+            "index": len(company_info) + 1,
             "id": 0,
             "company_id": 0,
             "company_name": f"总额: {round(zrmb, 2)}元",
@@ -286,9 +312,81 @@ def sel_company_sale_by_year(year: str = "", type_code: str = "1") -> dict[str, 
         }
     )
     return {
-        "companyInfo": visible,
+        "companyInfo": company_info,
         "total": round(gssyzermb, 2),
         "year": y,
+    }
+
+
+def _sel_overdue_by_company(
+    order_type: int,
+    receive_type: int,
+    currency_type: int = 1,
+) -> list[dict[str, Any]]:
+    """对齐 Java companyOverdueReceiveService.selAllListByAllCompany。
+
+    receive_type: 1=已收 2=应收；company_id 关联 qd_user_company。
+    """
+    from_sql = _stat_overdue_from()
+    rows = fetch_all(
+        f"""
+        SELECT
+            IFNULL(SUM(IFNULL(t.total_amount, 0)), 0) AS total_amount,
+            IFNULL(NULLIF(TRIM(u.name), ''), CONCAT('公司#', t.company_id)) AS company_name,
+            t.company_id AS company_id
+        FROM {from_sql} t
+        LEFT JOIN qd_user_company u ON t.company_id = u.id
+        WHERE t.order_type = %(order_type)s
+          AND t.currency_type = %(currency_type)s
+          AND t.type = %(receive_type)s
+        GROUP BY t.company_id, u.name
+        HAVING IFNULL(SUM(IFNULL(t.total_amount, 0)), 0) <> 0
+        ORDER BY total_amount DESC
+        """,
+        {
+            "order_type": order_type,
+            "currency_type": currency_type,
+            "receive_type": receive_type,
+        },
+    )
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        amt = round(float(r.get("total_amount") or 0), 2)
+        name = str(r.get("company_name") or "")
+        cid = _as_int_id(r.get("company_id")) or 0
+        out.append(
+            {
+                "company_name": name,
+                "total": amt,
+                "company_id": cid,
+                # ECharts pie
+                "name": name,
+                "value": amt,
+            }
+        )
+    return out
+
+
+def sel_exp_receive_pie(order_type: int | str = 6) -> dict[str, Any]:
+    """实验/分包 已收+应收 双饼图数据（对齐 Java SSR sy2 / sy2-2）。"""
+    try:
+        ot = int(order_type)
+    except (TypeError, ValueError):
+        ot = 6
+    if ot not in (6, 8):
+        ot = 6
+
+    received = _sel_overdue_by_company(ot, receive_type=1)
+    receivable = _sel_overdue_by_company(ot, receive_type=2)
+    ysall = round(sum(float(x.get("total") or 0) for x in received), 2)
+    overdueall = round(sum(float(x.get("total") or 0) for x in receivable), 2)
+    return {
+        "order_type": ot,
+        "expysAryrmball": received,
+        "expoverdueAryrmball": receivable,
+        "ysallamount": ysall,
+        "overdueallamount": overdueall,
+        "totalamount": round(ysall + overdueall, 2),
     }
 
 

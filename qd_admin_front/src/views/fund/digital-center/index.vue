@@ -24,11 +24,18 @@
           :row-class-name="rowClassName"
         >
           <el-table-column prop="index" label="#" width="56" />
-          <el-table-column prop="company_name" label="公司名称" min-width="280" show-overflow-tooltip />
-          <el-table-column prop="syrmb" label="实验(RMB)" width="180" align="right">
-            <template #default="{ row }">
-              {{ formatMoney(row.syrmb) }}
-            </template>
+          <el-table-column prop="company_name" label="公司名称" min-width="220" show-overflow-tooltip />
+          <el-table-column prop="rmb" label="销售(RMB)" width="130" align="right">
+            <template #default="{ row }">{{ formatMoney(row.rmb) }}</template>
+          </el-table-column>
+          <el-table-column prop="us" label="销售(US)" width="120" align="right">
+            <template #default="{ row }">{{ formatMoney(row.us) }}</template>
+          </el-table-column>
+          <el-table-column prop="syrmb" label="实验(RMB)" width="130" align="right">
+            <template #default="{ row }">{{ formatMoney(row.syrmb) }}</template>
+          </el-table-column>
+          <el-table-column prop="rentrmb" label="租赁(RMB)" width="130" align="right">
+            <template #default="{ row }">{{ formatMoney(row.rentrmb) }}</template>
           </el-table-column>
         </el-table>
       </el-col>
@@ -78,16 +85,45 @@
         </div>
       </el-col>
     </el-row>
+
+    <el-row :gutter="16" class="charts-row">
+      <el-col :span="12">
+        <div class="chart-panel pie-panel">
+          <div class="chart-head">
+            <h4>实验已收/应收</h4>
+          </div>
+          <div ref="pie6Ref" class="chart-box pie-box" v-loading="pie6Loading" />
+          <p class="chart-total">
+            总额(实际总额/减去异常订单)：{{ formatMoney(pie6.total) }} ，已收总额(包含未分配金额)：
+            {{ formatMoney(pie6.received) }}，应收总额：{{ formatMoney(pie6.receivable) }}
+          </p>
+        </div>
+      </el-col>
+      <el-col :span="12">
+        <div class="chart-panel pie-panel">
+          <div class="chart-head">
+            <h4>实验分包已收/应收</h4>
+          </div>
+          <div ref="pie8Ref" class="chart-box pie-box" v-loading="pie8Loading" />
+          <p class="chart-total">
+            总额：{{ formatMoney(pie8.total) }}， 已收总额： {{ formatMoney(pie8.received) }}，应收总额：{{
+              formatMoney(pie8.receivable)
+            }}
+          </p>
+        </div>
+      </el-col>
+    </el-row>
   </admin-page-card>
 </template>
 
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import * as echarts from 'echarts'
 import type { ECharts } from 'echarts'
 import AdminPageCard from '@admin/components/AdminPageCard.vue'
 import {
   fetchCompanySaleByYear,
+  fetchExpReceivePie,
   fetchExpSaleByYear,
   isAjaxOk,
 } from '@admin/api/fund'
@@ -96,13 +132,20 @@ type CompanyRow = {
   index?: number
   id?: number | string
   company_name?: string
+  rmb?: number
+  us?: number
   syrmb?: number
+  rentrmb?: number
   isTotal?: boolean
 }
+
+type PieSlice = { name?: string; value?: number; company_name?: string; total?: number }
 
 const tableLoading = ref(false)
 const chart6Loading = ref(false)
 const chart8Loading = ref(false)
+const pie6Loading = ref(false)
+const pie8Loading = ref(false)
 
 const nowYear = new Date().getFullYear()
 /** 对齐 Java：自 2019 年起 */
@@ -114,11 +157,17 @@ const chartYear8 = ref('')
 const companyRows = ref<CompanyRow[]>([])
 const total6 = ref(0)
 const total8 = ref(0)
+const pie6 = reactive({ received: 0, receivable: 0, total: 0 })
+const pie8 = reactive({ received: 0, receivable: 0, total: 0 })
 
 const chart6Ref = ref<HTMLDivElement | null>(null)
 const chart8Ref = ref<HTMLDivElement | null>(null)
+const pie6Ref = ref<HTMLDivElement | null>(null)
+const pie8Ref = ref<HTMLDivElement | null>(null)
 let chart6: ECharts | null = null
 let chart8: ECharts | null = null
+let pie6Chart: ECharts | null = null
+let pie8Chart: ECharts | null = null
 
 function formatMoney(v: unknown) {
   return Number(v || 0).toLocaleString('zh-CN', {
@@ -137,7 +186,7 @@ function rowClassName({ row }: { row: CompanyRow }) {
   return row.isTotal ? 'is-total-row' : ''
 }
 
-function ensureChart(kind: 6 | 8) {
+function ensureBar(kind: 6 | 8) {
   if (kind === 6) {
     if (!chart6Ref.value) return null
     if (!chart6) chart6 = echarts.init(chart6Ref.value)
@@ -148,8 +197,29 @@ function ensureChart(kind: 6 | 8) {
   return chart8
 }
 
+function ensurePie(kind: 6 | 8) {
+  if (kind === 6) {
+    if (!pie6Ref.value) return null
+    if (!pie6Chart) pie6Chart = echarts.init(pie6Ref.value)
+    return pie6Chart
+  }
+  if (!pie8Ref.value) return null
+  if (!pie8Chart) pie8Chart = echarts.init(pie8Ref.value)
+  return pie8Chart
+}
+
+function toPieData(list: PieSlice[] | undefined) {
+  if (!Array.isArray(list)) return []
+  return list
+    .map((item) => ({
+      name: String(item.name || item.company_name || ''),
+      value: Number(item.value ?? item.total ?? 0),
+    }))
+    .filter((item) => item.value !== 0)
+}
+
 function renderBar(kind: 6 | 8, months: string[], values: number[]) {
-  const inst = ensureChart(kind)
+  const inst = ensureBar(kind)
   if (!inst) return
   inst.setOption({
     color: ['#e74c3c'],
@@ -171,6 +241,42 @@ function renderBar(kind: 6 | 8, months: string[], values: number[]) {
         barMaxWidth: 36,
         data: values.length ? values : Array(12).fill(0),
         itemStyle: { borderRadius: [2, 2, 0, 0] },
+      },
+    ],
+  })
+}
+
+/** 对齐 Java option42：左右双饼（已收 / 应收） */
+function renderDualPie(kind: 6 | 8, received: PieSlice[], receivable: PieSlice[]) {
+  const inst = ensurePie(kind)
+  if (!inst) return
+  const left = toPieData(received)
+  const right = toPieData(receivable)
+  inst.setOption({
+    title: [
+      { subtext: '已收', left: '22.67%', top: '82%', textAlign: 'center', subtextStyle: { fontSize: 13 } },
+      { subtext: '应收', left: '75%', top: '82%', textAlign: 'center', subtextStyle: { fontSize: 13 } },
+    ],
+    tooltip: {
+      trigger: 'item',
+      formatter: '{b} : {c} ({d}%)',
+    },
+    series: [
+      {
+        type: 'pie',
+        radius: '55%',
+        center: ['25%', '48%'],
+        data: left.length ? left : [{ name: '暂无', value: 0 }],
+        label: { show: false },
+        minAngle: 1,
+      },
+      {
+        type: 'pie',
+        radius: '55%',
+        center: ['75%', '48%'],
+        data: right.length ? right : [{ name: '暂无', value: 0 }],
+        label: { show: false },
+        minAngle: 1,
       },
     ],
   })
@@ -217,18 +323,43 @@ async function loadChart(orderType: 6 | 8) {
   }
 }
 
-/** 顶部年份只刷新公司表（与 Java #year1 一致）；图表年份各自独立。 */
+async function loadPie(orderType: 6 | 8) {
+  const loadingRef = orderType === 6 ? pie6Loading : pie8Loading
+  const totals = orderType === 6 ? pie6 : pie8
+  loadingRef.value = true
+  try {
+    const res = await fetchExpReceivePie({ order_type: orderType })
+    const obj = (isAjaxOk(res) ? res.obj : {}) as {
+      expysAryrmball?: PieSlice[]
+      expoverdueAryrmball?: PieSlice[]
+      ysallamount?: number
+      overdueallamount?: number
+      totalamount?: number
+    }
+    totals.received = Number(obj.ysallamount || 0)
+    totals.receivable = Number(obj.overdueallamount || 0)
+    totals.total = Number(obj.totalamount || totals.received + totals.receivable)
+    await nextTick()
+    renderDualPie(orderType, obj.expysAryrmball || [], obj.expoverdueAryrmball || [])
+  } finally {
+    loadingRef.value = false
+  }
+}
+
+/** 顶部年份只刷新公司表（与 Java #year1 一致） */
 async function reloadCompany() {
   await loadCompany()
 }
 
 async function reloadAll() {
-  await Promise.all([loadCompany(), loadChart(6), loadChart(8)])
+  await Promise.all([loadCompany(), loadChart(6), loadChart(8), loadPie(6), loadPie(8)])
 }
 
 function onResize() {
   chart6?.resize()
   chart8?.resize()
+  pie6Chart?.resize()
+  pie8Chart?.resize()
 }
 
 onMounted(async () => {
@@ -241,8 +372,12 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
   chart6?.dispose()
   chart8?.dispose()
+  pie6Chart?.dispose()
+  pie8Chart?.dispose()
   chart6 = null
   chart8 = null
+  pie6Chart = null
+  pie8Chart = null
 })
 </script>
 
@@ -263,6 +398,9 @@ onBeforeUnmount(() => {
   padding: 12px 12px 8px;
   min-height: 360px;
 }
+.pie-panel {
+  min-height: 400px;
+}
 .chart-head {
   display: flex;
   align-items: center;
@@ -279,10 +417,14 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 280px;
 }
+.pie-box {
+  height: 320px;
+}
 .chart-total {
   margin: 8px 0 0;
   font-size: 13px;
   color: #606266;
+  line-height: 1.5;
 }
 .company-table :deep(.is-total-row) {
   font-weight: 600;

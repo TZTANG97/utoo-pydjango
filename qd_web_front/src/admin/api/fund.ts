@@ -150,3 +150,7 @@ export const fetchCompanySaleByYear = (p: Record<string, unknown> = {}) =>
 /** 实验/分包月度金额柱图（对齐 Java/MP selExpSaleByYear） */
 export const fetchExpSaleByYear = (p: Record<string, unknown> = {}) =>
   postAjax('/digitalManage/selExpSaleByYear.ajax', p)
+
+/** 实验/分包已收+应收双饼图（对齐 Java SSR companyOverdueReceive） */
+export const fetchExpReceivePie = (p: Record<string, unknown> = {}) =>
+  postAjax('/digitalManage/selExpReceivePie.ajax', p)

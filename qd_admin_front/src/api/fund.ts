@@ -1,4 +1,4 @@
-import request, { type AjaxBody, type RequestConfig, isAjaxOk } from '@/utils/request'
+import request, { type AjaxBody, type RequestConfig, isAjaxOk } from '@admin/utils/request'
 
 export type { AjaxBody }
 export { isAjaxOk }
@@ -51,8 +51,11 @@ export const fetchAccountOverviewList = (p: Record<string, unknown>) =>
 export const fetchUserAccountDetail = (id: string | number) =>
   postAjax('/funds/userAccountDetail.ajax', { id })
 
-/** 当前用户某币种可用余额（优先 account_userId.htm，失败回退账户详情） */
-export async function fetchAvailableBalance(userId: string | number, accountType: number) {
+/** 可用余额：对齐 /funds/account_userId.htm，失败则回退 userAccountDetail */
+export async function fetchUserAvailableBalance(
+  userId: string | number,
+  accountType: number
+): Promise<number> {
   try {
     const body = await postAjax(
       '/funds/account_userId.htm',
@@ -62,15 +65,25 @@ export async function fetchAvailableBalance(userId: string | number, accountType
     if (typeof body.obj === 'number') return body.obj
     if (body.obj != null && !Number.isNaN(Number(body.obj))) return Number(body.obj)
   } catch {
-    /* fallback */
+    /* fallback below */
   }
-  const res = await fetchUserAccountDetail(userId)
-  const accounts = ((res.obj as { accounts?: Record<string, unknown>[] } | undefined)?.accounts ||
-    []) as Record<string, unknown>[]
-  const hit = accounts.find(
+  const detail = await fetchUserAccountDetail(userId)
+  if (!isAjaxOk(detail)) return 0
+  const obj = (detail.obj || {}) as { accounts?: Record<string, unknown>[] }
+  const list = Array.isArray(obj.accounts) ? obj.accounts : []
+  const hit = list.find(
     (a) => Number(a.accountType ?? a.account_type ?? a.type) === Number(accountType)
   )
   return Number(hit?.availableBalance ?? hit?.available_balance ?? 0)
+}
+
+/** 当前用户某币种可用余额（优先走账户详情，兼容 ajax 包装） */
+export async function fetchAvailableBalance(userId: string | number, accountType: number) {
+  const res = await fetchUserAccountDetail(userId)
+  const accounts = ((res.obj as { accounts?: Record<string, unknown>[] } | undefined)?.accounts ||
+    []) as Record<string, unknown>[]
+  const hit = accounts.find((a) => Number(a.accountType) === Number(accountType))
+  return Number(hit?.availableBalance ?? 0)
 }
 
 /** 转账可选转入用户（有对应币种账户） */
@@ -137,3 +150,7 @@ export const fetchCompanySaleByYear = (p: Record<string, unknown> = {}) =>
 /** 实验/分包月度金额柱图（对齐 Java/MP selExpSaleByYear） */
 export const fetchExpSaleByYear = (p: Record<string, unknown> = {}) =>
   postAjax('/digitalManage/selExpSaleByYear.ajax', p)
+
+/** 实验/分包已收+应收双饼图（对齐 Java SSR companyOverdueReceive） */
+export const fetchExpReceivePie = (p: Record<string, unknown> = {}) =>
+  postAjax('/digitalManage/selExpReceivePie.ajax', p)

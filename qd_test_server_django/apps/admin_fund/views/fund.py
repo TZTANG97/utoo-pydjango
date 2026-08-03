@@ -645,3 +645,15 @@ def digital_exp_sale_by_year(request: Request, user=None):
             )
         )
     )
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def digital_exp_receive_pie(request: Request, user=None):
+    """实验/分包已收应收饼图：/digitalManage/selExpReceivePie.ajax"""
+    del user
+    data = merge_payload(request)
+    order_type = data.get("order_type") or data.get("orderType") or 6
+    return Response(ajax_ok(obj=digital_repo.sel_exp_receive_pie(order_type=order_type)))

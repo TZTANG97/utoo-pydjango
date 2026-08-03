@@ -55,4 +55,5 @@ urlpatterns = [
     path("digitalManage/overview.ajax", views.digital_overview),
     path("digitalManage/selCompanySaleByYear.ajax", views.digital_company_sale_by_year),
     path("digitalManage/selExpSaleByYear.ajax", views.digital_exp_sale_by_year),
+    path("digitalManage/selExpReceivePie.ajax", views.digital_exp_receive_pie),
 ]
