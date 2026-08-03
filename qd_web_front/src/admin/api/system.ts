@@ -1,4 +1,4 @@
-import request, { type AjaxBody, type RequestConfig, isAjaxOk } from '@/utils/request'
+import request, { type AjaxBody, type RequestConfig, isAjaxOk } from '@admin/utils/request'
 
 export type { AjaxBody }
 export { isAjaxOk }
