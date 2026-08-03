@@ -7,8 +7,9 @@
 # 前四者按各自 upstream 的空闲蓝绿实例发布并切流；gateway 独立切公网入口。
 #
 # Runner（utoo-windows）使用 shell=bash（Git Bash）。
-# Runner 19 已无 cmd；powershell 会把 CI_COMMIT_DESCRIPTION 写入 .ps1，中文正文易 ParserError。
-# bash 生成 .sh，中文 commit 可用。发版入口：bash -> powershell -File，失败码透传。
+# 本机 config.toml 需：PATH 含 D:\app\Git\usr\bin（mkdir）+ C:\GitLab-Runner\bin\bash.cmd（避免命中 WSL bash）。
+# 改 config 后必须管理员执行：Restart-Service gitlab-runner
+# 发版入口：bash -> powershell -File。中文 commit 可用。
 # 禁止复用 emku-windows /opt/emku-* / emku_upstream_*
 stages:
   - deploy
