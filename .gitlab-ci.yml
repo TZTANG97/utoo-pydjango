@@ -8,6 +8,8 @@
 # 发版入口对齐工厂项目 factoryproductsystem2：
 #   shell=bash + powershell.exe -File "$(pwd -W)/deploy/.../*.ps1"
 #   勿用 $CI_PROJECT_DIR（Git Bash 下常缺盘符）；cwd 已是仓库根，pwd -W 取带盘符 Windows 路径。
+# 本机 Runner 额外：BASH_ENV=C:/GitLab-Runner/bin/utoo-bashenv.sh（LocalSystem 下补 mkdir）
+# 改 config.toml / BASH_ENV 后必须管理员 Restart-Service gitlab-runner
 # 禁止复用 emku-windows /opt/emku-* / emku_upstream_*
 stages:
   - deploy
