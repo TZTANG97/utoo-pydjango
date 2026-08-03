@@ -74,9 +74,14 @@ try {
 	Write-Host ''
 	Write-Host '[all] wait frontend build...' -ForegroundColor Cyan
 	$feWaitStart = Get-Date
-	Wait-Process -Id $feProc.Id
+	# WaitForExit is OK if already finished; Wait-Process -Id throws when PID is gone.
+	$feProc.Refresh()
+	if (-not $feProc.HasExited) {
+		[void]$feProc.WaitForExit()
+	}
 	$feBuildSec = ((Get-Date) - $feWaitStart).TotalSeconds
-	$feCode = 0
+	$feProc.Refresh()
+	$feCode = 1
 	if ($null -ne $feProc.ExitCode) { $feCode = [int]$feProc.ExitCode }
 	if ($feCode -ne 0) {
 		Write-Host '----- frontend build stdout -----' -ForegroundColor Yellow
