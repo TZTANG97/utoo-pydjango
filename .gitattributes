@@ -1,2 +1,4 @@
-# Keep CRLF for Windows CI PowerShell scripts
+﻿# Keep CRLF for Windows CI PowerShell scripts
 deploy/utoo-windows/*.ps1 text eol=crlf
+# Bash entries for GitLab Runner shell=bash (LF)
+deploy/utoo-windows/*.sh text eol=lf
