@@ -5,11 +5,9 @@
 # - stage deploy：6 个独立手动发布（order / payment / admin_asset / admin_platform / gateway / frontend）
 # - stage deploy_all：1 个一键全发（写在单发后面，单独一列；needs:[] 不挡单发）
 #
-# 发版入口对齐工厂项目 factoryproductsystem2：
-#   shell=bash + powershell.exe -File "$(pwd -W)/deploy/.../*.ps1"
-#   勿用 $CI_PROJECT_DIR（Git Bash 下常缺盘符）；cwd 已是仓库根，pwd -W 取带盘符 Windows 路径。
-# 本机 Runner 额外：BASH_ENV=C:/GitLab-Runner/bin/utoo-bashenv.sh（LocalSystem 下补 mkdir）
-# 改 config.toml / BASH_ENV 后必须管理员 Restart-Service gitlab-runner
+# Runner 使用 shell=powershell（本机 LocalSystem 下 bash 会 mkdir not found，不可用）。
+# 发版入口：cmd -> powershell -File（ci-entry-*.cmd），失败码靠 ERRORLEVEL。
+# 中文 commit：请管理员先运行 C:\GitLab-Runner\fix-utoo-runner-admin.cmd（开 UTF-8 代码页并重启服务）。
 # 禁止复用 emku-windows /opt/emku-* / emku_upstream_*
 stages:
   - deploy
@@ -30,15 +28,15 @@ variables:
   tags:
     - utoo-windows
 
-# 与工厂一致：bash 下用 pwd -W，再交给 Windows PowerShell -File
+# PowerShell executor：用 cmd 入口保证 ERRORLEVEL；$CI_PROJECT_DIR 由 Runner 注入
 .utoo_run_deploy: &utoo_run_deploy
-  - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(pwd -W)/deploy/utoo-windows/ci-deploy-windows.ps1"
+  - cmd.exe /c "$CI_PROJECT_DIR\\deploy\\utoo-windows\\ci-entry-deploy.cmd"
 
 .utoo_run_frontend: &utoo_run_frontend
-  - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(pwd -W)/deploy/utoo-windows/ci-run-frontend.ps1"
+  - cmd.exe /c "$CI_PROJECT_DIR\\deploy\\utoo-windows\\ci-entry-frontend.cmd"
 
 .utoo_run_all: &utoo_run_all
-  - powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(pwd -W)/deploy/utoo-windows/ci-run-all.ps1"
+  - cmd.exe /c "$CI_PROJECT_DIR\\deploy\\utoo-windows\\ci-entry-all.cmd"
 
 # --- dev：先 6 个单发，再一键全发 ---
 
