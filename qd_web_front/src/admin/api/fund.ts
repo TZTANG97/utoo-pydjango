@@ -95,6 +95,12 @@ export const fetchTransferUsers = (accountType: number) =>
 
 export const fetchAssetOverview = (p: Record<string, unknown> = {}) =>
   postAjax('/funds/assetAcc.ajax', p)
+/** 资金账户页顶部统计（totala/totalf/rmbi/usi + 利率） */
+export const fetchAssetAccountSummary = (p: Record<string, unknown> = {}) =>
+  postAjax('/funds/assetAccountxcx.ajax', p)
+/** 昨日收益 rmbzrsy / uszrsy */
+export const fetchYesterdayIncome = (p: Record<string, unknown> = {}) =>
+  postAjax('/yesterdayIncome.ajax', p)
 export const fetchAccountLogList = (p: Record<string, unknown>) =>
   fetchDatatable('/getAccountLog.ajax', p)
 export const fetchExpSumByYear = (p: Record<string, unknown> = {}) =>

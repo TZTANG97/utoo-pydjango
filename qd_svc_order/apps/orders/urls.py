@@ -1,5 +1,6 @@
 from django.urls import path
 
+from apps.admin_experiment import views as admin_exp_views
 from apps.orders import views
 from apps.orders import views_list_dpt
 from apps.orders import views_mp_actions
@@ -34,6 +35,11 @@ urlpatterns = [
         "geranateYydForm.ajax",
         views_list_dpt.geranate_yyd_form,
         name="experiment-geranateYydForm",
+    ),
+    path(
+        "submitExpOrder.ajax",
+        admin_exp_views.order_submit_exp,
+        name="experiment-submitExpOrder",
     ),
     path(
         "customeOperateCancel.ajax",

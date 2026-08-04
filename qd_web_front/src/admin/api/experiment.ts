@@ -187,6 +187,11 @@ export const generateExpOrderAppointment = (data: Record<string, unknown>) =>
   postAjax(`${BASE}/order/generateAppointment.ajax`, data)
 export const updateExpOrderBasic = (data: Record<string, unknown>) =>
   postAjax(`${BASE}/order/updateBasic.ajax`, data)
+/** 对齐 Java submitExpOrder：body 为 [主单, ...明细行] */
+export const submitExpOrder = (list: Record<string, unknown>[]) =>
+  request.post(`${BASE}/order/submitExpOrder.ajax`, list, {
+    headers: { 'Content-Type': 'application/json' },
+  }) as unknown as Promise<AjaxBody>
 export const createExpSubOrder = (data: Record<string, unknown>) =>
   postAjax(`${BASE}/order/createSubOrder.ajax`, data)
 

@@ -441,7 +441,7 @@ const actionCards = computed<Card[]>(() => {
       desc: lite ? undefined : '创建实验销售订单',
       icon: '+',
       tone: 'action-card--order',
-      onClick: () => router.push({ name: 'ExperimentOrders' }),
+      onClick: () => router.push({ name: 'ExperimentOrderCreate' }),
     })
   }
   return cards

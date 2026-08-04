@@ -3313,6 +3313,479 @@ def create_sub_order_from_parent(
     return True, "创建成功", int(new_id)
 
 
+def _gen_order_seq_code(n: int) -> str:
+    """对齐 Java OrderFormUtils.genCode：不足 5 位左补 0。"""
+    if n < 100000:
+        return f"{n:05d}"
+    return str(n)
+
+
+def _manage_ennames(class_id: Any) -> tuple[str, str, str]:
+    """按三级类目向上取 enname1/enname2/enname3，用于订单号。"""
+    en1 = en2 = en3 = ""
+    try:
+        cid = int(class_id) if class_id not in (None, "") else 0
+    except (TypeError, ValueError):
+        cid = 0
+    if not cid:
+        return en1, en2, en3
+    row = fetch_one(
+        "SELECT id, parent_id, enname FROM experiment_manage WHERE id = %(id)s LIMIT 1",
+        {"id": cid},
+    )
+    if not row:
+        return en1, en2, en3
+    en3 = str(row.get("enname") or "")
+    pid = row.get("parent_id")
+    if pid:
+        sec = fetch_one(
+            "SELECT id, parent_id, enname FROM experiment_manage WHERE id = %(id)s LIMIT 1",
+            {"id": pid},
+        )
+        if sec:
+            en2 = str(sec.get("enname") or "")
+            pid2 = sec.get("parent_id")
+            if pid2:
+                first = fetch_one(
+                    "SELECT enname FROM experiment_manage WHERE id = %(id)s LIMIT 1",
+                    {"id": pid2},
+                )
+                if first:
+                    en1 = str(first.get("enname") or "")
+    return en1, en2, en3
+
+
+def _generate_exp_order_no(*, order_time: str, class_id: Any, supplier_id: Any) -> str:
+    """对齐 Java orderIdGeranateSale：{company_code}PT{en1}{en2}{en3}{yyyyMM}{5位序号}。"""
+    from datetime import datetime
+
+    en1, en2, en3 = _manage_ennames(class_id)
+    com_code = ""
+    try:
+        sid = int(supplier_id) if supplier_id not in (None, "") else 0
+    except (TypeError, ValueError):
+        sid = 0
+    if sid:
+        u = fetch_one("SELECT company_code FROM `user` WHERE id = %(id)s LIMIT 1", {"id": sid})
+        if u:
+            com_code = str(u.get("company_code") or "")
+    dt = None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%Y/%m/%d %H:%M:%S", "%Y/%m/%d"):
+        try:
+            dt = datetime.strptime(str(order_time).strip()[:19], fmt)
+            break
+        except (TypeError, ValueError):
+            continue
+    if dt is None:
+        dt = datetime.now()
+    datestr = dt.strftime("%Y%m")
+    prefix = f"{com_code}PT{en1}{en2}{en3}{datestr}"
+    latest = fetch_one(
+        """
+        SELECT order_id FROM experiment_order
+        WHERE order_id LIKE %(pfx)s
+        ORDER BY order_id DESC
+        LIMIT 1
+        """,
+        {"pfx": f"{prefix}%"},
+    )
+    seq = 1
+    if latest and latest.get("order_id"):
+        oid = str(latest["order_id"])
+        try:
+            seq = int(oid[-5:]) + 1
+        except (TypeError, ValueError):
+            seq = 1
+    return prefix + _gen_order_seq_code(seq)
+
+
+def _pick(d: dict[str, Any], *keys: str, default: Any = "") -> Any:
+    for k in keys:
+        if k in d and d[k] not in (None, ""):
+            return d[k]
+    return default
+
+
+def create_exp_order(
+    *,
+    header: dict[str, Any],
+    children: list[dict[str, Any]],
+    user_id: str | int | None = None,
+    accessory_ids: list[Any] | None = None,
+) -> tuple[bool, str, int | None]:
+    """
+    创建实验主单（order_type=6），对齐 Java submitExpOrder / saveExpOrders。
+    成功返回 (True, 新订单数字 id 字符串, id)。
+    """
+    header = header or {}
+    children = [c for c in (children or []) if isinstance(c, dict)]
+    customer_name = str(
+        _pick(header, "customer_name", "customerName", "customerId", default="")
+    ).strip()
+    custom_user_id = str(
+        _pick(header, "custom_user_id", "customUserId", "customerAccount", default="")
+    ).strip()
+    if not customer_name and not custom_user_id:
+        return False, "提交订单失败,客户名称和客户账号不能同时为空!", None
+    if not children:
+        return False, "实验订单至少选择一个产品才可提交!", None
+
+    class_id = _pick(header, "class_id", "classId", default="")
+    supplier_name = str(
+        _pick(header, "supplier_name", "supplierName", "supplierId", default="")
+    ).strip()
+    order_time = str(_pick(header, "order_time", "orderTime", default="")).strip()
+    if not order_time:
+        from datetime import datetime
+
+        order_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    sale_manager = str(_pick(header, "sale_manager", "saleManager", "saleManagerId", default="")).strip()
+    sale_user = str(_pick(header, "sale_user", "saleUser", "saleUserId", default="")).strip()
+    currency_type = str(_pick(header, "currency_type", "currencyType", default="1")).strip() or "1"
+    pay_way = str(_pick(header, "pay_way", "payWay", default="")).strip()
+    delivery_time = str(_pick(header, "delivery_time", "deliveryTime", default="")).strip()
+    msg = str(_pick(header, "msg", "mark", default="")).strip()
+    taxes = str(_pick(header, "taxes", default="")).strip()
+    out_bill_type_id = str(
+        _pick(header, "outBillTypeId", "out_bill_type_id", default="")
+    ).strip()
+    send_address = str(_pick(header, "send_address", "sendAddress", "shipAddress", default="")).strip()
+    addressee_name = str(
+        _pick(header, "addressee_name", "addresseeName", "shipUser", default="")
+    ).strip()
+    addressee_mobile = str(
+        _pick(header, "addressee_mobile", "addresseeMobile", "shipPhone", default="")
+    ).strip()
+
+    inv_raw = _pick(header, "invoiceType", "invoice_type", default=None)
+    if inv_raw in (True, "true", "on", "ON", "1", 1):
+        invoice_type = 1
+    elif inv_raw in (False, "false", "off", "OFF", "2", 2):
+        invoice_type = 2
+    else:
+        invoice_type = 1
+
+    rev_raw = _pick(header, "reverso_context", "reversoContext", default=None)
+    if rev_raw in (True, "true", "on", "ON", "1", 1):
+        reverso_context = 1
+    elif rev_raw in (False, "false", "off", "OFF", "2", 2):
+        reverso_context = 2
+    else:
+        reverso_context = 1
+
+    try:
+        total_price = float(_pick(header, "totalPrice", "total_price", default=0) or 0)
+    except (TypeError, ValueError):
+        total_price = 0.0
+
+    goods_amount = 0.0
+    for ch in children:
+        try:
+            nums = float(_pick(ch, "goods_nums", "goodsNums", "count", default=1) or 1)
+        except (TypeError, ValueError):
+            nums = 1.0
+        goods_amount += nums
+
+    # 首行分类 → exp_type_id（对齐 Java saveExpOrders）
+    first_class = _pick(
+        children[0], "experiment_class_id", "experimentClassId", "class_id", default=""
+    )
+    try:
+        exp_type_id = int(first_class) if first_class not in (None, "") else None
+    except (TypeError, ValueError):
+        exp_type_id = None
+    try:
+        class_id_int = int(class_id) if class_id not in (None, "") else None
+    except (TypeError, ValueError):
+        class_id_int = None
+
+    order_no = _generate_exp_order_no(
+        order_time=order_time, class_id=class_id_int, supplier_id=supplier_name
+    )
+    add_uid = str(user_id or "").strip()
+
+    mobile = ""
+    if customer_name and str(customer_name).isdigit():
+        crow = fetch_one(
+            "SELECT contractPhone FROM qd_user_company WHERE id = %(id)s LIMIT 1",
+            {"id": int(customer_name)},
+        )
+        if crow and crow.get("contractPhone"):
+            mobile = str(crow["contractPhone"])
+    if custom_user_id and str(custom_user_id).isdigit():
+        urow = fetch_one(
+            "SELECT mobile FROM `user` WHERE id = %(id)s LIMIT 1",
+            {"id": int(custom_user_id)},
+        )
+        if urow and urow.get("mobile"):
+            mobile = str(urow["mobile"])
+
+    params = {
+        "ono": order_no[:80],
+        "ot": "6",
+        "st": 5,
+        "mobile": mobile[:50] if mobile else None,
+        "rev": reverso_context,
+        "addr": send_address[:500] if send_address else None,
+        "an": addressee_name[:100] if addressee_name else None,
+        "am": addressee_mobile[:50] if addressee_mobile else None,
+        "inv": invoice_type,
+        "msg": msg[:1000] if msg else None,
+        "otm": order_time[:19],
+        "sm": sale_manager or None,
+        "su": sale_user or None,
+        "cuid": int(custom_user_id) if str(custom_user_id).isdigit() else None,
+        "cust": int(customer_name) if str(customer_name).isdigit() else None,
+        "sup": supplier_name if str(supplier_name).isdigit() else None,
+        "ct": int(currency_type) if str(currency_type).isdigit() else 1,
+        "pw": pay_way or None,
+        "ga": goods_amount,
+        "delv": delivery_time[:19] if delivery_time else None,
+        "tx": taxes or None,
+        "tp": total_price,
+        "class_id": class_id_int,
+        "obt": out_bill_type_id if str(out_bill_type_id).isdigit() else None,
+        "add_uid": add_uid or None,
+        "exp_type": exp_type_id,
+    }
+
+    order_pk = None
+    try:
+        order_pk = execute_insert(
+            """
+            INSERT INTO experiment_order
+                (addTime, deleteStatus, order_id, order_type, order_status,
+                 mobile, reverso_context, send_address, addressee_name, addressee_mobile,
+                 in_status, relation_type, invoiceType, msg, mark,
+                 order_time, sale_manager, sale_user, custom_user_id, customer_name,
+                 supplier_name, currency_type, pay_way, goods_amount,
+                 delivery_time, taxes, totalPrice, class_id, out_bill_type_id,
+                 add_user_id, exp_type_id)
+            VALUES
+                (NOW(), 0, %(ono)s, %(ot)s, %(st)s,
+                 %(mobile)s, %(rev)s, %(addr)s, %(an)s, %(am)s,
+                 0, 0, %(inv)s, %(msg)s, %(msg)s,
+                 %(otm)s, %(sm)s, %(su)s, %(cuid)s, %(cust)s,
+                 %(sup)s, %(ct)s, %(pw)s, %(ga)s,
+                 %(delv)s, %(tx)s, %(tp)s, %(class_id)s, %(obt)s,
+                 %(add_uid)s, %(exp_type)s)
+            """,
+            params,
+        )
+    except Exception:
+        order_pk = execute_insert(
+            """
+            INSERT INTO experiment_order
+                (addTime, deleteStatus, order_id, order_type, order_status,
+                 totalPrice, sale_manager, sale_user, customer_name, supplier_name,
+                 currency_type, invoiceType, class_id, msg, mark)
+            VALUES
+                (NOW(), 0, %(ono)s, %(ot)s, %(st)s,
+                 %(tp)s, %(sm)s, %(su)s, %(cust)s, %(sup)s,
+                 %(ct)s, %(inv)s, %(class_id)s, %(msg)s, %(msg)s)
+            """,
+            params,
+        )
+        if order_pk:
+            for sql, p in (
+                (
+                    """
+                    UPDATE experiment_order SET
+                        order_time=%(otm)s, delivery_time=%(delv)s, pay_way=%(pw)s,
+                        taxes=%(tx)s, custom_user_id=%(cuid)s, reverso_context=%(rev)s,
+                        send_address=%(addr)s, addressee_name=%(an)s, addressee_mobile=%(am)s,
+                        goods_amount=%(ga)s, in_status=0, relation_type=0,
+                        out_bill_type_id=%(obt)s, exp_type_id=%(exp_type)s,
+                        add_user_id=%(add_uid)s, mobile=%(mobile)s
+                    WHERE id=%(id)s
+                    """,
+                    {**params, "id": order_pk},
+                ),
+            ):
+                try:
+                    execute(sql, p)
+                except Exception:
+                    pass
+    if not order_pk:
+        return False, "订单提交失败，请联系管理员!", None
+
+    for i, ch in enumerate(children):
+        child_no = f"{order_no}-{i + 1}"
+        goods_id = _pick(ch, "goods_id", "goodsId", default="")
+        goods_name = str(_pick(ch, "goods_name", "goodsName", default="")).strip()
+        goods_spec = str(_pick(ch, "goods_spec", "goodsSpec", default="")).strip()
+        goods_brand_id = _pick(ch, "goods_brand_id", "goodsBrandId", default="")
+        goods_brand_name = str(
+            _pick(ch, "goods_brand_name", "goodsBrandName", default="")
+        ).strip()
+        try:
+            goods_nums = float(_pick(ch, "goods_nums", "goodsNums", "count", default=1) or 1)
+        except (TypeError, ValueError):
+            goods_nums = 1.0
+        try:
+            goods_price = float(
+                _pick(ch, "goods_price", "goodsPrice", "price", default=0) or 0
+            )
+        except (TypeError, ValueError):
+            goods_price = 0.0
+        try:
+            reference_price = float(
+                _pick(ch, "reference_price", "referencePrice", default=goods_price) or 0
+            )
+        except (TypeError, ValueError):
+            reference_price = goods_price
+        project_id = _pick(ch, "experiment_project_id", "experimentProjectId", default="")
+        project_name = str(
+            _pick(ch, "experiment_project_name", "experimentProjectName", default="")
+        ).strip()
+        class_cid = _pick(ch, "experiment_class_id", "experimentClassId", default="")
+        class_cname = str(
+            _pick(ch, "experiment_class_name", "experimentClassName", default="")
+        ).strip()
+
+        # 商品字段反写
+        if goods_id and str(goods_id).isdigit():
+            g = fetch_one(
+                """
+                SELECT t.goods_name, t.goods_brand_id, b.name AS brand_name
+                FROM experiment_goods t
+                LEFT JOIN goodsbrand b ON t.goods_brand_id = b.id
+                WHERE t.id = %(id)s LIMIT 1
+                """,
+                {"id": int(goods_id)},
+            )
+            if g:
+                goods_name = str(g.get("goods_name") or goods_name)
+                if g.get("goods_brand_id") is not None:
+                    goods_brand_id = g["goods_brand_id"]
+                if g.get("brand_name"):
+                    goods_brand_name = str(g["brand_name"])
+
+        child_params = {
+            "oid": order_pk,
+            "cno": child_no[:80],
+            "gid": int(goods_id) if str(goods_id).isdigit() else None,
+            "gn": goods_name[:200],
+            "gs": goods_spec[:200],
+            "gbid": int(goods_brand_id) if str(goods_brand_id).isdigit() else None,
+            "gb": goods_brand_name[:100],
+            "nums": goods_nums,
+            "price": goods_price,
+            "ref": reference_price,
+            "epid": int(project_id) if str(project_id).isdigit() else None,
+            "epn": project_name[:200],
+            "ecid": int(class_cid) if str(class_cid).isdigit() else None,
+            "ecn": class_cname[:200],
+            "ct": int(currency_type) if str(currency_type).isdigit() else 1,
+        }
+        child_pk = None
+        try:
+            child_pk = execute_insert(
+                """
+                INSERT INTO experiment_order_child
+                    (addTime, deleteStatus, order_form_id, order_id,
+                     goods_id, goods_name, goods_spec, goods_brand_id, goods_brand_name,
+                     goods_nums, goods_price, reference_price,
+                     experiment_project_id, experiment_project_name,
+                     experiment_class_id, experiment_class_name,
+                     order_status, in_status, op_status, fcsq, is_meeting, currency_type)
+                VALUES
+                    (NOW(), 0, %(oid)s, %(cno)s,
+                     %(gid)s, %(gn)s, %(gs)s, %(gbid)s, %(gb)s,
+                     %(nums)s, %(price)s, %(ref)s,
+                     %(epid)s, %(epn)s, %(ecid)s, %(ecn)s,
+                     1, 0, 1, 0, 0, %(ct)s)
+                """,
+                child_params,
+            )
+        except Exception:
+            try:
+                child_pk = execute_insert(
+                    """
+                    INSERT INTO experiment_order_child
+                        (addTime, deleteStatus, order_form_id, order_id,
+                         goods_id, goods_name, goods_spec, goods_brand_name, goods_nums,
+                         price, reference_price, experiment_project_id, experiment_project_name,
+                         experiment_class_id, experiment_class_name,
+                         order_status, op_status, currency_type)
+                    VALUES
+                        (NOW(), 0, %(oid)s, %(cno)s,
+                         %(gid)s, %(gn)s, %(gs)s, %(gb)s, %(nums)s,
+                         %(price)s, %(ref)s, %(epid)s, %(epn)s,
+                         %(ecid)s, %(ecn)s,
+                         1, 1, %(ct)s)
+                    """,
+                    child_params,
+                )
+            except Exception:
+                child_pk = execute_insert(
+                    """
+                    INSERT INTO experiment_order_child
+                        (addTime, deleteStatus, order_form_id, order_id,
+                         goods_name, goods_nums, price, order_status, op_status)
+                    VALUES
+                        (NOW(), 0, %(oid)s, %(cno)s,
+                         %(gn)s, %(nums)s, %(price)s, 1, 1)
+                    """,
+                    child_params,
+                )
+        if child_pk:
+            try:
+                execute(
+                    """
+                    INSERT INTO experiment_order_child_log
+                        (addTime, deleteStatus, of_id, log_info, log_user_id)
+                    VALUES (NOW(), 0, %(oid)s, %(info)s, %(uid)s)
+                    """,
+                    {
+                        "oid": child_pk,
+                        "info": "创建子订单",
+                        "uid": add_uid or None,
+                    },
+                )
+            except Exception:
+                try:
+                    execute(
+                        """
+                        INSERT INTO experiment_order_child_log
+                            (addTime, deleteStatus, of_id, log_info)
+                        VALUES (NOW(), 0, %(oid)s, %(info)s)
+                        """,
+                        {"oid": child_pk, "info": "创建子订单"},
+                    )
+                except Exception:
+                    pass
+
+    _write_order_log(int(order_pk), "创建订单", user_id=add_uid or None)
+
+    aids = accessory_ids
+    if aids is None:
+        raw_acc = header.get("accessoryId") or header.get("accessoryIds") or header.get("orderdata")
+        if isinstance(raw_acc, (list, tuple)):
+            aids = list(raw_acc)
+        elif raw_acc not in (None, ""):
+            aids = str(raw_acc).split(",")
+        else:
+            aids = []
+    for aid in aids or []:
+        s = str(aid).strip()
+        if not s.isdigit():
+            continue
+        try:
+            execute(
+                """
+                UPDATE accessory
+                SET exp_of_id = %(oid)s, type = IFNULL(NULLIF(type, 0), 3)
+                WHERE id = %(aid)s AND IFNULL(deleteStatus, 0) = 0
+                """,
+                {"oid": order_pk, "aid": int(s)},
+            )
+        except Exception:
+            pass
+
+    return True, str(order_pk), int(order_pk)
+
+
 def list_export_orders(
     *,
     order_type: str | int,

@@ -462,15 +462,87 @@ def _todo_exp_pay(*, account_type: int, year: str, user_id: str | None = None) -
     )
 
 
+def _sale_amount_for_user(
+    *,
+    user_id: str | None,
+    account_type: int,
+    year: str,
+) -> float:
+    """对齐 Java selSaleAmountByCompanyId：statistic_user_sale_exp + statistic_user_sale。"""
+    params: dict[str, Any] = {"account_type": account_type}
+    year_sql = ""
+    user_sql = ""
+    if year:
+        params["stat_year"] = year[:4]
+        year_sql = " AND LEFT(`month`, 4) = %(stat_year)s"
+    if user_id:
+        params["user_id"] = user_id
+        user_sql = " AND CAST(user_id AS CHAR) = CAST(%(user_id)s AS CHAR)"
+
+    if not user_id:
+        return _sale_amount_admin(account_type=account_type, year=year)
+
+    exp = 0.0
+    sale = 0.0
+    try:
+        exp = float(
+            scalar(
+                f"""
+                SELECT IFNULL(SUM(sale_amount), 0)
+                FROM statistic_user_sale_exp
+                WHERE type = 0
+                  AND account_type = %(account_type)s
+                  {year_sql}
+                  {user_sql}
+                """,
+                params,
+            )
+            or 0
+        )
+    except Exception:
+        exp = 0.0
+    # Java：order_type 1→4、2→5 分别计入实验/分包；资金页实验总额 = 两段之和
+    try:
+        sale = float(
+            scalar(
+                f"""
+                SELECT IFNULL(SUM(sale_amount), 0)
+                FROM statistic_user_sale
+                WHERE account_type = %(account_type)s
+                  AND order_type IN (4, 5)
+                  {year_sql.replace('`month`', 'month') if year_sql else ''}
+                  {user_sql}
+                """,
+                params,
+            )
+            or 0
+        )
+    except Exception:
+        try:
+            sale = float(
+                scalar(
+                    f"""
+                    SELECT IFNULL(SUM(sale_amount), 0)
+                    FROM statistic_user_sale
+                    WHERE account_type = %(account_type)s
+                      AND order_type IN (4, 5)
+                      {(' AND LEFT(month, 4) = %(stat_year)s') if year else ''}
+                      {user_sql}
+                    """,
+                    params,
+                )
+                or 0
+            )
+        except Exception:
+            sale = 0.0
+    return round(exp + sale, 2)
+
+
 def exp_sum_by_year(*, year: str = "", user_id: str | None = None) -> dict[str, Any]:
     """对齐 Java selExpSumByYear.ajax（管理员视角：user_id 为空查全量）。"""
     uid = (user_id or "").strip() or None
-    if uid:
-        qnsyzermb = _sale_amount_admin(account_type=1, year=year)  # 有用户时仍按订单统计（简化）
-        qnsyzeus = _sale_amount_admin(account_type=2, year=year)
-    else:
-        qnsyzermb = _sale_amount_admin(account_type=1, year=year)
-        qnsyzeus = _sale_amount_admin(account_type=2, year=year)
+    qnsyzermb = _sale_amount_for_user(user_id=uid, account_type=1, year=year)
+    qnsyzeus = _sale_amount_for_user(user_id=uid, account_type=2, year=year)
     return {
         "qnsyzermb": qnsyzermb,
         "qnsyzeus": qnsyzeus,

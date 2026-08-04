@@ -417,7 +417,7 @@ function openDetail(row: Record<string, unknown>) {
 }
 
 function onCreate() {
-  ElMessage.info('创建实验订单功能将在后续批次完善')
+  router.push({ name: 'ExperimentOrderCreate' })
 }
 
 function onCopy(_row: Record<string, unknown>) {

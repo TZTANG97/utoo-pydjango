@@ -135,7 +135,7 @@
             </div>
             <div ref="personal6Ref" class="chart-box" v-loading="personal6Loading" />
             <p class="chart-total">
-              {{ personalYear6 }}全年实验总额：人民币 {{ formatMoney(personal6.qnxsrmb) }} |美元
+              全年实验总额：人民币 {{ formatMoney(personal6.qnxsrmb) }} |美元
               {{ formatMoney(personal6.qnxsus) }} | 实验的订单数量：人民币订单总数:{{ personal6.ddslrmb }}，美元订单总数:{{
                 personal6.ddslus
               }}
@@ -157,7 +157,7 @@
             </div>
             <div ref="personal8Ref" class="chart-box" v-loading="personal8Loading" />
             <p class="chart-total">
-              {{ personalYear8 }}全年实验分包总额：人民币 {{ formatMoney(personal8.qnxsrmb) }} |美元
+              全年实验分包总额：人民币 {{ formatMoney(personal8.qnxsrmb) }} |美元
               {{ formatMoney(personal8.qnxsus) }} | 实验分包的订单数量：人民币订单总数:{{ personal8.ddslrmb }}，美元订单总数:{{
                 personal8.ddslus
               }}
@@ -692,6 +692,8 @@ async function loadPersonal(kind: 6 | 8) {
       String(userStore.welcome?.userName || userStore.userName || '')
     await nextTick()
     renderPersonalDualBar(kind, months, rmb, usd, label)
+    await nextTick()
+    ensurePersonal(kind)?.resize()
   } finally {
     loadingRef.value = false
   }
@@ -740,6 +742,11 @@ async function loadPersonalPies() {
       (obj.overdueAryrmbsyfb as PieSlice[]) || [],
       (obj.overdueAryussyfb as PieSlice[]) || []
     )
+    await nextTick()
+    payExpChart?.resize()
+    recvExpChart?.resize()
+    paySubChart?.resize()
+    recvSubChart?.resize()
   } finally {
     personalPieLoading.value = false
   }

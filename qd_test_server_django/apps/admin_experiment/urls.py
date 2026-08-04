@@ -68,6 +68,8 @@ urlpatterns = [
     path("adminExperiment/order/confirmPay.ajax", views.order_confirm_pay),
     path("adminExperiment/order/generateAppointment.ajax", views.order_generate_appointment),
     path("adminExperiment/order/updateBasic.ajax", views.order_update_basic),
+    path("adminExperiment/order/submitExpOrder.ajax", views.order_submit_exp),
+    path("experimentOrder/submitExpOrder.ajax", views.order_submit_exp),
     path("adminExperiment/order/createSubOrder.ajax", views.order_create_sub),
     path("adminExperiment/order/confirmOrdered.ajax", views.order_confirm_ordered),
     path("adminExperiment/order/subPay.ajax", views.order_sub_pay),

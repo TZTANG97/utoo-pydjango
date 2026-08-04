@@ -39,7 +39,7 @@
           </el-input>
         </el-form-item>
         <el-form-item>
-          <el-checkbox v-model="remember">记住用户名</el-checkbox>
+          <el-checkbox v-model="remember">记住密码</el-checkbox>
         </el-form-item>
         <el-button
           type="primary"
@@ -63,7 +63,10 @@ import { ElMessage } from 'element-plus'
 import { Lock, User } from '@element-plus/icons-vue'
 import { useUserStore } from '@admin/stores/user'
 
-const REMEMBER_KEY = 'admin_login_name'
+/** Align with Java admin: remember username + password (localStorage, base64 password). */
+const REMEMBER_FLAG_KEY = 'admin_remember_password'
+const REMEMBER_NAME_KEY = 'admin_login_name'
+const REMEMBER_PWD_KEY = 'admin_login_pwd'
 
 const route = useRoute()
 const router = useRouter()
@@ -82,8 +85,48 @@ const rules: FormRules = {
   password: [{ required: true, message: '密码不能为空', trigger: 'blur' }],
 }
 
+function encodePwd(pwd: string): string {
+  return btoa(String.fromCharCode(...new TextEncoder().encode(pwd)))
+}
+
+function decodePwd(raw: string): string {
+  try {
+    const bytes = Uint8Array.from(atob(raw), (c) => c.charCodeAt(0))
+    return new TextDecoder().decode(bytes)
+  } catch {
+    return ''
+  }
+}
+
+function clearRemembered() {
+  localStorage.removeItem(REMEMBER_FLAG_KEY)
+  localStorage.removeItem(REMEMBER_NAME_KEY)
+  localStorage.removeItem(REMEMBER_PWD_KEY)
+}
+
+function loadRemembered() {
+  const name = localStorage.getItem(REMEMBER_NAME_KEY) || ''
+  const pwdRaw = localStorage.getItem(REMEMBER_PWD_KEY) || ''
+  const flagged = localStorage.getItem(REMEMBER_FLAG_KEY) === '1'
+  if (flagged || pwdRaw || name) {
+    remember.value = Boolean(flagged || pwdRaw || name)
+    form.loginName = name
+    form.password = pwdRaw ? decodePwd(pwdRaw) : ''
+  }
+}
+
+function saveRemembered() {
+  if (!remember.value) {
+    clearRemembered()
+    return
+  }
+  localStorage.setItem(REMEMBER_FLAG_KEY, '1')
+  localStorage.setItem(REMEMBER_NAME_KEY, form.loginName.trim())
+  localStorage.setItem(REMEMBER_PWD_KEY, encodePwd(form.password))
+}
+
 onMounted(() => {
-  form.loginName = localStorage.getItem(REMEMBER_KEY) || ''
+  loadRemembered()
 })
 
 async function handleLogin() {
@@ -93,11 +136,7 @@ async function handleLogin() {
   loading.value = true
   try {
     await userStore.login(form.loginName.trim(), form.password)
-    if (remember.value) {
-      localStorage.setItem(REMEMBER_KEY, form.loginName.trim())
-    } else {
-      localStorage.removeItem(REMEMBER_KEY)
-    }
+    saveRemembered()
     ElMessage.success('登录成功')
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/admin/dashboard'
     await router.replace(redirect || '/admin/dashboard')

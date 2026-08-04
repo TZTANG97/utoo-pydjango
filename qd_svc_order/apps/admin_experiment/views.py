@@ -1297,6 +1297,47 @@ def order_update_basic(request: Request, user=None):
 @authentication_classes([])
 @permission_classes([AllowAny])
 @admin_ajax_view()
+def order_submit_exp(request: Request, user=None):
+    """对齐 Java experimentOrder/submitExpOrder.ajax：body 为 [主单, ...明细行]。"""
+    raw = request.data
+    items: list = []
+    if isinstance(raw, list):
+        items = raw
+    else:
+        data = merge_payload(request)
+        payload = data.get("list") or data.get("data") or data.get("orders")
+        if isinstance(payload, list):
+            items = payload
+        elif isinstance(payload, str):
+            import json
+
+            try:
+                parsed = json.loads(payload)
+                if isinstance(parsed, list):
+                    items = parsed
+            except Exception:
+                items = []
+    if not items:
+        return fail("提交订单失败,订单没有数据，请确认!")
+    header = items[0] if isinstance(items[0], dict) else {}
+    children = [x for x in items[1:] if isinstance(x, dict)]
+    accessory_ids = header.get("accessoryId") or header.get("accessoryIds")
+    ok_flag, msg, new_id = order_repo.create_exp_order(
+        header=header,
+        children=children,
+        user_id=_staff_id(user),
+        accessory_ids=accessory_ids if isinstance(accessory_ids, list) else None,
+    )
+    if not ok_flag:
+        return fail(msg)
+    # 对齐 Java：resMsg 为新订单数字 id
+    return ok(obj=new_id, res_msg=str(new_id))
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
 def order_create_sub(request: Request, user=None):
     data = merge_payload(request)
     pid = to_int(data.get("saleOrderId") or data.get("parentId") or data.get("id"))

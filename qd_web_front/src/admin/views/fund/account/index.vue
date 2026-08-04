@@ -1,5 +1,53 @@
 <template>
   <admin-page-card title="资金账户">
+    <!-- 非管理员：账户统计三卡（对齐 Java asset_account.html userType==2） -->
+    <div v-if="showAccountCards" v-loading="summaryLoading" class="asset-cards">
+      <div class="asset-card">
+        <div class="asset-card__tip">
+          <div class="asset-icon asset-icon--stat">¥</div>
+          <div class="asset-card__name">账户统计</div>
+        </div>
+        <div class="asset-card__body">
+          <div>
+            实际可用总资产（人民币）：<b class="av">￥{{ money(summary.totala) }}</b>
+          </div>
+          <div>投资冻结总额（人民币）：<b>￥{{ money(summary.totalf) }}</b></div>
+          <div v-if="showRateFields">
+            人民币利息可用总额：<b class="ye">￥{{ money(summary.rmbi) }}</b>
+          </div>
+          <div>美金利息可用总额：<b>$ {{ money(summary.usi) }}</b></div>
+        </div>
+      </div>
+      <div class="asset-card">
+        <div class="asset-card__tip">
+          <div class="asset-icon asset-icon--cny">￥</div>
+          <div class="asset-card__name">人民币账户</div>
+        </div>
+        <div class="asset-card__body">
+          <div>可用余额：<b class="av">￥{{ money(summary.rmbAvailable) }}</b></div>
+          <div>冻结金额：<b>￥{{ money(summary.rmbFreezing) }}</b></div>
+          <template v-if="showRateFields">
+            <div>昨日收益：<b class="ye">￥{{ money(summary.rmbYesterday) }}</b></div>
+            <div>年化利率：<b>{{ summary.rmbRate }}%</b></div>
+          </template>
+        </div>
+      </div>
+      <div class="asset-card">
+        <div class="asset-card__tip">
+          <div class="asset-icon asset-icon--usd">$</div>
+          <div class="asset-card__name">美元账户</div>
+        </div>
+        <div class="asset-card__body">
+          <div>可用余额：<b class="av">${{ money(summary.usdAvailable) }}</b></div>
+          <div>冻结金额：<b>${{ money(summary.usdFreezing) }}</b></div>
+          <template v-if="showRateFields">
+            <div>昨日收益：<b class="ye">${{ money(summary.usdYesterday) }}</b></div>
+            <div>年化利率：<b>{{ summary.usRate }}%</b></div>
+          </template>
+        </div>
+      </div>
+    </div>
+
     <div class="top-row">
       <div class="exp-panel">
         <div class="exp-head">
@@ -11,25 +59,33 @@
         </div>
         <div v-loading="expLoading" class="exp-body">
           <div class="exp-link" @click="goExpJump('total')">
-            实验总额：￥{{ money(exp.qnsyzermb) }} / ${{ money(exp.qnsyzeus) }}
+            实验总额：￥{{ money(exp.qnsyzermb) }} & ${{ money(exp.qnsyzeus) }}
           </div>
           <div class="exp-link" @click="goExpJump('income')">
-            实验回款总收益：￥{{ money(exp.rmbSyhkzsy) }} / ${{ money(exp.usSyhkzsy) }}
+            实验回款总收益：￥{{ money(exp.rmbSyhkzsy) }} & ${{ money(exp.usSyhkzsy) }}
           </div>
           <div class="exp-split" />
           <div class="exp-link" @click="goExpJump('receivable')">
-            实验应收款总额：￥{{ money(exp.rmbSyyskze) }} / ${{ money(exp.usSyyskze) }}
+            实验应收款总额：￥{{ money(exp.rmbSyyskze) }} & ${{ money(exp.usSyyskze) }}
           </div>
           <div class="exp-link" @click="goExpJump('subPay')">
-            实验分包应付款总额：￥{{ money(exp.rmbSyfbyfkze) }} / ${{ money(exp.usSyfbyfkze) }}
+            实验分包应付款总额：￥{{ money(exp.rmbSyfbyfkze) }} & ${{ money(exp.usSyfbyfkze) }}
           </div>
         </div>
       </div>
       <div class="action-panel">
-        <el-button type="success" @click="openApply('recharge')">充值申请</el-button>
-        <el-button type="warning" @click="openApply('withdraw')">提现申请</el-button>
-        <el-button type="success" plain @click="openApply('transfer')">转账申请</el-button>
-        <el-button type="warning" plain @click="openApply('loan')">借贷款申请</el-button>
+        <button type="button" class="asset-btn asset-btn--teal" @click="openApply('recharge')">
+          充值申请
+        </button>
+        <button type="button" class="asset-btn asset-btn--orange" @click="openApply('withdraw')">
+          提现申请
+        </button>
+        <button type="button" class="asset-btn asset-btn--teal" @click="openApply('transfer')">
+          转账申请
+        </button>
+        <button type="button" class="asset-btn asset-btn--orange" @click="openApply('loan')">
+          借贷款申请
+        </button>
       </div>
     </div>
 
@@ -167,10 +223,13 @@ import AdminPageCard from '@admin/components/AdminPageCard.vue'
 import {
   cancelAccountApply,
   fetchAccountLogList,
+  fetchAssetAccountSummary,
+  fetchAssetOverview,
   fetchExpSumByYear,
   fetchFundUsers,
   fetchFundYears,
   fetchUserAvailableBalance,
+  fetchYesterdayIncome,
   submitAccountApply,
   submitLoanApply,
   submitTransferApply,
@@ -187,12 +246,37 @@ const userStore = useUserStore()
 const years = ref<number[]>([])
 const statYear = ref('')
 const expLoading = ref(false)
+const summaryLoading = ref(false)
 const exp = reactive<Record<string, unknown>>({})
 const filters = reactive({
   accType: '',
   order_id: '',
   accountType: '1',
 })
+
+/** Java：非 ADMIN 才展示顶部账户三卡 */
+const isAdminUser = computed(() => {
+  const t = Number(userStore.welcome?.userType ?? userStore.userType ?? 0)
+  return t === 1
+})
+const showAccountCards = computed(() => !isAdminUser.value)
+
+const summary = reactive({
+  totala: 0,
+  totalf: 0,
+  rmbi: 0,
+  usi: 0,
+  rmbAvailable: 0,
+  rmbFreezing: 0,
+  usdAvailable: 0,
+  usdFreezing: 0,
+  rmbYesterday: 0,
+  usdYesterday: 0,
+  rmbRate: 0,
+  usRate: 0,
+  isRate: 0,
+})
+const showRateFields = computed(() => Number(summary.isRate) === 1)
 
 const applyVisible = ref(false)
 const saving = ref(false)
@@ -221,13 +305,30 @@ const applyTitle = computed(() => {
   return map[applyKind.value]
 })
 
+function currentUserId() {
+  const profile = (userStore.profile || {}) as Record<string, unknown>
+  return String(
+    profile.id ||
+      profile.userId ||
+      userStore.welcome?.userId ||
+      userStore.userId ||
+      ''
+  )
+}
+
 function listParams() {
-  return {
+  const p: Record<string, unknown> = {
     accType: filters.accType,
     order_id: filters.order_id,
     accountType: filters.accountType,
     excludeZero: 1,
   }
+  // 非管理员只看本人流水（对齐 Java asset_account d.userId）
+  if (!isAdminUser.value) {
+    const uid = currentUserId()
+    if (uid) p.userId = uid
+  }
+  return p
 }
 
 const { loading, rows, total, pagination, load } = useDataTable((params) =>
@@ -287,26 +388,80 @@ function reload() {
   return load(listParams())
 }
 
-/** 对齐小程序 digitalOperationsCenter → experimentEdOrAble 的 type 映射 */
+async function loadAccountSummary() {
+  if (!showAccountCards.value) return
+  summaryLoading.value = true
+  try {
+    const uid = currentUserId()
+    const [sumRes, balRes, yesRes] = await Promise.all([
+      fetchAssetAccountSummary(uid ? { userId: uid } : {}),
+      fetchAssetOverview(uid ? { userId: uid } : {}),
+      fetchYesterdayIncome(uid ? { userId: uid } : {}),
+    ])
+    if (isAjaxOk(sumRes) && sumRes.obj) {
+      const obj = sumRes.obj as Record<string, unknown>
+      summary.totala = Number(obj.totala || 0)
+      summary.totalf = Number(obj.totalf || 0)
+      summary.rmbi = Number(obj.rmbi || 0)
+      summary.usi = Number(obj.usi || 0)
+      const sy = (obj.syUsers || {}) as Record<string, unknown>
+      summary.isRate = Number(sy.is_rate ?? sy.isRate ?? 0)
+      const setting = (obj.setting || {}) as Record<string, unknown>
+      summary.rmbRate = Number(setting.rmbRate || 0)
+      summary.usRate = Number(setting.usRate || 0)
+    }
+    if (isAjaxOk(balRes) && balRes.obj) {
+      const obj = balRes.obj as Record<string, unknown>
+      summary.rmbAvailable = Number(obj.rmbAvailable || 0)
+      summary.rmbFreezing = Number(obj.rmbFreezing || 0)
+      summary.usdAvailable = Number(obj.usdAvailable || 0)
+      summary.usdFreezing = Number(obj.usdFreezing || 0)
+      const accounts = Array.isArray(obj.accounts) ? (obj.accounts as Record<string, unknown>[]) : []
+      for (const a of accounts) {
+        const t = Number(a.accountType || a.account_type || 0)
+        if (t === 1) {
+          summary.rmbAvailable = Number(
+            a.availableBalance ?? a.available_balance ?? summary.rmbAvailable
+          )
+          summary.rmbFreezing = Number(
+            a.freezingBalance ?? a.freezing_balance ?? summary.rmbFreezing
+          )
+        } else if (t === 2) {
+          summary.usdAvailable = Number(
+            a.availableBalance ?? a.available_balance ?? summary.usdAvailable
+          )
+          summary.usdFreezing = Number(
+            a.freezingBalance ?? a.freezing_balance ?? summary.usdFreezing
+          )
+        }
+      }
+    }
+    if (isAjaxOk(yesRes) && yesRes.obj) {
+      const obj = yesRes.obj as Record<string, unknown>
+      summary.rmbYesterday = Number(obj.rmbzrsy || 0)
+      summary.usdYesterday = Number(obj.uszrsy || 0)
+    }
+  } finally {
+    summaryLoading.value = false
+  }
+}
+
 function goExpJump(kind: ExpJump) {
   const year = String(statYear.value || '').trim()
   const yearQuery = year ? { year } : {}
 
   if (kind === 'income') {
-    // 实验回款总收益 → 本页「实验回款」流水（accType=13）
     filters.accType = '13'
     reload()
     return
   }
   if (kind === 'total' || kind === 'receivable') {
-    // type=10 个人实验总额 / type=7 个人实验应收 → 实验订单列表
     router.push({
       name: 'ExperimentOrders',
       query: { ...yearQuery, from: 'fund-account', fundJump: kind },
     })
     return
   }
-  // type=8 个人实验分包应付款 → 实验分包订单
   router.push({
     name: 'ExperimentSubcontractOrders',
     query: { ...yearQuery, from: 'fund-account', fundJump: kind },
@@ -317,7 +472,6 @@ function relatedOrderText(row: Record<string, unknown>) {
   return String(row.czNum || row.orderNum || '').trim()
 }
 
-/** 对齐小程序：accType=13 用 orderId 进订单详情，否则有关联单号也尝试进详情/列表 */
 function openRelatedOrder(row: Record<string, unknown>) {
   const orderNo = relatedOrderText(row)
   if (!orderNo) return
@@ -342,18 +496,18 @@ function openRelatedOrder(row: Record<string, unknown>) {
 async function loadExpSum() {
   expLoading.value = true
   try {
-    const res = await fetchExpSumByYear({ statistics_time: statYear.value })
+    const p: Record<string, unknown> = { statistics_time: statYear.value }
+    if (!isAdminUser.value) {
+      const uid = currentUserId()
+      if (uid) p.userId = uid
+    }
+    const res = await fetchExpSumByYear(p)
     if (isAjaxOk(res) && res.obj) {
       Object.assign(exp, res.obj as Record<string, unknown>)
     }
   } finally {
     expLoading.value = false
   }
-}
-
-function currentUserId() {
-  const profile = (userStore.profile || {}) as Record<string, unknown>
-  return String(profile.id || profile.userId || '')
 }
 
 function userOptionLabel(u: Record<string, unknown>) {
@@ -411,7 +565,6 @@ async function openApply(kind: ApplyKind) {
   applyVisible.value = true
   if (kind === 'recharge') {
     await searchUsers('')
-    // 确保当前用户在选项里
     if (uid && !userOptions.value.some((u) => String(u.id) === uid)) {
       const profile = (userStore.profile || {}) as Record<string, unknown>
       userOptions.value = [
@@ -467,7 +620,7 @@ async function submitApply() {
     if (isAjaxOk(res)) {
       ElMessage.success('提交成功')
       applyVisible.value = false
-      await reload()
+      await Promise.all([reload(), loadAccountSummary()])
     } else {
       ElMessage.error(ajaxErrorMessage(res, '提交失败'))
     }
@@ -477,54 +630,114 @@ async function submitApply() {
 }
 
 async function handleCancel(row: Record<string, unknown>) {
-  await ElMessageBox.confirm('确认取消该申请？', '提示', { type: 'warning' })
-  const res = await cancelAccountApply(String(row.id))
+  try {
+    await ElMessageBox.confirm('确定取消该申请？', '提示', { type: 'warning' })
+  } catch {
+    return
+  }
+  const res = await cancelAccountApply(row.id as string | number)
   if (isAjaxOk(res)) {
-    ElMessage.success('取消成功')
-    await reload()
+    ElMessage.success('已取消')
+    await Promise.all([reload(), loadAccountSummary()])
   } else {
     ElMessage.error(ajaxErrorMessage(res, '取消失败'))
   }
 }
 
 onMounted(async () => {
-  const yearRes = await fetchFundYears()
-  if (isAjaxOk(yearRes) && Array.isArray(yearRes.obj)) {
-    years.value = yearRes.obj as number[]
+  const yRes = await fetchFundYears()
+  if (isAjaxOk(yRes) && Array.isArray(yRes.obj)) {
+    years.value = (yRes.obj as unknown[]).map((y) => Number(y)).filter((y) => y > 0)
   }
-  await loadExpSum()
-  await reload()
+  await Promise.all([loadAccountSummary(), loadExpSum(), reload()])
 })
 </script>
 
-<style scoped lang="scss">
+<style scoped>
+.asset-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.asset-card {
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+  padding: 14px 16px;
+  min-height: 160px;
+}
+.asset-card__tip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.asset-card__name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+}
+.asset-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 18px;
+}
+.asset-icon--stat,
+.asset-icon--cny {
+  background: #e74c3c;
+}
+.asset-icon--usd {
+  background: #2c3e50;
+}
+.asset-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.5;
+}
+.asset-card__body .av {
+  color: #e74c3c;
+}
+.asset-card__body .ye {
+  color: #e6a23c;
+}
 .top-row {
   display: flex;
   gap: 16px;
   margin-bottom: 16px;
-  flex-wrap: wrap;
+  align-items: stretch;
 }
 .exp-panel {
   flex: 1;
-  min-width: 420px;
+  background: #fff;
   border: 1px solid #ebeef5;
   border-radius: 6px;
   padding: 14px 16px;
-  background: #fff;
+  min-height: 180px;
 }
 .exp-head {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
   margin-bottom: 12px;
 }
 .exp-title {
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 700;
 }
 .exp-body {
-  line-height: 1.9;
-  color: #303133;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .exp-link {
   color: #f39800;
@@ -544,6 +757,23 @@ onMounted(async () => {
   flex-direction: column;
   gap: 10px;
   justify-content: center;
+}
+.asset-btn {
+  height: 40px;
+  border: 0;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+.asset-btn--teal {
+  background: #26a69a;
+}
+.asset-btn--orange {
+  background: #ef6c00;
+}
+.asset-btn:hover {
+  opacity: 0.92;
 }
 .nav-row {
   display: flex;
@@ -568,5 +798,10 @@ onMounted(async () => {
 .balance-text {
   color: #303133;
   font-weight: 600;
+}
+@media (max-width: 1100px) {
+  .asset-cards {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

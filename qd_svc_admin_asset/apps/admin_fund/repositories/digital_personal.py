@@ -1,4 +1,4 @@
-"""数字化中心 — 非管理员个人看板。对齐 Java selUserAmountByYearsygr / syfbgr。"""
+"""数字化中心 — 非管理员个人看板。对齐 Java selUserAmountByYearsygr / syfbgr / manage_center #else。"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -27,24 +27,50 @@ def _helper_user_ids(user_id: str) -> list[str]:
     return ids
 
 
-def _months_for_year(year: str, user_ids: list[str], order_type: int) -> list[str]:
+def _utoo_type(user_id: str) -> str:
+    if not user_id:
+        return ""
+    try:
+        row = fetch_one(
+            """
+            SELECT utoo_type AS utooType
+            FROM sy_users
+            WHERE CAST(id AS CHAR) = CAST(%(uid)s AS CHAR)
+            LIMIT 1
+            """,
+            {"uid": user_id},
+        )
+        return str((row or {}).get("utooType") or "").strip()
+    except Exception:
+        return ""
+
+
+def _is_sale_manager(user_id: str) -> bool:
+    """对齐 Java UserTypes.SALE_MANAGER.getName() == \"销售主管\"。"""
+    return _utoo_type(user_id) == "销售主管"
+
+
+def _months_for_year(year: str, user_ids: list[str], order_type: int, *, table: str) -> list[str]:
     """对齐 selAllDate：优先取统计表有数据的月份；无数据则补全当年 12 月。"""
     placeholders = ", ".join(f"%(u{i})s" for i in range(len(user_ids)))
     params: dict[str, Any] = {f"u{i}": u for i, u in enumerate(user_ids)}
     params["year"] = year
     params["ot"] = order_type
-    rows = fetch_all(
-        f"""
-        SELECT DISTINCT `month` AS m
-        FROM statistic_user_sale_exp
-        WHERE type = 0
-          AND CAST(user_id AS CHAR) IN ({placeholders})
-          AND LEFT(`month`, 4) = %(year)s
-          AND order_type = %(ot)s
-        ORDER BY `month`
-        """,
-        params,
-    )
+    try:
+        rows = fetch_all(
+            f"""
+            SELECT DISTINCT `month` AS m
+            FROM {table}
+            WHERE type = 0
+              AND CAST(user_id AS CHAR) IN ({placeholders})
+              AND LEFT(`month`, 4) = %(year)s
+              AND order_type = %(ot)s
+            ORDER BY `month`
+            """,
+            params,
+        )
+    except Exception:
+        rows = []
     months = [str(r.get("m") or "") for r in rows if r.get("m")]
     if months:
         return months
@@ -66,8 +92,10 @@ def _sel_user_amount_by_year(
     kind: str,
 ) -> dict[str, Any]:
     """
-    order_type: 1=实验 2=实验分包（statistic_user_sale_exp）
+    order_type: 1=实验 2=实验分包（statistic_user_sale_exp / _sm）
     kind: 'exp' | 'expSub' 决定返回字段后缀
+    销售主管：读 statistic_user_sale_exp_sm（单用户，对齐 Java）。
+    其他：读 statistic_user_sale_exp（含协助者）。
     """
     y = str(year or "").strip() or str(datetime.now().year)
     empty_months = [f"{y}-{m:02d}" for m in range(1, 13)]
@@ -86,37 +114,40 @@ def _sel_user_amount_by_year(
     if not user_id:
         return empty
 
-    # 表不存在时降级为空，避免整页报错
+    use_sm = _is_sale_manager(user_id)
+    table = "statistic_user_sale_exp_sm" if use_sm else "statistic_user_sale_exp"
     try:
-        if not fetch_one("SELECT 1 AS ok FROM statistic_user_sale_exp LIMIT 1"):
-            pass
+        fetch_one(f"SELECT 1 AS ok FROM {table} LIMIT 1")
     except Exception:
         return empty
 
-    uids = _helper_user_ids(user_id)
-    months = _months_for_year(y, uids, order_type)
+    uids = [str(user_id)] if use_sm else _helper_user_ids(user_id)
+    months = _months_for_year(y, uids, order_type, table=table)
     placeholders = ", ".join(f"%(u{i})s" for i in range(len(uids)))
     params: dict[str, Any] = {f"u{i}": u for i, u in enumerate(uids)}
     params["year"] = y
     params["ot"] = order_type
 
-    rows = fetch_all(
-        f"""
-        SELECT
-            SUM(IFNULL(sale_amount, 0)) AS sumtotal,
-            SUM(IFNULL(order_count, 0)) AS sumordercount,
-            account_type,
-            `month` AS m
-        FROM statistic_user_sale_exp
-        WHERE type = 0
-          AND CAST(user_id AS CHAR) IN ({placeholders})
-          AND LEFT(`month`, 4) = %(year)s
-          AND order_type = %(ot)s
-        GROUP BY account_type, `month`
-        ORDER BY `month`
-        """,
-        params,
-    )
+    try:
+        rows = fetch_all(
+            f"""
+            SELECT
+                SUM(IFNULL(sale_amount, 0)) AS sumtotal,
+                SUM(IFNULL(order_count, 0)) AS sumordercount,
+                account_type,
+                `month` AS m
+            FROM {table}
+            WHERE type = 0
+              AND CAST(user_id AS CHAR) IN ({placeholders})
+              AND LEFT(`month`, 4) = %(year)s
+              AND order_type = %(ot)s
+            GROUP BY account_type, `month`
+            ORDER BY `month`
+            """,
+            params,
+        )
+    except Exception:
+        return empty
 
     rmb_map = {m: Decimal("0") for m in months}
     usd_map = {m: Decimal("0") for m in months}
@@ -125,7 +156,6 @@ def _sel_user_amount_by_year(
     for r in rows:
         m = str(r.get("m") or "")
         if m not in rmb_map:
-            # 统计行月份不在 selAllDate 列表时仍并入
             rmb_map[m] = Decimal("0")
             usd_map[m] = Decimal("0")
             months.append(m)
@@ -175,22 +205,10 @@ def sel_user_amount_by_year_syfbgr(*, user_id: str, year: str = "") -> dict[str,
 
 
 def _has_dept(user_id: str) -> bool:
-    """对齐 Java finddeptnamebyuserID / 公司基金角色：deptType=1。"""
+    """对齐 Java finddeptnamebyuserID：有挂接所属公司账号则为公司基金看板。"""
     if not user_id:
         return False
     try:
-        role_row = fetch_one(
-            """
-            SELECT utoo_type AS utooType
-            FROM sy_users
-            WHERE CAST(id AS CHAR) = CAST(%(uid)s AS CHAR)
-            LIMIT 1
-            """,
-            {"uid": user_id},
-        )
-        role = str((role_row or {}).get("utooType") or "")
-        if "公司基金" in role or "公司账号" in role or role == "公司":
-            return True
         row = fetch_one(
             """
             SELECT r.id
@@ -218,7 +236,7 @@ def _pie_slice(name: str, total: float, company_id: Any = 0) -> dict[str, Any]:
 
 
 def _split_receive_by_currency(rows: list[dict[str, Any]]) -> tuple[list[dict], list[dict], float, float]:
-    """按币种拆分应收行，同公司累加。"""
+    """按币种拆分应收/应付行，同公司累加。"""
     rmb: dict[Any, dict[str, Any]] = {}
     usd: dict[Any, dict[str, Any]] = {}
     sum_rmb = Decimal("0")
@@ -254,8 +272,9 @@ def _sel_receive_user(
     user_id: str,
     order_type: int,
     type_filter: int | None,
+    table: str = "statistic_company_overdue_receive_utoo",
 ) -> list[dict[str, Any]]:
-    """对齐 Java companyOverdueReceiveService.selAllListUser。"""
+    """对齐 Java companyOverdueReceive(Sm)Service.selAllListUser。"""
     params: dict[str, Any] = {"uid": user_id, "ot": order_type}
     type_sql = ""
     if type_filter is not None:
@@ -269,7 +288,7 @@ def _sel_receive_user(
                 IFNULL(NULLIF(TRIM(u.name), ''), CONCAT('公司#', t.company_id)) AS company_name,
                 t.currency_type AS currency_type,
                 t.company_id AS company_id
-            FROM statistic_company_overdue_receive_utoo t
+            FROM {table} t
             LEFT JOIN qd_user_company u ON t.company_id = u.id
             WHERE CAST(t.user_id AS CHAR) = CAST(%(uid)s AS CHAR)
               AND t.order_type = %(ot)s
@@ -281,17 +300,22 @@ def _sel_receive_user(
         return []
 
 
-def _sel_pay_user(*, user_id: str, order_type: int) -> list[dict[str, Any]]:
-    """对齐 Java companyOverduePayService.selAllListByParm → selAllList。"""
+def _sel_pay_user(
+    *,
+    user_id: str,
+    order_type: int,
+    table: str = "statistic_company_overdue_pay",
+) -> list[dict[str, Any]]:
+    """对齐 Java companyOverduePay(Sm)Service.selAllListByParm → selAllList。"""
     try:
         return fetch_all(
-            """
+            f"""
             SELECT
                 IFNULL(t.total_amount, 0) AS total_amount,
                 IFNULL(NULLIF(TRIM(u.name), ''), CONCAT('公司#', t.company_id)) AS company_name,
                 t.currency_type AS currency_type,
                 t.company_id AS company_id
-            FROM statistic_company_overdue_pay t
+            FROM {table} t
             LEFT JOIN qd_user_company u ON t.company_id = u.id
             WHERE CAST(t.user_id AS CHAR) = CAST(%(uid)s AS CHAR)
               AND t.order_type = %(ot)s
@@ -306,7 +330,8 @@ def sel_user_overdue_pies(*, user_id: str) -> dict[str, Any]:
     """个人应收/应付饼图数据（对齐 Java manage_center #else SSR）。
 
     deptType=1（公司账号）：应收 order_type 6/8 + type=2；分包应付 order_type=9。
-    否则：应收 12/13；分包应付 8。
+    销售主管：应收/应付走 *_sm 表（应收 12/13，分包应付 8）。
+    否则：应收 12/13；分包应付 8（非 sm 表）。
     个人实验应付款：Java 固定为 0。
     """
     empty = {
@@ -331,12 +356,33 @@ def sel_user_overdue_pies(*, user_id: str) -> dict[str, Any]:
     if not user_id:
         return empty
 
-    is_dept = _has_dept(user_id)
+    is_sm = _is_sale_manager(user_id)
+    # 销售主管优先走 Sm 表，避免误判为公司基金后读错 order_type
+    is_dept = (not is_sm) and _has_dept(user_id)
     if is_dept:
         recv_exp = _sel_receive_user(user_id=user_id, order_type=6, type_filter=2)
         recv_sub = _sel_receive_user(user_id=user_id, order_type=8, type_filter=2)
         pay_sub = _sel_pay_user(user_id=user_id, order_type=9)
         dept_type = "1"
+    elif is_sm:
+        recv_exp = _sel_receive_user(
+            user_id=user_id,
+            order_type=12,
+            type_filter=None,
+            table="statistic_company_overdue_receive_utoo_sm",
+        )
+        recv_sub = _sel_receive_user(
+            user_id=user_id,
+            order_type=13,
+            type_filter=None,
+            table="statistic_company_overdue_receive_utoo_sm",
+        )
+        pay_sub = _sel_pay_user(
+            user_id=user_id,
+            order_type=8,
+            table="statistic_company_overdue_pay_sm",
+        )
+        dept_type = "0"
     else:
         recv_exp = _sel_receive_user(user_id=user_id, order_type=12, type_filter=None)
         recv_sub = _sel_receive_user(user_id=user_id, order_type=13, type_filter=None)

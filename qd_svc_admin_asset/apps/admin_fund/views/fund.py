@@ -218,12 +218,25 @@ def exp_sum_by_year(request: Request, user=None):
         year = year[:-1]
     uid = str(data.get("uid") or data.get("userId") or data.get("user_id") or "").strip()
     if not uid and user:
-        # 非管理员可传入自身；管理员空即全量
-        utoo_type = str(getattr(user, "utoo_type", "") or getattr(user, "utooType", "") or "")
-        if utoo_type.upper() not in ("ADMIN", "1") and "管理员" not in str(
-            getattr(user, "type", "") or ""
-        ):
-            uid = str(getattr(user, "id", "") or "")
+        # 非管理员默认本人；管理员空即全量（对齐 Java）
+        if isinstance(user, dict):
+            utoo_type = str(user.get("utoo_type") or user.get("utooType") or "")
+            type_name = str(user.get("type") or user.get("typeName") or "")
+            user_type = str(user.get("userType") or user.get("user_type") or "")
+            is_admin = (
+                user_type == "1"
+                or utoo_type.upper() in ("ADMIN", "1")
+                or "管理员" in utoo_type
+                or "管理员" in type_name
+            )
+            if not is_admin:
+                uid = str(user.get("user_id") or user.get("id") or "").strip()
+        else:
+            utoo_type = str(getattr(user, "utoo_type", "") or getattr(user, "utooType", "") or "")
+            if utoo_type.upper() not in ("ADMIN", "1") and "管理员" not in str(
+                getattr(user, "type", "") or ""
+            ):
+                uid = str(getattr(user, "id", "") or getattr(user, "user_id", "") or "")
     return Response(ajax_ok(obj=account_repo.exp_sum_by_year(year=year, user_id=uid or None)))
 
 
@@ -707,7 +720,6 @@ def digital_overview(request: Request, user=None):
 
         year = str(datetime.now().year)
     return Response(ajax_ok(obj=digital_repo.overview(year)))
-
 
 @api_view(["GET", "POST"])
 @authentication_classes([])
