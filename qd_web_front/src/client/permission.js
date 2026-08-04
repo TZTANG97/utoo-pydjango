@@ -77,8 +77,13 @@ export function setupClientPermission(router) {
 
       if (onWhiteList) {
         loadProfile().then(async (res) => {
-          if (res && !res.res) {
-            console.warn('[permission] getInfo business error', res.resMsg)
+          // 业务失败，或 401 已被拦截器清掉 cookie：同步清掉本地登录态
+          const authGone = !res && !getToken()
+          if ((res && res.res === false) || authGone) {
+            if (res && !res.res) {
+              console.warn('[permission] getInfo business error', res.resMsg)
+            }
+            await store.dispatch('user/resetToken').catch(() => {})
           }
         })
         next()

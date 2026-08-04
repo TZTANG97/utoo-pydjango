@@ -67,7 +67,11 @@ class ExpJWTAuthentication(BaseAuthentication):
             token = (request.query_params.get("access_token") or "").strip()
         if not token:
             return None
-        return (TokenUser(decode_access_token(token)), token)
+        # 失效/过期令牌按未登录处理，避免公开页（AllowAny）因本地残留 cookie 直接 403
+        try:
+            return (TokenUser(decode_access_token(token)), token)
+        except AuthenticationFailed:
+            return None
 
 
 def user_from_request_user(user) -> dict | None:

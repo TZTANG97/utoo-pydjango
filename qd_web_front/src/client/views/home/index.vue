@@ -27,9 +27,7 @@ export default {
   },
   mounted() {
     this.app = document.querySelector('#app');
-    if (getToken() && !this.name) {
-      this.$store.dispatch("user/getInfo").catch(() => {});
-    }
+    // 用户信息由 permission.js 统一拉取，避免与路由守卫重复调用 /auth/me
     let menuIdx = localStorage.getItem("menuIdx");
     if (!menuIdx) {
       localStorage.setItem("menuIdx", 1);

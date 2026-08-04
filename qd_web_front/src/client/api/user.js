@@ -14,10 +14,12 @@ export function loginApi(params) {
 }
 
 // 获取用户信息（认证数据）
+// silentError：失效令牌时由路由守卫处理，避免与其它接口 401 叠出重复提示
 export function getInfo() {
   return request({
     url: '/auth/me',
     method: 'get',
+    silentError: true,
   })
 }
 
