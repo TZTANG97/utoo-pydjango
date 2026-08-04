@@ -5,16 +5,13 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from apps.admin_auth.repositories import staff as staff_repo
+from apps.admin_digital.repositories import stats as stats_repo
 from apps.admin_fund.repositories import account as account_repo
 from apps.core.db_utils import fetch_all, scalar
 
 
 def _resolve_welcome_user_type(utoo_type: str | None) -> int:
-    """对齐 Java IndexViewController.indexHtml（welcome.htm）的 userType。
-
-    1 系统管理员 / 2 公司基金·公司账号 / 3 销售主管 / 4 销售人员·测试人员
-    / 5 制单 / 6 外部投资 / 7 仓库 / 14 H类 / 0 其它（含测试主管）
-    """
+    """对齐 Java IndexViewController.indexHtml（welcome.htm）的 userType。"""
     role = (utoo_type or "").strip()
     if not role:
         return 0
@@ -25,7 +22,6 @@ def _resolve_welcome_user_type(utoo_type: str | None) -> int:
         return 2
     if "销售主管" in role:
         return 3
-    # Java HTML：测试人员与销售人员同属 userType=4（图表靠 userType2 区分）
     if role == "测试人员" or "测试人员" in role:
         return 4
     if "制单" in role:
@@ -38,28 +34,23 @@ def _resolve_welcome_user_type(utoo_type: str | None) -> int:
         return 14
     if "销售" in role or "原厂" in role or "C类" in role:
         return 4
-    # 测试主管等未单独枚举 → 0
     return 0
 
 
 def _resolve_welcome_user_type2(utoo_type: str | None, user_type: int) -> int:
-    """对齐 welcome：1=管理员交易图 2=销售额 3=测试数量 0=无个人业绩图。"""
     role = (utoo_type or "").strip()
     if role == "测试人员" or "测试人员" in role:
         return 3
     if user_type == 1:
         return 1
     if user_type in (3, 4, 14) or "销售" in role or "H类" in role:
-        # userType=4 且已是测试人员时上面已返回 3
         if "测试" in role and "测试人员" not in role:
-            # 测试主管等：无销售额图
             return 0
         return 2
     return 0
 
 
 def previous_six_months(*, today: date | None = None) -> list[str]:
-    """对齐 CommUtil.getPreviousMonth：含本月共 6 个 YYYY-MM。"""
     base = today or date.today()
     year, month = base.year, base.month
     months: list[str] = [""] * 6
@@ -70,6 +61,13 @@ def previous_six_months(*, today: date | None = None) -> list[str]:
             month = 12
             year -= 1
     return months
+
+
+def _months_of_year(year: int, *, today: date | None = None) -> list[str]:
+    """当年截至本月（或往年 12 个月）的 yyyy-MM 列表。"""
+    base = today or date.today()
+    end_m = 12 if year < base.year else base.month
+    return [f"{year:04d}-{m:02d}" for m in range(1, end_m + 1)]
 
 
 def _money_wan(raw: Any) -> str:
@@ -99,6 +97,59 @@ def _fill_months(months: list[str], by_month: dict[str, Any], *, as_wan: bool) -
     return values
 
 
+def _count_audit(order_type: str | int) -> int:
+    return int(
+        scalar(
+            """
+            SELECT COUNT(*) FROM experiment_order
+            WHERE CAST(order_type AS CHAR) = CAST(%(ot)s AS CHAR)
+              AND order_status = 20
+            """,
+            {"ot": str(order_type)},
+        )
+        or 0
+    )
+
+
+def _pending_for_sale_manager() -> dict[str, Any]:
+    """销售主管待审 KPI —— 对齐图一命名（类型：6/10/8/9）。"""
+    return {
+        "expOrder": _count_audit(6),
+        "selfChildOrder": _count_audit(10),
+        "subcontractOrder": _count_audit(8),
+        "subcontractSubOrder": _count_audit(9),
+        # 物资分包子单：暂无稳定表映射，保持字段供前端展示
+        "materialSubOrder": 0,
+    }
+
+
+def _ops_counts(*, user_id: str, user_type: int, user_type2: int) -> dict[str, int]:
+    """未开始 / 进行中 / 超时 —— 对齐 digital stats（销售主管看全量，测试看本人）。"""
+    scope_uid = ""
+    if user_type2 == 3 or (user_type == 4 and user_type2 != 2):
+        scope_uid = user_id
+    try:
+        not_started = int(
+            stats_repo.order_count(user_id=scope_uid, order_status=0, period_type="5") or 0
+        )
+        in_progress = int(
+            stats_repo.order_count(user_id=scope_uid, order_status=1, period_type="5") or 0
+        )
+        timeout = int(
+            stats_repo.order_count(
+                user_id=scope_uid, order_status=-1, is_timeout=1, period_type="5"
+            )
+            or 0
+        )
+    except Exception:
+        not_started = in_progress = timeout = 0
+    return {
+        "notStarted": not_started,
+        "inProgress": in_progress,
+        "timeout": timeout,
+    }
+
+
 def _chart_admin_trade(months: list[str]) -> list[str]:
     if not months:
         return []
@@ -114,32 +165,6 @@ def _chart_admin_trade(months: list[str]) -> list[str]:
           AND order_status >= 30
           AND DATE_FORMAT(order_time, '%%Y-%%m') IN ({placeholders})
         GROUP BY DATE_FORMAT(order_time, '%%Y-%%m')
-        ORDER BY DATE_FORMAT(order_time, '%%Y-%%m')
-        """,
-        params,
-    )
-    by_month = {str(r.get("xdate") or ""): r.get("price") for r in rows}
-    return _fill_months(months, by_month, as_wan=True)
-
-
-def _chart_user_sale(months: list[str], user_id: str) -> list[str]:
-    """个人实验销售额（万元），按 sale_user。"""
-    if not months or not user_id:
-        return ["0"] * len(months)
-    placeholders = ", ".join(f"%(m{i})s" for i in range(len(months)))
-    params: dict[str, Any] = {f"m{i}": m for i, m in enumerate(months)}
-    params["user_id"] = user_id
-    rows = fetch_all(
-        f"""
-        SELECT
-            DATE_FORMAT(order_time, '%%Y-%%m') AS xdate,
-            SUM(totalPrice) AS price
-        FROM experiment_order
-        WHERE order_type IN (6, 8)
-          AND order_status >= 30
-          AND CAST(sale_user AS CHAR) = CAST(%(user_id)s AS CHAR)
-          AND DATE_FORMAT(order_time, '%%Y-%%m') IN ({placeholders})
-        GROUP BY DATE_FORMAT(order_time, '%%Y-%%m')
         """,
         params,
     )
@@ -148,7 +173,6 @@ def _chart_user_sale(months: list[str], user_id: str) -> list[str]:
 
 
 def _chart_user_test_count(months: list[str], user_id: str) -> list[str]:
-    """个人测试数量：子单 test_user_id 按月计数。"""
     if not months or not user_id:
         return ["0"] * len(months)
     placeholders = ", ".join(f"%(m{i})s" for i in range(len(months)))
@@ -172,43 +196,122 @@ def _chart_user_test_count(months: list[str], user_id: str) -> list[str]:
     return _fill_months(months, by_month, as_wan=False)
 
 
+def _user_sale_by_year(
+    *,
+    user_id: str,
+    year: int,
+    order_type_filter: str = "",
+) -> dict[str, Any]:
+    """对齐 Java selUserSaleByYear / welcome 注入的双币种月柱图。"""
+    months = _months_of_year(year)
+    empty = {
+        "year": str(year),
+        "xmonths": months,
+        "userSaleAryrmb": ["0"] * len(months),
+        "userSaleAryus": ["0"] * len(months),
+        "qnxsrmb": "0.00",
+        "qnxsus": "0.00",
+        "ddslrmb": 0,
+        "ddslus": 0,
+        "grmlzhbigdecimal": "0.00",
+        "grmlllbigdecimal": "0.00",
+    }
+    if not user_id or not months:
+        return empty
+
+    type_sql = "AND order_type IN (6, 8)"
+    if order_type_filter == "1":
+        type_sql = "AND CAST(order_type AS CHAR) = '6'"
+    elif order_type_filter == "2":
+        type_sql = "AND CAST(order_type AS CHAR) = '8'"
+
+    params: dict[str, Any] = {"user_id": user_id, "year": str(year)}
+    rows = fetch_all(
+        f"""
+        SELECT
+            DATE_FORMAT(order_time, '%%Y-%%m') AS xdate,
+            IFNULL(currency_type, 1) AS currencyType,
+            SUM(IFNULL(totalPrice, 0)) AS price,
+            COUNT(*) AS cnt
+        FROM experiment_order
+        WHERE CAST(sale_user AS CHAR) = CAST(%(user_id)s AS CHAR)
+          AND order_status >= 30
+          {type_sql}
+          AND DATE_FORMAT(order_time, '%%Y') = %(year)s
+        GROUP BY DATE_FORMAT(order_time, '%%Y-%%m'), IFNULL(currency_type, 1)
+        """,
+        params,
+    )
+    rmb_by: dict[str, Decimal] = {}
+    usd_by: dict[str, Decimal] = {}
+    cnt_rmb = 0
+    cnt_usd = 0
+    for r in rows:
+        m = str(r.get("xdate") or "")
+        try:
+            ct = int(r.get("currencyType") or 1)
+        except Exception:
+            ct = 1
+        try:
+            price = Decimal(str(r.get("price") or 0))
+        except Exception:
+            price = Decimal(0)
+        try:
+            cnt = int(r.get("cnt") or 0)
+        except Exception:
+            cnt = 0
+        if ct == 2:
+            usd_by[m] = usd_by.get(m, Decimal(0)) + price
+            cnt_usd += cnt
+        else:
+            rmb_by[m] = rmb_by.get(m, Decimal(0)) + price
+            cnt_rmb += cnt
+
+    def series(src: dict[str, Decimal]) -> list[str]:
+        out: list[str] = []
+        for m in months:
+            v = src.get(m, Decimal(0))
+            out.append(format(v.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), "f"))
+        return out
+
+    rmb_s = series(rmb_by)
+    usd_s = series(usd_by)
+    sum_rmb = sum((Decimal(x) for x in rmb_s), Decimal(0))
+    sum_usd = sum((Decimal(x) for x in usd_s), Decimal(0))
+    return {
+        "year": str(year),
+        "xmonths": months,
+        "userSaleAryrmb": rmb_s,
+        "userSaleAryus": usd_s,
+        "qnxsrmb": format(sum_rmb.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), "f"),
+        "qnxsus": format(sum_usd.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), "f"),
+        "ddslrmb": cnt_rmb,
+        "ddslus": cnt_usd,
+        "grmlzhbigdecimal": "0.00",
+        "grmlllbigdecimal": "0.00",
+    }
+
+
 def _user_available_balances(user_id: str) -> tuple[str, str]:
-    """account_type 1=人民币 2=美元（对齐 Java accountRMB / accountUS）。"""
     if not user_id:
-        return "0", "0"
+        return "0.00", "0.00"
     rows = account_repo.get_user_accounts(user_id)
-    rmb, usd = "0", "0"
+    rmb, usd = "0.00", "0.00"
     for row in rows:
         try:
             at = int(row.get("accountType") or 0)
         except Exception:
             continue
         bal = row.get("availableBalance")
-        text = "0" if bal is None or bal == "" else str(bal)
+        try:
+            text = format(Decimal(str(bal or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), "f")
+        except Exception:
+            text = "0.00"
         if at == 1:
             rmb = text
         elif at == 2:
             usd = text
     return rmb, usd
-
-
-def _pending_audit_counts(user_id: str) -> dict[str, int]:
-    """销售主管欢迎页待审核角标（order_status=20）。"""
-    del user_id  # 主管看全量待审，与 Java 快捷入口一致
-    exp = int(
-        scalar(
-            """
-            SELECT COUNT(*) FROM experiment_order
-            WHERE order_type IN (6, 8) AND order_status = 20
-            """
-        )
-        or 0
-    )
-    return {
-        "expOrder": exp,
-        "subcontractOrder": 0,
-        "subcontractSubOrder": 0,
-    }
 
 
 def _fmt_time(value: Any) -> str:
@@ -226,12 +329,7 @@ def list_recent_sys_logs(limit: int = 10) -> list[dict[str, Any]]:
     rows = fetch_all(
         """
         SELECT
-            sl.id,
-            sl.addTime,
-            sl.content,
-            sl.ip,
-            sl.title,
-            sl.type,
+            sl.id, sl.addTime, sl.content, sl.ip, sl.title, sl.type,
             sl.user_id AS userId,
             IFNULL(u.true_name, IFNULL(u.user_name, '')) AS userName
         FROM exp_syslog sl
@@ -241,21 +339,19 @@ def list_recent_sys_logs(limit: int = 10) -> list[dict[str, Any]]:
         """,
         {"limit": int(limit)},
     )
-    out: list[dict[str, Any]] = []
-    for r in rows:
-        out.append(
-            {
-                "id": r.get("id"),
-                "addTime": _fmt_time(r.get("addTime")),
-                "content": r.get("content") or "",
-                "ip": r.get("ip") or "",
-                "title": r.get("title") or "",
-                "type": r.get("type"),
-                "userId": r.get("userId"),
-                "userName": r.get("userName") or "",
-            }
-        )
-    return out
+    return [
+        {
+            "id": r.get("id"),
+            "addTime": _fmt_time(r.get("addTime")),
+            "content": r.get("content") or "",
+            "ip": r.get("ip") or "",
+            "title": r.get("title") or "",
+            "type": r.get("type"),
+            "userId": r.get("userId"),
+            "userName": r.get("userName") or "",
+        }
+        for r in rows
+    ]
 
 
 def list_sys_logs_page(
@@ -273,7 +369,6 @@ def list_sys_logs_page(
     if add_time:
         where += " AND sl.addTime >= %(add_time)s"
         params["add_time"] = add_time
-
     total = int(
         scalar(
             f"""
@@ -291,12 +386,7 @@ def list_sys_logs_page(
     rows = fetch_all(
         f"""
         SELECT
-            sl.id,
-            sl.addTime,
-            sl.content,
-            sl.ip,
-            sl.title,
-            sl.type,
+            sl.id, sl.addTime, sl.content, sl.ip, sl.title, sl.type,
             sl.user_id AS userId,
             IFNULL(u.true_name, IFNULL(u.user_name, '')) AS userName,
             u.user_name AS loginName
@@ -308,7 +398,7 @@ def list_sys_logs_page(
         """,
         params,
     )
-    out: list[dict[str, Any]] = []
+    out = []
     for r in rows:
         out.append(
             {
@@ -328,46 +418,67 @@ def list_sys_logs_page(
 
 def build_welcome_payload(user: dict[str, Any]) -> dict[str, Any]:
     user_id = str(user.get("user_id") or "")
+    login_name = str(user.get("user_name") or "")
     utoo_type = user.get("utoo_type") or user.get("type")
     role_text = str(utoo_type) if utoo_type else ""
     user_type = _resolve_welcome_user_type(role_text)
     user_type2 = _resolve_welcome_user_type2(role_text, user_type)
     dept_name = staff_repo.find_dept_name(user.get("dept_id"))
-    xdate = previous_six_months()
 
-    chart_kind = "none"
-    chart_title = ""
-    chart_unit = ""
+    today = date.today()
+    year = today.year
+    six_months = previous_six_months(today=today)
+
+    # 管理员近 6 月交易
     ydata: list[str] = []
     if user_type2 == 1:
-        chart_kind = "admin_trade"
-        chart_title = "最近 6 个月交易记录"
-        chart_unit = "销售订单金额（万元）"
-        ydata = _chart_admin_trade(xdate)
-    elif user_type2 == 2:
-        chart_kind = "user_sale"
-        chart_title = "我的实验销售额"
-        chart_unit = "销售额（万元）"
-        ydata = _chart_user_sale(xdate, user_id)
-    elif user_type2 == 3:
-        chart_kind = "user_test"
-        chart_title = "我的测试数量"
-        chart_unit = "测试数量（单）"
-        ydata = _chart_user_test_count(xdate, user_id)
+        ydata = _chart_admin_trade(six_months)
+
+    # 个人销售额（双币种，整年）
+    sale = (
+        _user_sale_by_year(user_id=user_id, year=year)
+        if user_type2 == 2
+        else {
+            "year": str(year),
+            "xmonths": [],
+            "userSaleAryrmb": [],
+            "userSaleAryus": [],
+            "qnxsrmb": "0.00",
+            "qnxsus": "0.00",
+            "ddslrmb": 0,
+            "ddslus": 0,
+            "grmlzhbigdecimal": "0.00",
+            "grmlllbigdecimal": "0.00",
+        }
+    )
+
+    # 测试数量
+    test_months = six_months
+    test_ydata = _chart_user_test_count(test_months, user_id) if user_type2 == 3 else []
 
     account_rmb, account_us = _user_available_balances(user_id)
     show_assets = user_type in (0, 2, 3, 4, 6, 7, 14)
     show_logs = user_type == 1
 
-    pending = _pending_audit_counts(user_id) if user_type == 3 else {
+    pending = _pending_for_sale_manager() if user_type == 3 else {
         "expOrder": 0,
+        "selfChildOrder": 0,
         "subcontractOrder": 0,
         "subcontractSubOrder": 0,
+        "materialSubOrder": 0,
+    }
+    # 销售主管 / 销售 / 测试相关：未开始·进行中·超时
+    show_ops = user_type in (3, 4) or user_type2 == 3
+    ops = _ops_counts(user_id=user_id, user_type=user_type, user_type2=user_type2) if show_ops else {
+        "notStarted": 0,
+        "inProgress": 0,
+        "timeout": 0,
     }
 
     return {
         "userName": user.get("true_name") or user.get("user_name") or "",
-        "loginName": user.get("user_name") or "",
+        "loginName": login_name,
+        "currentUser": login_name,
         "userType": user_type,
         "userType2": user_type2,
         "roleName": role_text,
@@ -375,14 +486,30 @@ def build_welcome_payload(user: dict[str, Any]) -> dict[str, Any]:
         "email": user.get("email") or "",
         "mobilePhoneNumber": user.get("mobile_phone_number") or "",
         "menuCount": len(staff_repo.fetch_user_menus(user_id)),
-        "xdate": xdate,
+        # admin trade (6 months)
+        "xdate": six_months if user_type2 == 1 else [],
         "ydata": ydata,
-        "chartKind": chart_kind,
-        "chartTitle": chart_title,
-        "chartUnit": chart_unit,
+        # dual-currency personal sale
+        "saleYear": sale.get("year"),
+        "xmonths": sale.get("xmonths") or [],
+        "userSaleAryrmb": sale.get("userSaleAryrmb") or [],
+        "userSaleAryus": sale.get("userSaleAryus") or [],
+        "qnxsrmb": sale.get("qnxsrmb"),
+        "qnxsus": sale.get("qnxsus"),
+        "ddslrmb": sale.get("ddslrmb"),
+        "ddslus": sale.get("ddslus"),
+        "grmlzhbigdecimal": sale.get("grmlzhbigdecimal"),
+        "grmlllbigdecimal": sale.get("grmlllbigdecimal"),
+        # test count
+        "expmonth": test_months if user_type2 == 3 else [],
+        "expTestAry": test_ydata,
+        # assets
         "showAssets": show_assets,
         "accountRMB": account_rmb,
         "accountUS": account_us,
+        # KPIs
         "pendingCounts": pending,
+        "opsCounts": ops,
+        "showOpsCounts": show_ops,
         "newlogs": list_recent_sys_logs(10) if show_logs else [],
     }
