@@ -5,9 +5,10 @@
 # - stage deploy：6 个独立手动发布（order / payment / admin_asset / admin_platform / gateway / frontend）
 # - stage deploy_all：1 个一键全发（写在单发后面，单独一列；needs:[] 不挡单发）
 #
-# Runner 使用 shell=powershell（本机 LocalSystem 下 bash 会 mkdir not found，不可用）。
+# Runner 必须 shell=powershell（LocalSystem + bash = mkdir not found，发版必挂）。
+# 禁止把 C:\GitLab-Runner\config.toml 的 utoo-windows 改成 bash。
 # 发版入口：cmd -> powershell -File（ci-entry-*.cmd），失败码靠 ERRORLEVEL。
-# 中文 commit：请管理员先运行 C:\GitLab-Runner\fix-utoo-runner-admin.cmd（开 UTF-8 代码页并重启服务）。
+# 若 shell 被改坏：管理员运行 C:\GitLab-Runner\fix-utoo-runner-admin.cmd
 # 禁止复用 emku-windows /opt/emku-* / emku_upstream_*
 stages:
   - deploy

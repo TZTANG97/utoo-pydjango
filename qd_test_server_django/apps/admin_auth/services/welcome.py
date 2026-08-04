@@ -5,13 +5,15 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from apps.admin_auth.repositories import staff as staff_repo
-from apps.admin_digital.repositories import stats as stats_repo
 from apps.admin_fund.repositories import account as account_repo
 from apps.core.db_utils import fetch_all, scalar
 
 
 def _resolve_welcome_user_type(utoo_type: str | None) -> int:
-    """对齐 Java IndexViewController.indexHtml（welcome.htm）的 userType。"""
+    """对齐 Java IndexViewController.indexHtml（welcome.htm）的 userType。
+
+    Java UserTypes：TEST_MANAGER.roleName=销售主管，欢迎页与销售主管同待审/运营入口。
+    """
     role = (utoo_type or "").strip()
     if not role:
         return 0
@@ -20,9 +22,10 @@ def _resolve_welcome_user_type(utoo_type: str | None) -> int:
         return 1
     if "公司基金" in role or "公司账号" in role or role == "公司":
         return 2
-    if "销售主管" in role:
+    # 销售主管 / 测试主管（枚举 TEST_MANAGER）
+    if "销售主管" in role or "测试主管" in role or upper in ("SALE_MANAGER", "TEST_MANAGER"):
         return 3
-    if role == "测试人员" or "测试人员" in role:
+    if role == "测试人员" or "测试人员" in role or upper == "TEST_USER":
         return 4
     if "制单" in role:
         return 5
@@ -32,22 +35,53 @@ def _resolve_welcome_user_type(utoo_type: str | None) -> int:
         return 7
     if "H类" in role or role.startswith("H类") or upper.startswith("H_"):
         return 14
-    if "销售" in role or "原厂" in role or "C类" in role:
+    # 销售人员族：销售 / 原厂 / C·R 类 / 内勤
+    if "销售" in role or "原厂" in role or "C类" in role or "R类" in role or "内勤" in role:
         return 4
     return 0
 
 
 def _resolve_welcome_user_type2(utoo_type: str | None, user_type: int) -> int:
+    """对齐 Java IndexViewController userType2（精确名称判断）。
+
+    1=管理员交易图；3=测试人员测试数量；4=销售人员测试年/月图；5=测试主管测试数量。
+    C类/原厂/R类等 → 0（无额外图表，仅资产+运营卡）。
+    """
     role = (utoo_type or "").strip()
-    if role == "测试人员" or "测试人员" in role:
+    upper = role.upper()
+    if "测试主管" in role or upper == "TEST_MANAGER":
+        return 5
+    if role == "测试人员" or (
+        "测试人员" in role and "测试主管" not in role
+    ) or upper == "TEST_USER":
         return 3
+    # Java：仅 utoo_type 精确等于「销售人员」
+    if role == "销售人员" or upper in ("A_SALESPERSON", "A_SALE_USER"):
+        return 4
     if user_type == 1:
         return 1
-    if user_type in (3, 4, 14) or "销售" in role or "H类" in role:
-        if "测试" in role and "测试人员" not in role:
-            return 0
+    return 0
+
+
+def _resolve_welcome_user_type3(utoo_type: str | None) -> int:
+    """对齐 Java userType3：2=显示「我的实际/实验销售额」。
+
+    仅 type 为「销售人员」或「销售主管」；C类销售人员等为 0。
+    """
+    role = (utoo_type or "").strip()
+    if role in ("销售人员", "销售主管"):
         return 2
     return 0
+
+
+def _is_test_manager(utoo_type: str | None) -> bool:
+    role = (utoo_type or "").strip()
+    return "测试主管" in role or role.upper() == "TEST_MANAGER"
+
+
+def _is_sale_manager_exact(utoo_type: str | None) -> bool:
+    """Java：仅 utoo_type 精确为「销售主管」走 selOrderNumBySaleManager。"""
+    return (utoo_type or "").strip() == "销售主管"
 
 
 def previous_six_months(*, today: date | None = None) -> list[str]:
@@ -97,103 +131,136 @@ def _fill_months(months: list[str], by_month: dict[str, Any], *, as_wan: bool) -
     return values
 
 
-def _count_audit(order_type: str | int) -> int:
+def _count_audit_by_manager(
+    *,
+    order_type: str | int,
+    manager_id: str,
+    manager_field: str = "sale_manager",
+) -> int:
+    """对齐 Java getAuditOrders / getAuditOrders1128：order_status=20 + 主管字段。"""
+    if not manager_id:
+        return 0
+    if manager_field not in ("sale_manager", "test_manager"):
+        manager_field = "sale_manager"
+    return int(
+        scalar(
+            f"""
+            SELECT COUNT(*) FROM experiment_order
+            WHERE CAST(order_type AS CHAR) = CAST(%(ot)s AS CHAR)
+              AND order_status = 20
+              AND CAST({manager_field} AS CHAR) = CAST(%(uid)s AS CHAR)
+            """,
+            {"ot": str(order_type), "uid": manager_id},
+        )
+        or 0
+    )
+
+
+def _count_pay_audit(*, manager_id: str, order_type: str | int = 9) -> int:
+    """对齐 Java getAuditPayOrders：pay_status=32。"""
+    if not manager_id:
+        return 0
     return int(
         scalar(
             """
             SELECT COUNT(*) FROM experiment_order
             WHERE CAST(order_type AS CHAR) = CAST(%(ot)s AS CHAR)
-              AND order_status = 20
+              AND CAST(pay_status AS CHAR) = '32'
+              AND CAST(sale_manager AS CHAR) = CAST(%(uid)s AS CHAR)
             """,
-            {"ot": str(order_type)},
+            {"ot": str(order_type), "uid": manager_id},
         )
         or 0
     )
 
 
-def _pending_for_sale_manager() -> dict[str, Any]:
-    """销售主管待审 KPI —— 对齐图一命名（类型：6/10/8/9）。"""
+def _pending_for_manager(*, user_id: str, is_test_manager: bool) -> dict[str, Any]:
+    """对齐 Java welcome.html userType=3 五张待审卡。
+
+    1/2/3/5：sale_manager；4：测试主管用 test_manager，销售主管用 sale_manager。
+    """
+    type9_field = "test_manager" if is_test_manager else "sale_manager"
     return {
-        "expOrder": _count_audit(6),
-        "selfChildOrder": _count_audit(10),
-        "subcontractOrder": _count_audit(8),
-        "subcontractSubOrder": _count_audit(9),
-        # 物资分包子单：暂无稳定表映射，保持字段供前端展示
-        "materialSubOrder": 0,
+        "expOrder": _count_audit_by_manager(order_type=6, manager_id=user_id),
+        "selfChildOrder": _count_audit_by_manager(order_type=10, manager_id=user_id),
+        "subcontractOrder": _count_audit_by_manager(order_type=8, manager_id=user_id),
+        "subcontractSubOrder": _count_audit_by_manager(
+            order_type=9, manager_id=user_id, manager_field=type9_field
+        ),
+        # 字段名兼容前端：实际为「待审核付款实验分包子订单」
+        "materialSubOrder": _count_pay_audit(manager_id=user_id, order_type=9),
     }
 
 
-def _count_finish_by_sale_user(*, sale_user_id: str, order_status: int) -> int:
-    """销售人员名下主单关联的测试完成表状态计数（对齐 Java getOrderListSize*）。"""
-    if not sale_user_id:
+def _count_timeout_ops(
+    *,
+    user_id: str,
+    order_status: int | None = None,
+    is_timeout: int | None = None,
+    by_sale_manager: bool = False,
+) -> int:
+    """对齐 Java selOrderNum / selOrderNumBySaleManager（statistic_experiment_timeout）。"""
+    if not user_id:
         return 0
-    return int(
-        scalar(
-            """
-            SELECT COUNT(t.id)
-            FROM statistic_experiment_finish t
-            INNER JOIN experiment_order eo ON t.order_id = eo.id
-            WHERE IFNULL(t.deleteStatus, 0) = 0
-              AND CAST(eo.sale_user AS CHAR) = CAST(%(uid)s AS CHAR)
-              AND t.order_status = %(st)s
-            """,
-            {"uid": sale_user_id, "st": int(order_status)},
-        )
-        or 0
-    )
-
-
-def _ops_counts(*, user_id: str, user_type: int, user_type2: int) -> dict[str, int]:
-    """运营 KPI。
-
-    - 销售人员(userType=4,ut2=2)：未开始/进行中/测试通过（按 sale_user 过滤）
-    - 销售主管：未开始/进行中/超时（全量）
-    - 测试人员：本人未开始/进行中/通过
-    """
-    # 销售人员：按本人销售主单关联的测试单
-    if user_type == 4 and user_type2 == 2:
-        return {
-            "notStarted": _count_finish_by_sale_user(sale_user_id=user_id, order_status=0),
-            "inProgress": _count_finish_by_sale_user(sale_user_id=user_id, order_status=1),
-            "passed": _count_finish_by_sale_user(sale_user_id=user_id, order_status=2),
-            "timeout": 0,
-            "opsMode": "salesperson",
-        }
-
-    scope_uid = ""
-    if user_type2 == 3:
-        scope_uid = user_id
+    params: dict[str, Any] = {"uid": user_id}
+    where = "WHERE IFNULL(t.deleteStatus, 0) = 0"
+    if by_sale_manager:
+        where += " AND CAST(t.audit_manager_id AS CHAR) = CAST(%(uid)s AS CHAR)"
+    else:
+        where += """
+          AND (
+            CAST(t.test_user_id AS CHAR) = CAST(%(uid)s AS CHAR)
+            OR CAST(t.sale_user_id AS CHAR) = CAST(%(uid)s AS CHAR)
+            OR CAST(t.audit_manager_id AS CHAR) = CAST(%(uid)s AS CHAR)
+            OR CAST(t.lab_manager_id AS CHAR) = CAST(%(uid)s AS CHAR)
+          )
+        """
+    if order_status is not None:
+        where += " AND t.order_status = %(st)s"
+        params["st"] = int(order_status)
+    if is_timeout is not None:
+        where += " AND t.is_timeout = %(to)s"
+        params["to"] = int(is_timeout)
     try:
-        not_started = int(
-            stats_repo.order_count(user_id=scope_uid, order_status=0, period_type="5") or 0
-        )
-        in_progress = int(
-            stats_repo.order_count(user_id=scope_uid, order_status=1, period_type="5") or 0
-        )
-        if user_type2 == 3:
-            passed = int(
-                stats_repo.order_count(user_id=scope_uid, order_status=2, period_type="5") or 0
+        return int(
+            scalar(
+                f"SELECT COUNT(t.id) FROM statistic_experiment_timeout t {where}",
+                params,
             )
-            timeout = 0
-            mode = "tester"
-        else:
-            passed = 0
-            timeout = int(
-                stats_repo.order_count(
-                    user_id=scope_uid, order_status=-1, is_timeout=1, period_type="5"
-                )
-                or 0
-            )
-            mode = "manager"
+            or 0
+        )
     except Exception:
-        not_started = in_progress = passed = timeout = 0
-        mode = "manager"
+        return 0
+
+
+def _ops_counts(
+    *,
+    user_id: str,
+    user_type: int,
+    user_type2: int,
+    utoo_type: str = "",
+) -> dict[str, int]:
+    """运营 KPI（对齐 Java welcome.htm / IndexViewController）。
+
+    文案统一：未开始测试订单 / 进行中测试订单 / 测试超时订单。
+    - 销售主管：statistic_experiment_timeout + audit_manager_id
+    - 测试人员及其他：同表 selOrderNum（test/sale/audit/lab_manager 命中本人）
+    注意：Java 测试人员第三卡也是「测试超时」，不是「测试通过/已完成」。
+    """
+    del user_type, user_type2  # 欢迎页运营卡不区分 finish 通过态
+    by_sm = _is_sale_manager_exact(utoo_type)
     return {
-        "notStarted": not_started,
-        "inProgress": in_progress,
-        "passed": passed,
-        "timeout": timeout,
-        "opsMode": mode,
+        "notStarted": _count_timeout_ops(
+            user_id=user_id, order_status=0, by_sale_manager=by_sm
+        ),
+        "inProgress": _count_timeout_ops(
+            user_id=user_id, order_status=1, by_sale_manager=by_sm
+        ),
+        "passed": 0,
+        "timeout": _count_timeout_ops(
+            user_id=user_id, is_timeout=1, by_sale_manager=by_sm
+        ),
+        "opsMode": "manager",
     }
 
 
@@ -288,9 +355,38 @@ def _chart_admin_trade(months: list[str]) -> list[str]:
     return _fill_months(months, by_month, as_wan=True)
 
 
-def _chart_user_test_count(months: list[str], user_id: str) -> list[str]:
+def _chart_user_test_count(months: list[str], user_id: str, *, year: int) -> list[str]:
+    """对齐 Java statisticTestNumMonthService.selListGroupByMonth。
+
+    优先 statistic_test_num_month_utoo；表不存在时回退子单计数。
+    """
     if not months or not user_id:
         return ["0"] * len(months)
+    try:
+        rows = fetch_all(
+            """
+            SELECT t.month AS ym, SUM(IFNULL(t.order_count, 0)) AS cnt
+            FROM statistic_test_num_month_utoo t
+            WHERE CAST(t.test_user_id AS CHAR) = CAST(%(user_id)s AS CHAR)
+              AND CAST(t.year AS CHAR) = CAST(%(year)s AS CHAR)
+            GROUP BY t.month
+            ORDER BY t.month
+            """,
+            {"user_id": user_id, "year": str(year)},
+        )
+        by_month: dict[str, Any] = {}
+        for r in rows:
+            ym = str(r.get("ym") or "")
+            if ym and len(ym) == 7:
+                by_month[ym] = r.get("cnt")
+            elif ym:
+                # 表里 month 可能是 yyyy-MM 或 MM
+                by_month[f"{year:04d}-{ym.zfill(2)}"] = r.get("cnt")
+        if by_month or rows is not None:
+            return _fill_months(months, by_month, as_wan=False)
+    except Exception:
+        pass
+
     placeholders = ", ".join(f"%(m{i})s" for i in range(len(months)))
     params: dict[str, Any] = {f"m{i}": m for i, m in enumerate(months)}
     params["user_id"] = user_id
@@ -532,28 +628,36 @@ def list_sys_logs_page(
     return out, total
 
 
-def build_welcome_payload(user: dict[str, Any]) -> dict[str, Any]:
+def build_welcome_payload(user: dict[str, Any], *, chart_year: int | None = None) -> dict[str, Any]:
     user_id = str(user.get("user_id") or "")
     login_name = str(user.get("user_name") or "")
     utoo_type = user.get("utoo_type") or user.get("type")
     role_text = str(utoo_type) if utoo_type else ""
     user_type = _resolve_welcome_user_type(role_text)
     user_type2 = _resolve_welcome_user_type2(role_text, user_type)
+    user_type3 = _resolve_welcome_user_type3(role_text)
+    is_test_mgr = _is_test_manager(role_text)
     dept_name = staff_repo.find_dept_name(user.get("dept_id"))
 
     today = date.today()
     year = today.year
     six_months = previous_six_months(today=today)
+    try:
+        cy = int(chart_year) if chart_year else year
+    except (TypeError, ValueError):
+        cy = year
+    if cy < 2000 or cy > year + 1:
+        cy = year
 
     # 管理员近 6 月交易
     ydata: list[str] = []
     if user_type2 == 1:
         ydata = _chart_admin_trade(six_months)
 
-    # 个人销售额（双币种，整年）
+    # 个人销售额：Java userType3==2（销售主管 / 销售人员；C类无此图）
     sale = (
         _user_sale_by_year(user_id=user_id, year=year)
-        if user_type2 == 2
+        if user_type3 == 2
         else {
             "year": str(year),
             "xmonths": [],
@@ -568,36 +672,52 @@ def build_welcome_payload(user: dict[str, Any]) -> dict[str, Any]:
         }
     )
 
-    # 测试数量
-    test_months = six_months
-    test_ydata = _chart_user_test_count(test_months, user_id) if user_type2 == 3 else []
+    # 测试人员(ut2=3) / 测试主管(ut2=5)：我的测试数量
+    show_test_chart = user_type2 in (3, 5)
+    test_months = _months_of_year(cy, today=today) if show_test_chart else []
+    test_ydata = (
+        _chart_user_test_count(test_months, user_id, year=cy) if show_test_chart else []
+    )
 
     account_rmb, account_us = _user_available_balances(user_id)
     show_assets = user_type in (0, 2, 3, 4, 6, 7, 14)
     show_logs = user_type == 1
 
-    pending = _pending_for_sale_manager() if user_type == 3 else {
-        "expOrder": 0,
-        "selfChildOrder": 0,
-        "subcontractOrder": 0,
-        "subcontractSubOrder": 0,
-        "materialSubOrder": 0,
-    }
-    # 销售主管 / 销售 / 测试相关 KPI
-    show_ops = user_type in (3, 4) or user_type2 == 3
-    ops = _ops_counts(user_id=user_id, user_type=user_type, user_type2=user_type2) if show_ops else {
-        "notStarted": 0,
-        "inProgress": 0,
-        "passed": 0,
-        "timeout": 0,
-        "opsMode": "",
-    }
+    pending = (
+        _pending_for_manager(user_id=user_id, is_test_manager=is_test_mgr)
+        if user_type == 3
+        else {
+            "expOrder": 0,
+            "selfChildOrder": 0,
+            "subcontractOrder": 0,
+            "subcontractSubOrder": 0,
+            "materialSubOrder": 0,
+        }
+    )
+    # Java：userType 3/4/5/6/7 均展示未开始/进行中/超时
+    show_ops = user_type in (3, 4, 5, 6, 7) or user_type2 in (3, 5)
+    ops = (
+        _ops_counts(
+            user_id=user_id,
+            user_type=user_type,
+            user_type2=user_type2,
+            utoo_type=role_text,
+        )
+        if show_ops
+        else {
+            "notStarted": 0,
+            "inProgress": 0,
+            "passed": 0,
+            "timeout": 0,
+            "opsMode": "",
+        }
+    )
 
-    # 销售人员：测试数量(年) + 测试人员测试数量(月)
-    is_salesperson = user_type == 4 and user_type2 == 2
+    # Java userType2==4（销售人员）：测试数量(年) + 测试人员测试数量(月)
+    is_a_salesperson = user_type2 == 4
     test_year_chart: dict[str, Any] = {"year": str(year), "months": [], "values": []}
     tester_month_chart: dict[str, Any] = {"month": "", "names": [], "values": []}
-    if is_salesperson:
+    if is_a_salesperson:
         test_year_chart = _test_qty_year_chart(year=year, sale_user_id=user_id)
         tester_month_chart = _tester_qty_month_chart(
             year=year, month=today.month, sale_user_id=user_id
@@ -609,6 +729,7 @@ def build_welcome_payload(user: dict[str, Any]) -> dict[str, Any]:
         "currentUser": login_name,
         "userType": user_type,
         "userType2": user_type2,
+        "userType3": user_type3,
         "roleName": role_text,
         "deptName": dept_name or "",
         "email": user.get("email") or "",
@@ -628,11 +749,12 @@ def build_welcome_payload(user: dict[str, Any]) -> dict[str, Any]:
         "ddslus": sale.get("ddslus"),
         "grmlzhbigdecimal": sale.get("grmlzhbigdecimal"),
         "grmlllbigdecimal": sale.get("grmlllbigdecimal"),
-        # 测试人员本人测试数量
-        "expmonth": test_months if user_type2 == 3 else [],
+        # 测试人员 / 测试主管：本人测试数量
+        "expmonth": test_months if show_test_chart else [],
         "expTestAry": test_ydata,
+        "testChartYear": str(cy) if show_test_chart else "",
         # 销售人员：测试数量年/月两图
-        "showSaleTestCharts": is_salesperson,
+        "showSaleTestCharts": is_a_salesperson,
         "testYearChart": test_year_chart,
         "testerMonthChart": tester_month_chart,
         # assets

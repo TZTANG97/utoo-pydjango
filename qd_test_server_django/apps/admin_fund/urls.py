@@ -42,9 +42,13 @@ urlpatterns = [
     # 各公司资金支出
     path("companyPay/selDetailList.ajax", views.company_pay_list),
     path("companyPay/submitCompanyPay.ajax", views.company_pay_save),
+    path("companyPay/chargeBack.ajax", views.company_pay_charge_back),
+    path("companyPay/companyPayUpdate.ajax", views.company_pay_update),
     # 个人资金支出
     path("userPay/selDetailList.ajax", views.user_pay_list),
     path("userPay/submitUserPay.ajax", views.user_pay_save),
+    path("userPay/chargeBack.ajax", views.user_pay_charge_back),
+    path("userPay/companyPayUpdate.ajax", views.user_pay_update),
     # 各公司借贷款还款
     path("companyLoanPay/selDetailList.ajax", views.company_loan_list),
     path("companyLoanPay/submitCompanyPay.ajax", views.company_loan_save),
@@ -56,4 +60,8 @@ urlpatterns = [
     path("digitalManage/selCompanySaleByYear.ajax", views.digital_company_sale_by_year),
     path("digitalManage/selExpSaleByYear.ajax", views.digital_exp_sale_by_year),
     path("digitalManage/selExpReceivePie.ajax", views.digital_exp_receive_pie),
+    # 非管理员个人看板（公司基金 CS04 等）
+    path("digitalManage/selUserAmountByYearsygr.ajax", views.digital_user_amount_sygr),
+    path("digitalManage/selUserAmountByYearsyfbgr.ajax", views.digital_user_amount_syfbgr),
+    path("digitalManage/selUserOverduePie.ajax", views.digital_user_overdue_pies),
 ]

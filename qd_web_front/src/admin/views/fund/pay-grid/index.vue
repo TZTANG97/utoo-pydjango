@@ -1,9 +1,16 @@
 <template>
   <admin-page-card :title="title">
     <el-form :inline="true" class="filter-form" @submit.prevent>
-      <el-form-item v-if="mode === 'company' || mode === 'loan'" label="公司">
-        <el-select v-model="companyId" filterable clearable placeholder="选择公司" style="width: 220px">
-          <el-option label="全部汇总" value="-1" />
+      <el-form-item v-if="mode === 'company' || mode === 'loan'" :label="mode === 'company' ? '请选择所属公司' : '公司'">
+        <el-select
+          v-model="companyId"
+          filterable
+          clearable
+          :placeholder="mode === 'company' ? '请选择' : '选择公司'"
+          style="width: 220px"
+          @change="onFilterChange"
+        >
+          <el-option v-if="mode === 'loan'" label="全部汇总" value="-1" />
           <el-option
             v-for="c in companies"
             :key="String(c.id)"
@@ -12,8 +19,15 @@
           />
         </el-select>
       </el-form-item>
-      <el-form-item v-if="mode === 'personal'" label="用户">
-        <el-select v-model="userId" filterable clearable placeholder="选择用户" style="width: 220px">
+      <el-form-item v-if="mode === 'personal'" label="选择用户">
+        <el-select
+          v-model="userId"
+          filterable
+          clearable
+          placeholder="请选择"
+          style="width: 220px"
+          @change="onFilterChange"
+        >
           <el-option
             v-for="u in users"
             :key="String(u.id)"
@@ -32,16 +46,23 @@
           />
         </el-select>
       </el-form-item>
-      <el-form-item label="年份">
-        <el-date-picker v-model="year" type="year" value-format="YYYY" style="width: 120px" />
-      </el-form-item>
-      <el-form-item label="币种">
-        <el-select v-model="accountType" style="width: 110px">
-          <el-option :value="1" label="人民币" />
-          <el-option :value="2" label="美金" />
+      <el-form-item :label="isFundPayMode ? '币种选择' : '币种'">
+        <el-select v-model="accountType" style="width: 140px" @change="onFilterChange">
+          <el-option :value="1" :label="isFundPayMode ? '人民币账户' : '人民币'" />
+          <el-option :value="2" :label="isFundPayMode ? '美元账户' : '美金'" />
         </el-select>
       </el-form-item>
-      <el-form-item>
+      <el-form-item :label="isFundPayMode ? '请选择年份' : '年份'">
+        <el-date-picker
+          v-model="year"
+          type="year"
+          value-format="YYYY"
+          :placeholder="isFundPayMode ? '请选择' : undefined"
+          style="width: 140px"
+          @change="onFilterChange"
+        />
+      </el-form-item>
+      <el-form-item v-if="!isFundPayMode">
         <el-button type="primary" :loading="loading" @click="loadRows">查询</el-button>
         <el-button type="success" :loading="saving" :disabled="companyId === '-1'" @click="handleSave">
           保存
@@ -49,43 +70,164 @@
       </el-form-item>
     </el-form>
 
-    <el-table v-loading="loading" :data="rows" border stripe>
-      <el-table-column prop="month" label="月份" width="70" />
+    <el-table
+      v-loading="loading"
+      :data="rows"
+      border
+      stripe
+      :show-summary="isFundPayMode && rows.length > 0"
+      :summary-method="fundSummary"
+      empty-text="暂无数据"
+    >
+      <el-table-column label="月份" width="80" align="center">
+        <template #default="{ row }">{{ formatMonth(row.month) }}</template>
+      </el-table-column>
+      <!-- 对齐 Java companyPayPag -->
       <template v-if="mode === 'company'">
-        <el-table-column label="工资" min-width="100">
-          <template #default="{ row }"><el-input-number v-model="row.wages" :min="0" :precision="2" controls-position="right" size="small" /></template>
+        <el-table-column label="日常运营费用" min-width="120">
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.fees"
+              :min="0"
+              :precision="2"
+              controls-position="right"
+              size="small"
+              :disabled="isRowLocked(row)"
+              @change="recalcCompanyRow(row)"
+            />
+          </template>
         </el-table-column>
-        <el-table-column label="税费" min-width="100">
-          <template #default="{ row }"><el-input-number v-model="row.taxes" :min="0" :precision="2" controls-position="right" size="small" /></template>
+        <el-table-column label="人员工资福利" min-width="120">
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.wages"
+              :min="0"
+              :precision="2"
+              controls-position="right"
+              size="small"
+              :disabled="isRowLocked(row)"
+              @change="recalcCompanyRow(row)"
+            />
+          </template>
         </el-table-column>
-        <el-table-column label="费用" min-width="100">
-          <template #default="{ row }"><el-input-number v-model="row.fees" :min="0" :precision="2" controls-position="right" size="small" /></template>
+        <el-table-column label="税费及财务费用" min-width="130">
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.taxes"
+              :min="0"
+              :precision="2"
+              controls-position="right"
+              size="small"
+              :disabled="isRowLocked(row)"
+              @change="recalcCompanyRow(row)"
+            />
+          </template>
         </el-table-column>
-        <el-table-column label="系统成本" min-width="100">
-          <template #default="{ row }"><el-input-number v-model="row.systemCost" :min="0" :precision="2" controls-position="right" size="small" /></template>
+        <el-table-column label="系统费用" min-width="110">
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.systemCost"
+              :min="0"
+              :precision="2"
+              controls-position="right"
+              size="small"
+              :disabled="isRowLocked(row)"
+              @change="recalcCompanyRow(row)"
+            />
+          </template>
         </el-table-column>
-        <el-table-column label="贷款利息" min-width="100">
-          <template #default="{ row }"><el-input-number v-model="row.loan" :min="0" :precision="2" controls-position="right" size="small" /></template>
+        <el-table-column label="借贷款还款" min-width="110">
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.loan"
+              :min="0"
+              :precision="2"
+              controls-position="right"
+              size="small"
+              :disabled="isRowLocked(row)"
+              @change="recalcCompanyRow(row)"
+            />
+          </template>
         </el-table-column>
       </template>
       <template v-else-if="mode === 'personal'">
-        <el-table-column label="工资" min-width="100">
-          <template #default="{ row }"><el-input-number v-model="row.wages" :min="0" :precision="2" controls-position="right" size="small" /></template>
+        <el-table-column label="工资福利" min-width="110">
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.wages"
+              :min="0"
+              :precision="2"
+              controls-position="right"
+              size="small"
+              :disabled="isRowLocked(row)"
+              @change="recalcPersonalRow(row)"
+            />
+          </template>
         </el-table-column>
         <el-table-column label="税费" min-width="100">
-          <template #default="{ row }"><el-input-number v-model="row.taxes" :min="0" :precision="2" controls-position="right" size="small" /></template>
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.taxes"
+              :min="0"
+              :precision="2"
+              controls-position="right"
+              size="small"
+              :disabled="isRowLocked(row)"
+              @change="recalcPersonalRow(row)"
+            />
+          </template>
         </el-table-column>
-        <el-table-column label="贷款利息" min-width="100">
-          <template #default="{ row }"><el-input-number v-model="row.loanInterest" :min="0" :precision="2" controls-position="right" size="small" /></template>
+        <el-table-column label="贷款利息" min-width="110">
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.loanInterest"
+              :min="0"
+              :precision="2"
+              controls-position="right"
+              size="small"
+              :disabled="isRowLocked(row)"
+              @change="recalcPersonalRow(row)"
+            />
+          </template>
         </el-table-column>
-        <el-table-column label="车补" min-width="100">
-          <template #default="{ row }"><el-input-number v-model="row.carAmount" :min="0" :precision="2" controls-position="right" size="small" /></template>
+        <el-table-column label="月末摊销购车款" min-width="130">
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.carAmount"
+              :min="0"
+              :precision="2"
+              controls-position="right"
+              size="small"
+              :disabled="isRowLocked(row)"
+              @change="recalcPersonalRow(row)"
+            />
+          </template>
         </el-table-column>
-        <el-table-column label="订单" min-width="100">
-          <template #default="{ row }"><el-input-number v-model="row.orderAmount" :min="0" :precision="2" controls-position="right" size="small" /></template>
+        <el-table-column label="个人订单费用" min-width="120">
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.orderAmount"
+              :min="0"
+              :precision="2"
+              controls-position="right"
+              size="small"
+              :disabled="isRowLocked(row)"
+              @change="recalcPersonalRow(row)"
+            />
+          </template>
         </el-table-column>
         <el-table-column label="其他" min-width="100">
-          <template #default="{ row }"><el-input-number v-model="row.otherAmount" :min="0" :precision="2" controls-position="right" size="small" /></template>
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.otherAmount"
+              :min="0"
+              :precision="2"
+              controls-position="right"
+              size="small"
+              :disabled="isRowLocked(row)"
+              @change="recalcPersonalRow(row)"
+            />
+          </template>
         </el-table-column>
       </template>
       <template v-else-if="mode === 'loan'">
@@ -107,19 +249,61 @@
           <template #default="{ row }"><el-input-number v-model="row.partsFees" :min="0" :precision="2" controls-position="right" size="small" /></template>
         </el-table-column>
       </template>
-      <el-table-column prop="payAmount" label="合计" width="110" />
-      <el-table-column label="状态" width="80">
+      <el-table-column label="支出总额" width="120" align="right">
+        <template #default="{ row }">{{ formatMoney(row.payAmount) }}</template>
+      </el-table-column>
+      <el-table-column v-if="isFundPayMode" label="操作" width="160" fixed="right">
+        <template #default="{ row }">
+          <template v-if="!isOpsHidden">
+            <el-button
+              type="success"
+              size="small"
+              :disabled="Number(row.status) === 1 || acting"
+              @click="handleChargeBack(row)"
+            >
+              扣款
+            </el-button>
+            <el-button
+              size="small"
+              :disabled="Number(row.status) === 2 || !row.id || acting"
+              @click="handleCorrect(row)"
+            >
+              修正
+            </el-button>
+          </template>
+        </template>
+      </el-table-column>
+      <el-table-column v-else label="状态" width="80">
         <template #default="{ row }">{{ Number(row.status) === 1 ? '已扣' : '未扣' }}</template>
       </el-table-column>
     </el-table>
+
+    <div v-if="isFundPayMode" class="company-footer">
+      <el-button v-if="!isOpsHidden" type="warning" size="large" :loading="saving" @click="handleSave">
+        保存
+      </el-button>
+      <p class="ops-tip">
+        <template v-if="mode === 'company'">
+          操作说明:1.请先选择所属公司 2.再选择操作年份 3.进行录入
+          当出现错误提示对话框时请刷新页面重复如上步骤
+        </template>
+        <template v-else>
+          操作说明:1.请先选择用户 2.再选择操作年份 3.进行录入
+          当出现错误提示对话框时请刷新页面重复如上步骤
+        </template>
+      </p>
+    </div>
   </admin-page-card>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed, onMounted, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminPageCard from '@admin/components/AdminPageCard.vue'
+import { useUserStore } from '@admin/stores/user'
 import {
+  chargeBackCompanyPay,
+  chargeBackUserPay,
   fetchCompanyLoanList,
   fetchCompanyOptions,
   fetchCompanyPayList,
@@ -131,6 +315,8 @@ import {
   saveCompanyPay,
   saveProjectPay,
   saveUserPay,
+  updateCompanyPayStatus,
+  updateUserPayStatus,
   isAjaxOk,
 } from '@admin/api/fund'
 
@@ -139,9 +325,19 @@ const props = defineProps<{
   title: string
 }>()
 
+const userStore = useUserStore()
+const isFundPayMode = computed(() => props.mode === 'company' || props.mode === 'personal')
+/** Java：admin / userType 1|3 隐藏扣款修正与保存 */
+const isOpsHidden = computed(() => {
+  const name = String(userStore.welcome?.userName || userStore.userName || '').toLowerCase()
+  const t = Number(userStore.welcome?.userType ?? userStore.userType ?? 0)
+  return name === 'admin' || t === 1 || (props.mode === 'personal' && t === 3)
+})
 const loading = ref(false)
 const saving = ref(false)
-const year = ref(String(new Date().getFullYear()))
+const acting = ref(false)
+/** 公司/个人资金支出对齐 Java：年份初始为空，选齐筛选项再拉表 */
+const year = ref(isFundPayMode.value ? '' : String(new Date().getFullYear()))
 const accountType = ref(1)
 const companyId = ref('')
 const userId = ref('')
@@ -151,7 +347,44 @@ const users = ref<Record<string, unknown>[]>([])
 const labs = ref<Record<string, unknown>[]>([])
 const rows = ref<Record<string, unknown>[]>([])
 
+/** 对齐 Java addTable：进页即展示 01–12 月零值模板 */
+function emptyCompanyRows(): Record<string, unknown>[] {
+  return Array.from({ length: 12 }, (_, i) => ({
+    id: 0,
+    month: String(i + 1),
+    fees: 0,
+    wages: 0,
+    taxes: 0,
+    systemCost: 0,
+    loan: 0,
+    payAmount: 0,
+    status: 2,
+  }))
+}
+
+function emptyPersonalRows(): Record<string, unknown>[] {
+  return Array.from({ length: 12 }, (_, i) => ({
+    id: 0,
+    month: String(i + 1),
+    wages: 0,
+    taxes: 0,
+    loanInterest: 0,
+    carAmount: 0,
+    orderAmount: 0,
+    otherAmount: 0,
+    payAmount: 0,
+    status: 2,
+  }))
+}
+
+function emptyFundRows() {
+  return props.mode === 'personal' ? emptyPersonalRows() : emptyCompanyRows()
+}
+
 onMounted(async () => {
+  if (isFundPayMode.value) {
+    rows.value = emptyFundRows()
+  }
   if (props.mode === 'company' || props.mode === 'loan') {
     const res = await fetchCompanyOptions()
     if (isAjaxOk(res)) companies.value = (res.obj as Record<string, unknown>[]) || []
@@ -166,17 +399,104 @@ onMounted(async () => {
   }
 })
 
+function formatMonth(m: unknown) {
+  const n = Number(m)
+  if (!Number.isFinite(n) || n <= 0) return String(m ?? '')
+  return String(n).padStart(2, '0')
+}
+
+function formatMoney(v: unknown) {
+  return Number(v || 0).toLocaleString('zh-CN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
+
+function isRowLocked(row: Record<string, unknown>) {
+  return isOpsHidden.value || Number(row.status) === 1
+}
+
+function recalcCompanyRow(row: Record<string, unknown>) {
+  const total =
+    Number(row.fees || 0) +
+    Number(row.wages || 0) +
+    Number(row.taxes || 0) +
+    Number(row.systemCost || 0) +
+    Number(row.loan || 0)
+  row.payAmount = Math.round(total * 100) / 100
+}
+
+function recalcPersonalRow(row: Record<string, unknown>) {
+  const total =
+    Number(row.wages || 0) +
+    Number(row.taxes || 0) +
+    Number(row.loanInterest || 0) +
+    Number(row.carAmount || 0) +
+    Number(row.orderAmount || 0) +
+    Number(row.otherAmount || 0)
+  row.payAmount = Math.round(total * 100) / 100
+}
+
+function fundSummary({ columns, data }: { columns: { property?: string }[]; data: Record<string, unknown>[] }) {
+  const sums: string[] = []
+  const companyKeys: Record<number, string> = {
+    1: 'fees',
+    2: 'wages',
+    3: 'taxes',
+    4: 'systemCost',
+    5: 'loan',
+    6: 'payAmount',
+  }
+  const personalKeys: Record<number, string> = {
+    1: 'wages',
+    2: 'taxes',
+    3: 'loanInterest',
+    4: 'carAmount',
+    5: 'orderAmount',
+    6: 'otherAmount',
+    7: 'payAmount',
+  }
+  const keyByIndex = props.mode === 'personal' ? personalKeys : companyKeys
+  columns.forEach((col, index) => {
+    if (index === 0) {
+      sums[index] = '合计'
+      return
+    }
+    const key = String(col.property || '') || keyByIndex[index]
+    if (!key) {
+      sums[index] = ''
+      return
+    }
+    const total = data.reduce((acc, row) => acc + Number(row[key] || 0), 0)
+    sums[index] = formatMoney(total)
+  })
+  return sums
+}
+
+function onFilterChange() {
+  if (!isFundPayMode.value) return
+  if (props.mode === 'company' && (!companyId.value || !year.value)) {
+    rows.value = emptyCompanyRows()
+    return
+  }
+  if (props.mode === 'personal' && (!userId.value || !year.value)) {
+    rows.value = emptyPersonalRows()
+    return
+  }
+  void loadRows()
+}
+
 async function loadRows() {
   if (!year.value) {
-    ElMessage.warning('请选择年份')
+    ElMessage.warning(props.mode === 'company' ? '请选择年份' : '请选择年份')
     return
   }
   if ((props.mode === 'company' || props.mode === 'loan') && !companyId.value) {
-    ElMessage.warning('请选择公司')
+    ElMessage.warning(props.mode === 'company' ? '请先选择所属公司' : '请选择公司')
     return
   }
   if (props.mode === 'personal' && !userId.value) {
-    ElMessage.warning('请选择用户')
+    ElMessage.warning('请先选择用户')
     return
   }
   if (props.mode === 'project' && !labId.value) {
@@ -188,9 +508,19 @@ async function loadRows() {
     let res
     const common = { year: year.value, accountType: accountType.value }
     if (props.mode === 'company') {
-      res = await fetchCompanyPayList({ ...common, companyId: companyId.value })
+      res = await fetchCompanyPayList({
+        ...common,
+        companyId: companyId.value,
+        company_id: companyId.value,
+        account_type: accountType.value,
+      })
     } else if (props.mode === 'personal') {
-      res = await fetchUserPayList({ ...common, userId: userId.value })
+      res = await fetchUserPayList({
+        ...common,
+        userId: userId.value,
+        user_id: userId.value,
+        account_type: accountType.value,
+      })
     } else if (props.mode === 'loan') {
       res = await fetchCompanyLoanList({ ...common, companyId: companyId.value })
     } else {
@@ -198,9 +528,20 @@ async function loadRows() {
     }
     if (!isAjaxOk(res)) {
       ElMessage.error(String(res.msg || '加载失败'))
+      if (isFundPayMode.value) rows.value = emptyFundRows()
       return
     }
-    rows.value = ((res.obj as Record<string, unknown>[]) || []).map((r) => ({ ...r }))
+    const list = (res.obj as Record<string, unknown>[]) || []
+    if (isFundPayMode.value && !list.length) {
+      rows.value = emptyFundRows()
+      return
+    }
+    rows.value = list.map((r) => {
+      const row = { ...r }
+      if (props.mode === 'company') recalcCompanyRow(row)
+      if (props.mode === 'personal') recalcPersonalRow(row)
+      return row
+    })
   } finally {
     loading.value = false
   }
@@ -211,8 +552,34 @@ async function handleSave() {
     ElMessage.warning('汇总模式不可保存')
     return
   }
+  if (props.mode === 'company') {
+    if (!companyId.value) {
+      ElMessage.warning('请先选择所属公司')
+      return
+    }
+    if (!year.value) {
+      ElMessage.warning('请选择年份')
+      return
+    }
+  }
+  if (props.mode === 'personal') {
+    if (!userId.value) {
+      ElMessage.warning('请先选择用户')
+      return
+    }
+    if (!year.value) {
+      ElMessage.warning('请选择年份')
+      return
+    }
+  }
   if (!rows.value.length) {
-    ElMessage.warning('请先查询')
+    ElMessage.warning(
+      props.mode === 'company'
+        ? '请先选择公司和年份'
+        : props.mode === 'personal'
+          ? '请先选择用户和年份'
+          : '请先查询'
+    )
     return
   }
   saving.value = true
@@ -240,8 +607,145 @@ async function handleSave() {
     saving.value = false
   }
 }
+
+async function handleChargeBack(row: Record<string, unknown>) {
+  if (props.mode === 'company' && !companyId.value) {
+    ElMessage.warning('请先选择所属公司')
+    return
+  }
+  if (props.mode === 'personal' && !userId.value) {
+    ElMessage.warning('请先选择用户')
+    return
+  }
+  if (!year.value) {
+    ElMessage.warning('请选择年份')
+    return
+  }
+  try {
+    await ElMessageBox.confirm('确定扣款操作?', '提示', { type: 'warning' })
+  } catch {
+    return
+  }
+  acting.value = true
+  try {
+    let res
+    if (props.mode === 'personal') {
+      res = await chargeBackUserPay({
+        id: row.id || 0,
+        userId: userId.value,
+        user_id: userId.value,
+        year: year.value,
+        month: formatMonth(row.month),
+        pay_amount: row.payAmount,
+        taxes: row.taxes,
+        wages: row.wages,
+        loan_interest: row.loanInterest,
+        car_amount: row.carAmount,
+        order_amount: row.orderAmount,
+        other_amount: row.otherAmount,
+        accountType: accountType.value,
+        account_type: accountType.value,
+      })
+    } else {
+      res = await chargeBackCompanyPay({
+        id: row.id || 0,
+        companyId: companyId.value,
+        company_id: companyId.value,
+        year: year.value,
+        month: formatMonth(row.month),
+        pay_amount: row.payAmount,
+        taxes: row.taxes,
+        fees: row.fees,
+        wages: row.wages,
+        system_cost: row.systemCost,
+        loan: row.loan,
+        accountType: accountType.value,
+        account_type: accountType.value,
+      })
+    }
+    if (!isAjaxOk(res)) {
+      ElMessage.error(String(res.msg || res.resMsg || '扣款失败'))
+      return
+    }
+    ElMessage.success('操作成功')
+    await loadRows()
+  } finally {
+    acting.value = false
+  }
+}
+
+async function handleCorrect(row: Record<string, unknown>) {
+  if (props.mode === 'company' && !companyId.value) {
+    ElMessage.warning('请先选择所属公司')
+    return
+  }
+  if (props.mode === 'personal' && !userId.value) {
+    ElMessage.warning('请先选择用户')
+    return
+  }
+  if (!year.value) {
+    ElMessage.warning('请选择年份')
+    return
+  }
+  if (!row.id) {
+    ElMessage.warning('请保存后再重试')
+    return
+  }
+  try {
+    await ElMessageBox.confirm('确定修正操作?', '提示', { type: 'warning' })
+  } catch {
+    return
+  }
+  acting.value = true
+  try {
+    const res =
+      props.mode === 'personal'
+        ? await updateUserPayStatus({
+            id: row.id,
+            userId: userId.value,
+            user_id: userId.value,
+            year: year.value,
+            month: formatMonth(row.month),
+            pay_amount: row.payAmount,
+            accountType: accountType.value,
+            account_type: accountType.value,
+          })
+        : await updateCompanyPayStatus({
+            id: row.id,
+            companyId: companyId.value,
+            company_id: companyId.value,
+            year: year.value,
+            month: formatMonth(row.month),
+            pay_amount: row.payAmount,
+            loan: row.loan,
+            accountType: accountType.value,
+            account_type: accountType.value,
+          })
+    if (!isAjaxOk(res)) {
+      ElMessage.error(String(res.msg || res.resMsg || '修正失败'))
+      return
+    }
+    ElMessage.success('操作成功')
+    await loadRows()
+  } finally {
+    acting.value = false
+  }
+}
 </script>
 
 <style scoped>
-.filter-form { margin-bottom: 12px; }
+.filter-form {
+  margin-bottom: 12px;
+}
+.company-footer {
+  margin-top: 28px;
+  text-align: center;
+}
+.ops-tip {
+  margin-top: 16px;
+  text-align: left;
+  color: #606266;
+  font-size: 13px;
+  line-height: 1.6;
+}
 </style>

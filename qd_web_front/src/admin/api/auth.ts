@@ -24,7 +24,9 @@ export function fetchAdminUserCenter(config?: RequestConfig) {
   return request.get('/vue/usercenter.ajax', config)
 }
 
-export function fetchAdminWelcome(config?: RequestConfig) {
+export function fetchAdminWelcome(
+  config?: RequestConfig & { params?: Record<string, unknown> },
+) {
   return request.get('/vue/welcome.ajax', config)
 }
 

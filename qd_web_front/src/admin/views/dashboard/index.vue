@@ -26,8 +26,36 @@
       </button>
     </div>
 
-    <!-- 快捷入口 -->
-    <div v-if="actionCards.length" class="action-row" :style="actionRowStyle">
+    <!-- C类等：入口+运营卡同一流式区域（对齐 Java welcome 混排） -->
+    <div v-if="isLiteSalesRole && (actionCards.length || opsKpis.length)" class="java-home-strip">
+      <button
+        v-for="card in actionCards"
+        :key="card.key"
+        type="button"
+        class="java-home-strip__action"
+        @click="card.onClick"
+      >
+        {{ card.title }}
+      </button>
+      <button
+        v-for="item in opsKpis"
+        :key="item.key"
+        type="button"
+        class="java-home-strip__kpi"
+        :class="item.tone"
+        @click="item.onClick"
+      >
+        <strong>{{ item.count }}</strong>
+        <span>{{ item.label }}</span>
+      </button>
+    </div>
+
+    <!-- 其它角色：快捷入口 -->
+    <div
+      v-else-if="actionCards.length"
+      class="action-row"
+      :style="actionRowStyle"
+    >
       <button
         v-for="card in actionCards"
         :key="card.key"
@@ -46,8 +74,8 @@
       </button>
     </div>
 
-    <!-- 未开始 / 进行中 / 通过或超时 -->
-    <div v-if="opsKpis.length" class="kpi-row kpi-row--ops">
+    <!-- 其它角色：未开始 / 进行中 / 通过或超时 -->
+    <div v-if="!isLiteSalesRole && opsKpis.length" class="kpi-row kpi-row--ops">
       <button
         v-for="item in opsKpis"
         :key="item.key"
@@ -92,8 +120,26 @@
       title="当前账号类型在欢迎页无快捷入口，请从左侧菜单进入业务模块"
     />
 
-    <!-- 主内容：资产饼图 + 销售额/测试数量/管理员交易 + 日志 -->
+    <!-- 主内容：测试数量(左) → 资产 → 销售额 / 管理员交易 + 日志（对齐 Java welcome.html） -->
     <div v-if="showMainPanels" class="main-row" :class="mainRowClass">
+      <el-card v-if="showTestChart" class="panel-card" shadow="never">
+        <template #header>
+          <div class="panel-head">
+            <span class="panel-head__title">我的测试数量</span>
+            <el-date-picker
+              v-model="testYearPicked"
+              type="year"
+              placeholder="年份选择"
+              value-format="YYYY"
+              class="panel-head__year"
+              :clearable="false"
+              @change="onTestYearChange"
+            />
+          </div>
+        </template>
+        <div ref="testChartRef" class="chart-box" />
+      </el-card>
+
       <el-card v-if="showAssets" class="panel-card" shadow="never">
         <template #header>
           <div class="panel-head">
@@ -122,15 +168,6 @@
           <br />
           销售的订单数量：人民币订单总数:{{ ddslrmb }}，美元订单总数:{{ ddslus }}
         </p>
-      </el-card>
-
-      <el-card v-if="showTestChart" class="panel-card" shadow="never">
-        <template #header>
-          <div class="panel-head">
-            <span class="panel-head__title">我的测试数量</span>
-          </div>
-        </template>
-        <div ref="testChartRef" class="chart-box" />
       </el-card>
 
       <el-card v-if="showAdminChart" class="panel-card" shadow="never">
@@ -217,7 +254,14 @@ const welcomeUserType = computed(() =>
   Number(welcome.value?.userType ?? userStore.userType ?? 0),
 )
 const welcomeUserType2 = computed(() => Number(welcome.value?.userType2 ?? 0))
+/** Java userType3：2=销售额图；C类为 0 */
+const welcomeUserType3 = computed(() => Number(welcome.value?.userType3 ?? 0))
 const roleName = computed(() => String(welcome.value?.roleName || userStore.roleName || ''))
+/** C类/原厂/R类/内勤：即使后端仍返回旧 ut2=2，也不展示销售额与测试年/月图 */
+const isLiteSalesRole = computed(() => {
+  const r = roleName.value
+  return /C类|原厂|R类|内勤/.test(r)
+})
 const currentUser = computed(
   () => welcome.value?.currentUser || welcome.value?.loginName || userStore.loginName || '',
 )
@@ -228,9 +272,17 @@ const showAssets = computed(() => {
   if (welcome.value?.showAssets != null) return Boolean(welcome.value.showAssets)
   return [0, 2, 3, 4, 6, 7, 14].includes(welcomeUserType.value)
 })
-const showSaleChart = computed(() => welcomeUserType2.value === 2)
-const showTestChart = computed(() => welcomeUserType2.value === 3)
+/** Java userType3==2（仅销售主管/销售人员）；C类等强制关闭 */
+const showSaleChart = computed(() => {
+  if (isLiteSalesRole.value) return false
+  return welcomeUserType3.value === 2 || welcomeUserType2.value === 2
+})
+/** Java：3=测试人员，5=测试主管 */
+const showTestChart = computed(
+  () => welcomeUserType2.value === 3 || welcomeUserType2.value === 5,
+)
 const showAdminChart = computed(() => welcomeUserType2.value === 1)
+const testYearPicked = ref(String(new Date().getFullYear()))
 const showMainPanels = computed(
   () => showAssets.value || showSaleChart.value || showTestChart.value || showAdminChart.value || showLogs.value,
 )
@@ -244,6 +296,9 @@ const mainRowClass = computed(() => {
 const accountRMB = computed(() => String(welcome.value?.accountRMB ?? '0.00'))
 const accountUS = computed(() => String(welcome.value?.accountUS ?? '0.00'))
 const saleYear = computed(() => String(welcome.value?.saleYear || new Date().getFullYear()))
+const testChartYear = computed(() =>
+  String(welcome.value?.testChartYear || welcome.value?.saleYear || new Date().getFullYear()),
+)
 const qnxsrmb = computed(() => String(welcome.value?.qnxsrmb ?? '0.00'))
 const qnxsus = computed(() => String(welcome.value?.qnxsus ?? '0.00'))
 const ddslrmb = computed(() => Number(welcome.value?.ddslrmb || 0))
@@ -255,6 +310,7 @@ const pending = computed(() => welcome.value?.pendingCounts || {})
 const ops = computed(() => welcome.value?.opsCounts || {})
 
 const pendingKpis = computed<Kpi[]>(() => {
+  // 对齐 Java welcome.html userType=3（销售主管 / 测试主管）
   if (welcomeUserType.value !== 3) return []
   return [
     {
@@ -265,78 +321,59 @@ const pendingKpis = computed<Kpi[]>(() => {
     },
     {
       key: 'self',
-      label: '待审核自制子订单',
+      label: '待审核实验子订单',
       count: Number(pending.value.selfChildOrder || 0),
       onClick: () => goOrders({ orderType: '10', orderStatus: '20' }),
     },
     {
       key: 'sub',
-      label: '待审核外协分包订单',
+      label: '待审核实验分包订单',
       count: Number(pending.value.subcontractOrder || 0),
       onClick: () =>
         router.push({ name: 'ExperimentSubcontractOrders', query: { orderStatus: '20' } }),
     },
     {
       key: 'sub-child',
-      label: '待审核外协子订单',
+      label: '待审核实验分包子订单',
       count: Number(pending.value.subcontractSubOrder || 0),
       onClick: () =>
         router.push({ name: 'ExperimentSubcontractSubOrders', query: { orderStatus: '20' } }),
     },
     {
-      key: 'material',
-      label: '待审核物资分包子订单',
+      key: 'pay',
+      label: '待审核付款实验分包子订单',
       count: Number(pending.value.materialSubOrder || 0),
       onClick: () =>
-        router.push({ name: 'ExperimentSubcontractSubOrders', query: { orderStatus: '20' } }),
+        router.push({
+          name: 'ExperimentSubcontractSubOrders',
+          query: { payStatus: '32' },
+        }),
     },
   ]
 })
 
-const opsMode = computed(() => String(ops.value.opsMode || ''))
-const showSaleTestCharts = computed(() => Boolean(welcome.value?.showSaleTestCharts))
+const showSaleTestCharts = computed(() => {
+  if (isLiteSalesRole.value) return false
+  // Java userType2==4（销售人员）才有测试数量年/月图
+  return Boolean(welcome.value?.showSaleTestCharts) || welcomeUserType2.value === 4
+})
 const testYearChart = computed(() => welcome.value?.testYearChart || {})
 const testerMonthChart = computed(() => welcome.value?.testerMonthChart || {})
 
 const opsKpis = computed<Kpi[]>(() => {
-  if (!welcome.value?.showOpsCounts && welcomeUserType.value !== 3 && welcomeUserType.value !== 4) {
+  if (
+    !welcome.value?.showOpsCounts &&
+    ![3, 4, 5, 6, 7].includes(welcomeUserType.value) &&
+    welcomeUserType2.value !== 3 &&
+    welcomeUserType2.value !== 5
+  ) {
     return []
   }
-  if (!(welcome.value?.showOpsCounts || welcomeUserType.value === 3 || welcomeUserType2.value === 3)) {
-    return []
-  }
-  const mode = opsMode.value
-  // 销售人员 / 测试人员：未开始测试、进行中、测试通过（对齐 Java 图一）
-  if (mode === 'salesperson' || mode === 'tester' || (welcomeUserType.value === 4 && welcomeUserType2.value === 2)) {
-    return [
-      {
-        key: 'nostart',
-        label: '未开始测试订单',
-        count: Number(ops.value.notStarted || 0),
-        tone: 'kpi-card--warn',
-        onClick: () => router.push({ name: 'DigitalStats' }),
-      },
-      {
-        key: 'progress',
-        label: '进行中测试订单',
-        count: Number(ops.value.inProgress || 0),
-        tone: 'kpi-card--info',
-        onClick: () => router.push({ name: 'DigitalStats' }),
-      },
-      {
-        key: 'passed',
-        label: '测试通过订单',
-        count: Number(ops.value.passed || 0),
-        tone: 'kpi-card--ok',
-        onClick: () => router.push({ name: 'DigitalStats' }),
-      },
-    ]
-  }
-  // 销售主管等：未开始实验、进行中、超时
+  // 对齐 Java welcome.html：测试人员/主管/C类等第三卡均为「测试超时订单」
   return [
     {
       key: 'nostart',
-      label: '未开始实验订单',
+      label: '未开始测试订单',
       count: Number(ops.value.notStarted || 0),
       tone: 'kpi-card--warn',
       onClick: () => router.push({ name: 'DigitalStats' }),
@@ -360,12 +397,14 @@ const opsKpis = computed<Kpi[]>(() => {
 
 const actionCards = computed<Card[]>(() => {
   const t = welcomeUserType.value
+  // C类等对齐 Java：入口卡仅标题、无副文案
+  const lite = isLiteSalesRole.value
   const cards: Card[] = []
   if ([1, 2, 3, 4, 7, 14].includes(t)) {
     cards.push({
       key: 'fund',
       title: '资金账户',
-      desc: '账户余额 · 收支明细',
+      desc: lite ? undefined : '账户余额 · 收支明细',
       icon: '¥',
       tone: 'action-card--fund',
       onClick: () => router.push({ name: 'FundAccount' }),
@@ -373,7 +412,7 @@ const actionCards = computed<Card[]>(() => {
     cards.push({
       key: 'digital',
       title: '数字化中心',
-      desc: '运营看板 · 绩效统计',
+      desc: lite ? undefined : '运营看板 · 绩效统计',
       icon: '◈',
       tone: 'action-card--digital',
       onClick: () => router.push({ name: 'FundDigitalCenter' }),
@@ -399,7 +438,7 @@ const actionCards = computed<Card[]>(() => {
     cards.push({
       key: 'create',
       title: '新增实验订单',
-      desc: '创建实验销售订单',
+      desc: lite ? undefined : '创建实验销售订单',
       icon: '+',
       tone: 'action-card--order',
       onClick: () => router.push({ name: 'ExperimentOrders' }),
@@ -430,8 +469,18 @@ const todayLabel = computed(() => {
 const bannerHint = computed(() => {
   const t = welcomeUserType.value
   if (t === 1) return '查看近期交易与系统动态，或从下方快捷入口进入常用模块'
+  // 测试主管(ut2=5) / 测试人员(ut2=3)
+  if (t === 3 && welcomeUserType2.value === 5) {
+    return '处理待审核订单，查看测试数量与账户资产'
+  }
   if (t === 3) return '处理待审核订单，查看个人业绩与资产'
-  if (welcomeUserType2.value === 3) return '查看测试数量与账户资产'
+  if (welcomeUserType2.value === 3 || welcomeUserType2.value === 5) {
+    return '查看测试数量与账户资产'
+  }
+  // C类等：仅快捷入口 + 运营卡 + 资产
+  if (t === 4 && welcomeUserType3.value !== 2) {
+    return '从下方快捷入口进入业务模块，查看测试订单与账户资产'
+  }
   if ([2, 3, 4, 7, 14].includes(t)) return '查看个人业绩与资产，或从下方快捷入口进入常用模块'
   return '从下方快捷入口或左侧菜单进入业务模块'
 })
@@ -453,20 +502,34 @@ function renderAssetPie() {
   if (!assetChart) assetChart = echarts.init(assetChartRef.value)
   const rmb = Number(accountRMB.value) || 0
   const usd = Number(accountUS.value) || 0
+  // 双 0 时避免饼图对半假数据（对齐金额文案）
+  const data =
+    rmb === 0 && usd === 0
+      ? [{ name: '暂无资产', value: 1, itemStyle: { color: '#e5e7eb' } }]
+      : [
+          { name: '人民币', value: rmb },
+          { name: '美金(转人民币)', value: usd },
+        ]
   assetChart.setOption({
     color: ['#e11d48', '#374151'],
-    tooltip: { trigger: 'item', formatter: '{b} : {c} ({d}%)' },
+    tooltip: {
+      trigger: 'item',
+      formatter: (p: { name?: string; value?: number; percent?: number }) => {
+        if (p.name === '暂无资产') return '暂无资产'
+        return `${p.name} : ${p.value} (${p.percent}%)`
+      },
+    },
     series: [
       {
         name: '可用资产',
         type: 'pie',
         radius: ['35%', '62%'],
         center: ['50%', '48%'],
-        data: [
-          { name: '人民币', value: rmb },
-          { name: '美金', value: usd },
-        ],
-        label: { formatter: '{b}\n{c}' },
+        data,
+        label: {
+          formatter: (p: { name?: string; value?: number }) =>
+            p.name === '暂无资产' ? '暂无资产' : `${p.name}\n${p.value}`,
+        },
       },
     ],
   })
@@ -518,9 +581,24 @@ function renderTestBars() {
     color: ['#ea580c'],
     tooltip: { trigger: 'axis' },
     grid: { left: 48, right: 24, top: 24, bottom: 36 },
-    xAxis: { type: 'category', data: months.length ? months : ['暂无'] },
-    yAxis: { type: 'value' },
-    series: [{ name: '测试数量', type: 'bar', data: vals.length ? vals : [0] }],
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: months.length ? months : ['暂无'],
+      axisLabel: { rotate: months.length > 8 ? 30 : 0, color: '#6b7280' },
+    },
+    yAxis: { type: 'value', minInterval: 1 },
+    series: [
+      {
+        name: '测试数量',
+        type: 'line',
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 6,
+        areaStyle: { color: 'rgba(234,88,12,0.12)' },
+        data: vals.length ? vals : [0],
+      },
+    ],
   })
 }
 
@@ -620,11 +698,26 @@ function onResize() {
   testerMonthChartInst?.resize()
 }
 
-async function ensureWelcomeData() {
-  const res = await fetchAdminWelcome({ silentError: true })
+async function ensureWelcomeData(year?: string) {
+  const y = year || testYearPicked.value || String(new Date().getFullYear())
+  const res = await fetchAdminWelcome({
+    silentError: true,
+    params: { year: y },
+  })
   if (isAjaxOk(res) && res.obj) {
-    userStore.welcome = { ...(userStore.welcome || {}), ...(res.obj as object) }
+    const obj = res.obj as Record<string, unknown>
+    userStore.welcome = { ...(userStore.welcome || {}), ...obj }
+    if (obj.testChartYear) {
+      testYearPicked.value = String(obj.testChartYear)
+    }
   }
+}
+
+async function onTestYearChange(val: string | null) {
+  if (!val) return
+  await ensureWelcomeData(val)
+  await nextTick()
+  renderTestBars()
 }
 
 watch(
@@ -783,6 +876,69 @@ onBeforeUnmount(() => {
   color: #16a34a;
 }
 
+.java-home-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.java-home-strip__action {
+  flex: 1 1 160px;
+  min-height: 88px;
+  padding: 18px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  background: #fff;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+  cursor: pointer;
+
+  &:hover {
+    border-color: #f5a623;
+    color: #ea580c;
+  }
+}
+
+.java-home-strip__kpi {
+  flex: 1 1 160px;
+  min-height: 88px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+
+  strong {
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1;
+    color: #ea580c;
+  }
+
+  span {
+    font-size: 13px;
+    color: #666;
+  }
+
+  &.kpi-card--info strong {
+    color: #2563eb;
+  }
+
+  &.kpi-card--danger strong {
+    color: #dc2626;
+  }
+
+  &:hover {
+    border-color: #f5a623;
+  }
+}
+
 .action-row {
   display: grid;
   gap: 12px;
@@ -905,6 +1061,14 @@ onBeforeUnmount(() => {
 .panel-head__sub {
   font-size: 12px;
   color: #9ca3af;
+}
+
+.panel-head__year {
+  width: 120px;
+}
+
+.panel-head__year :deep(.el-input__wrapper) {
+  box-shadow: 0 0 0 1px #e5e7eb inset;
 }
 
 .chart-box {

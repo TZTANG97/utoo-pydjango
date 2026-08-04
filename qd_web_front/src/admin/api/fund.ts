@@ -124,11 +124,19 @@ export const fetchCompanyPayList = (p: Record<string, unknown>) =>
   postAjax('/companyPay/selDetailList.ajax', p)
 export const saveCompanyPay = (list: Record<string, unknown>[]) =>
   postAjax('/companyPay/submitCompanyPay.ajax', { list })
+export const chargeBackCompanyPay = (p: Record<string, unknown>) =>
+  postAjax('/companyPay/chargeBack.ajax', p)
+export const updateCompanyPayStatus = (p: Record<string, unknown>) =>
+  postAjax('/companyPay/companyPayUpdate.ajax', p)
 
 export const fetchUserPayList = (p: Record<string, unknown>) =>
   postAjax('/userPay/selDetailList.ajax', p)
 export const saveUserPay = (list: Record<string, unknown>[]) =>
   postAjax('/userPay/submitUserPay.ajax', { list })
+export const chargeBackUserPay = (p: Record<string, unknown>) =>
+  postAjax('/userPay/chargeBack.ajax', p)
+export const updateUserPayStatus = (p: Record<string, unknown>) =>
+  postAjax('/userPay/companyPayUpdate.ajax', p)
 
 export const fetchCompanyLoanList = (p: Record<string, unknown>) =>
   postAjax('/companyLoanPay/selDetailList.ajax', p)
@@ -154,3 +162,15 @@ export const fetchExpSaleByYear = (p: Record<string, unknown> = {}) =>
 /** 实验/分包已收+应收双饼图（对齐 Java SSR companyOverdueReceive） */
 export const fetchExpReceivePie = (p: Record<string, unknown> = {}) =>
   postAjax('/digitalManage/selExpReceivePie.ajax', p)
+
+/** 个人实验总额（公司基金等非管理员看板） */
+export const fetchUserAmountByYearSygr = (p: Record<string, unknown> = {}) =>
+  postAjax('/digitalManage/selUserAmountByYearsygr.ajax', p)
+
+/** 个人实验分包总额 */
+export const fetchUserAmountByYearSyfbgr = (p: Record<string, unknown> = {}) =>
+  postAjax('/digitalManage/selUserAmountByYearsyfbgr.ajax', p)
+
+/** 个人应收/应付饼图（公司基金等非管理员看板） */
+export const fetchUserOverduePie = (p: Record<string, unknown> = {}) =>
+  postAjax('/digitalManage/selUserOverduePie.ajax', p)

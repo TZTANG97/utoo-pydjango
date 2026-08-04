@@ -92,7 +92,7 @@ def usercenter(_request: Request, user=None):
 @authentication_classes([])
 @permission_classes([AllowAny])
 @admin_ajax_view(require_staff=True)
-def welcome(_request: Request, user=None):
+def welcome(request: Request, user=None):
     row = staff_repo.find_sy_user_by_login_name(user.get("user_name") or "")
     payload_user = {**user}
     if row:
@@ -104,9 +104,21 @@ def welcome(_request: Request, user=None):
                 "email": row.get("email"),
                 "mobile_phone_number": row.get("mobile_phone_number"),
                 "dept_id": row.get("dept_id"),
+                # welcome 计数以 sy_users.id 为准
+                "user_id": str(row.get("id") or user.get("user_id") or ""),
             }
         )
-    return ajax_response(True, obj=welcome_service.build_welcome_payload(payload_user))
+    body = getattr(request, "data", None) or {}
+    chart_year = request.query_params.get("year") or (
+        body.get("year") if isinstance(body, dict) else None
+    )
+    try:
+        cy = int(chart_year) if chart_year not in (None, "") else None
+    except (TypeError, ValueError):
+        cy = None
+    return ajax_response(
+        True, obj=welcome_service.build_welcome_payload(payload_user, chart_year=cy)
+    )
 
 
 @api_view(["GET", "POST"])

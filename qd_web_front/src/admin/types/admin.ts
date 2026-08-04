@@ -64,8 +64,10 @@ export interface WelcomeData {
   loginName?: string
   currentUser?: string
   userType?: number
-  /** 对齐 Java：1管理员交易 2销售额 3测试数量 0无 */
+  /** 对齐 Java：1管理员交易 3测试人员 4销售人员测试图 5测试主管 0无 */
   userType2?: number
+  /** 对齐 Java：2=销售额图（销售主管/销售人员；C类为 0） */
+  userType3?: number
   roleName?: string
   deptName?: string
   email?: string
@@ -88,6 +90,7 @@ export interface WelcomeData {
   /** 测试数量 */
   expmonth?: string[]
   expTestAry?: Array<string | number>
+  testChartYear?: string
   showAssets?: boolean
   accountRMB?: string | number
   accountUS?: string | number

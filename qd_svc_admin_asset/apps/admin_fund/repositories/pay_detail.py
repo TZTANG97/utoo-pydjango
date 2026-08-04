@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from apps.core.db_utils import execute, execute_insert, fetch_all, fetch_one
+from apps.admin_fund.repositories import account as account_repo
+from apps.admin_fund.repositories import settings as settings_repo
+from apps.core.db_utils import execute, execute_insert, fetch_all, fetch_one, scalar
 
 
 def _dec(v: Any) -> Decimal:
@@ -190,6 +193,297 @@ def upsert_company_pay(items: list[dict[str, Any]]) -> None:
                 )
 
 
+def _sum_operate_log_amount(cpd_id: int, acc_type: int, log_type: int) -> Decimal:
+    """对齐 Java accountLogService.selectByCpdID。"""
+    try:
+        val = scalar(
+            """
+            SELECT IFNULL(SUM(t.log_amount), 0)
+            FROM account_log t
+            WHERE t.id IN (
+                SELECT l.account_log_id FROM account_operate_log l
+                WHERE l.pay_detial_id = %(cpd_id)s AND l.log_type = %(log_type)s
+            )
+              AND t.acc_type = %(acc_type)s
+            """,
+            {"cpd_id": cpd_id, "log_type": log_type, "acc_type": acc_type},
+        )
+        return _dec(val)
+    except Exception:
+        return Decimal("0")
+
+
+def _insert_operate_log(
+    *,
+    account_log_id: int,
+    log_user: str,
+    pay_detail_id: int,
+    pay_amount: Decimal,
+    log_type: int,
+    log_info: str,
+) -> None:
+    try:
+        execute_insert(
+            """
+            INSERT INTO account_operate_log
+                (addTime, account_log_id, log_user_id, pay_detial_id, pay_amount, log_type, log_info)
+            VALUES
+                (NOW(), %(account_log_id)s, %(log_user)s, %(pay_detail_id)s,
+                 %(pay_amount)s, %(log_type)s, %(log_info)s)
+            """,
+            {
+                "account_log_id": account_log_id,
+                "log_user": log_user or "",
+                "pay_detail_id": pay_detail_id,
+                "pay_amount": pay_amount,
+                "log_type": log_type,
+                "log_info": log_info,
+            },
+        )
+    except Exception:
+        pass
+
+
+def company_pay_charge_back(
+    *,
+    company_id: str,
+    year: str,
+    month: str,
+    pay_amount: Any,
+    taxes: Any,
+    fees: Any,
+    wages: Any,
+    system_cost: Any,
+    loan: Any,
+    account_type: int,
+    row_id: int = 0,
+    operator: str = "",
+) -> str | None:
+    """对齐 Java companyPay/chargeBack.ajax。失败返回错误文案。"""
+    company_id = str(company_id or "").strip()
+    year = str(year or "").strip()
+    month = str(month or "").strip()
+    if not company_id or not year or not month:
+        return "请先选择所属公司和年份"
+    wages_d = _dec(wages)
+    taxes_d = _dec(taxes)
+    fees_d = _dec(fees)
+    system_d = _dec(system_cost)
+    loan_d = _dec(loan)
+    pay_d = _dec(pay_amount) if pay_amount not in (None, "") else (
+        wages_d + taxes_d + fees_d + system_d + loan_d
+    )
+    # 规范化月份：存库用数字字符串，兼容 01 / 1
+    try:
+        month_n = str(int(month))
+    except (TypeError, ValueError):
+        month_n = month
+
+    cpd_id = int(row_id or 0)
+    if cpd_id:
+        execute(
+            """
+            UPDATE company_pay_detail
+            SET wages=%(wages)s, taxes=%(taxes)s, fees=%(fees)s,
+                system_cost=%(system_cost)s, loan=%(loan)s, pay_amount=%(pay_amount)s
+            WHERE id=%(id)s
+            """,
+            {
+                "wages": wages_d,
+                "taxes": taxes_d,
+                "fees": fees_d,
+                "system_cost": system_d,
+                "loan": loan_d,
+                "pay_amount": pay_d,
+                "id": cpd_id,
+            },
+        )
+    else:
+        existing = fetch_one(
+            """
+            SELECT id FROM company_pay_detail
+            WHERE company_id=%(company_id)s AND year=%(year)s
+              AND CAST(month AS UNSIGNED)=CAST(%(month)s AS UNSIGNED)
+              AND account_type=%(account_type)s
+            LIMIT 1
+            """,
+            {
+                "company_id": company_id,
+                "year": year,
+                "month": month_n,
+                "account_type": account_type,
+            },
+        )
+        if existing:
+            cpd_id = int(existing["id"])
+            execute(
+                """
+                UPDATE company_pay_detail
+                SET wages=%(wages)s, taxes=%(taxes)s, fees=%(fees)s,
+                    system_cost=%(system_cost)s, loan=%(loan)s, pay_amount=%(pay_amount)s
+                WHERE id=%(id)s
+                """,
+                {
+                    "wages": wages_d,
+                    "taxes": taxes_d,
+                    "fees": fees_d,
+                    "system_cost": system_d,
+                    "loan": loan_d,
+                    "pay_amount": pay_d,
+                    "id": cpd_id,
+                },
+            )
+        else:
+            cpd_id = int(
+                execute_insert(
+                    """
+                    INSERT INTO company_pay_detail
+                        (addTime, deleteStatus, company_id, year, month, taxes, fees, wages,
+                         pay_amount, system_cost, status, loan, account_type)
+                    VALUES
+                        (NOW(), 0, %(company_id)s, %(year)s, %(month)s, %(taxes)s, %(fees)s, %(wages)s,
+                         %(pay_amount)s, %(system_cost)s, 2, %(loan)s, %(account_type)s)
+                    """,
+                    {
+                        "company_id": company_id,
+                        "year": year,
+                        "month": month_n,
+                        "taxes": taxes_d,
+                        "fees": fees_d,
+                        "wages": wages_d,
+                        "pay_amount": pay_d,
+                        "system_cost": system_d,
+                        "loan": loan_d,
+                        "account_type": account_type,
+                    },
+                )
+                or 0
+            )
+
+    company = fetch_one(
+        "SELECT id, syuser_id AS syuserId FROM `user` WHERE id=%(id)s LIMIT 1",
+        {"id": company_id},
+    )
+    syuser_id = str((company or {}).get("syuserId") or "").strip()
+    if not syuser_id:
+        return "该用户目前没有开通账号,请重试!!!!"
+    account = account_repo.get_account_by_user(syuser_id, account_type)
+    if not account:
+        return "该用户目前没有开通账号,请重试!!!!"
+
+    cpd = fetch_one(
+        """
+        SELECT id, log_id AS logId, loan_log_id AS loanLogId, status
+        FROM company_pay_detail WHERE id=%(id)s LIMIT 1
+        """,
+        {"id": cpd_id},
+    ) or {}
+    old_je = Decimal("0")
+    if cpd.get("logId"):
+        old_je = _sum_operate_log_amount(cpd_id, 10, 1)
+    kkje = pay_d - old_je
+    available = _dec(account.get("availableBalance"))
+    after = available - kkje
+    setting = settings_repo.get_setting() or {}
+    rmb_rate = _dec(setting.get("rmbRate") or setting.get("rmb_rate") or 0)
+
+    execute(
+        """
+        UPDATE account
+        SET available_balance=%(available)s, year_reat=%(rate)s
+        WHERE id=%(id)s
+        """,
+        {"available": after, "rate": rmb_rate, "id": account["id"]},
+    )
+    cz_num = "KK" + datetime.now().strftime("%Y%m%d%H%M%S")
+    log_id = execute_insert(
+        """
+        INSERT INTO account_log
+            (addTime, deleteStatus, acc_type, log_amount, after_log_amount, log_status,
+             cz_num, pd_log_info, account_id, year_reat, deal_time)
+        VALUES
+            (NOW(), 0, 10, %(log_amount)s, %(after)s, 1,
+             %(cz_num)s, %(pd_log_info)s, %(account_id)s, %(rate)s, NOW())
+        """,
+        {
+            "log_amount": kkje,
+            "after": after,
+            "cz_num": cz_num,
+            "pd_log_info": f"{year}{month_n}月份公司费用扣除",
+            "account_id": account["id"],
+            "rate": rmb_rate,
+        },
+    )
+    _insert_operate_log(
+        account_log_id=int(log_id or 0),
+        log_user=operator,
+        pay_detail_id=cpd_id,
+        pay_amount=pay_d,
+        log_type=1,
+        log_info=f"各公司资金支出明细：{year}{month_n}月份费用扣除",
+    )
+
+    loan_log_id = None
+    if loan_d > 0:
+        old_jd = Decimal("0")
+        if cpd.get("loanLogId"):
+            old_jd = _sum_operate_log_amount(cpd_id, 19, 1)
+        jdje = loan_d - old_jd
+        jd_cz = "JD" + datetime.now().strftime("%Y%m%d%H%M%S")
+        loan_log_id = execute_insert(
+            """
+            INSERT INTO account_log
+                (addTime, deleteStatus, acc_type, log_amount, after_log_amount, log_status,
+                 cz_num, account_id, log_name, year_reat, deal_time)
+            VALUES
+                (NOW(), 0, 19, %(log_amount)s, %(after)s, 1,
+                 %(cz_num)s, %(account_id)s, '借贷款利息支出', %(rate)s, NOW())
+            """,
+            {
+                "log_amount": jdje,
+                "after": after,
+                "cz_num": jd_cz,
+                "account_id": account["id"],
+                "rate": rmb_rate,
+            },
+        )
+        _insert_operate_log(
+            account_log_id=int(loan_log_id or 0),
+            log_user=operator,
+            pay_detail_id=cpd_id,
+            pay_amount=loan_d,
+            log_type=1,
+            log_info="各公司资金支出明细：借贷款利息支出",
+        )
+
+    if loan_log_id:
+        execute(
+            """
+            UPDATE company_pay_detail
+            SET status=1, log_id=%(log_id)s, loan_log_id=%(loan_log_id)s
+            WHERE id=%(id)s
+            """,
+            {"log_id": log_id, "loan_log_id": loan_log_id, "id": cpd_id},
+        )
+    else:
+        execute(
+            "UPDATE company_pay_detail SET status=1, log_id=%(log_id)s WHERE id=%(id)s",
+            {"log_id": log_id, "id": cpd_id},
+        )
+    return None
+
+
+def company_pay_update_status(*, row_id: int) -> str | None:
+    """对齐 Java companyPay/companyPayUpdate.ajax（修正：status→2）。"""
+    if not row_id:
+        return "请保存后再重试,请重试!!!!"
+    row = fetch_one("SELECT id FROM company_pay_detail WHERE id=%(id)s LIMIT 1", {"id": row_id})
+    if not row:
+        return "请保存后再重试,请重试!!!!"
+    execute("UPDATE company_pay_detail SET status=2 WHERE id=%(id)s", {"id": row_id})
+    return None
+
+
 # ---- personal pay ----
 def list_user_pay(user_id: str, year: str, account_type: int) -> list[dict[str, Any]]:
     rows = fetch_all(
@@ -284,6 +578,183 @@ def upsert_user_pay(items: list[dict[str, Any]]) -> None:
                         "account_type": account_type,
                     },
                 )
+
+
+def user_pay_charge_back(
+    *,
+    user_id: str,
+    year: str,
+    month: str,
+    pay_amount: Any,
+    taxes: Any,
+    wages: Any,
+    loan_interest: Any,
+    car_amount: Any,
+    order_amount: Any,
+    other_amount: Any,
+    account_type: int,
+    row_id: int = 0,
+    operator: str = "",
+) -> str | None:
+    """对齐 Java userPay/chargeBack.ajax。失败返回错误文案。"""
+    user_id = str(user_id or "").strip()
+    year = str(year or "").strip()
+    month = str(month or "").strip()
+    if not user_id or not year or not month:
+        return "请先选择用户和年份"
+    wages_d = _dec(wages)
+    taxes_d = _dec(taxes)
+    loan_d = _dec(loan_interest)
+    car_d = _dec(car_amount)
+    order_d = _dec(order_amount)
+    other_d = _dec(other_amount)
+    pay_d = _dec(pay_amount) if pay_amount not in (None, "") else (
+        wages_d + taxes_d + loan_d + car_d + order_d + other_d
+    )
+    try:
+        month_n = str(int(month))
+    except (TypeError, ValueError):
+        month_n = month
+
+    cpd_id = int(row_id or 0)
+    vals = {
+        "wages": wages_d,
+        "taxes": taxes_d,
+        "loan_interest": loan_d,
+        "car_amount": car_d,
+        "order_amount": order_d,
+        "other_amount": other_d,
+        "pay_amount": pay_d,
+    }
+    if cpd_id:
+        execute(
+            """
+            UPDATE user_pay_detail
+            SET wages=%(wages)s, taxes=%(taxes)s, loan_interest=%(loan_interest)s,
+                car_amount=%(car_amount)s, order_amount=%(order_amount)s,
+                other_amount=%(other_amount)s, pay_amount=%(pay_amount)s
+            WHERE id=%(id)s
+            """,
+            {**vals, "id": cpd_id},
+        )
+    else:
+        existing = fetch_one(
+            """
+            SELECT id FROM user_pay_detail
+            WHERE user_id=%(user_id)s AND year=%(year)s
+              AND CAST(month AS UNSIGNED)=CAST(%(month)s AS UNSIGNED)
+              AND account_type=%(account_type)s
+            LIMIT 1
+            """,
+            {
+                "user_id": user_id,
+                "year": year,
+                "month": month_n,
+                "account_type": account_type,
+            },
+        )
+        if existing:
+            cpd_id = int(existing["id"])
+            execute(
+                """
+                UPDATE user_pay_detail
+                SET wages=%(wages)s, taxes=%(taxes)s, loan_interest=%(loan_interest)s,
+                    car_amount=%(car_amount)s, order_amount=%(order_amount)s,
+                    other_amount=%(other_amount)s, pay_amount=%(pay_amount)s
+                WHERE id=%(id)s
+                """,
+                {**vals, "id": cpd_id},
+            )
+        else:
+            cpd_id = int(
+                execute_insert(
+                    """
+                    INSERT INTO user_pay_detail
+                        (addTime, deleteStatus, user_id, year, month, wages, taxes, loan_interest,
+                         car_amount, order_amount, other_amount, pay_amount, status, account_type)
+                    VALUES
+                        (NOW(), 0, %(user_id)s, %(year)s, %(month)s, %(wages)s, %(taxes)s, %(loan_interest)s,
+                         %(car_amount)s, %(order_amount)s, %(other_amount)s, %(pay_amount)s, 2, %(account_type)s)
+                    """,
+                    {
+                        **vals,
+                        "user_id": user_id,
+                        "year": year,
+                        "month": month_n,
+                        "account_type": account_type,
+                    },
+                )
+                or 0
+            )
+
+    account = account_repo.get_account_by_user(user_id, account_type)
+    if not account:
+        return "该用户目前没有开通账号,请重试!!!!"
+
+    cpd = fetch_one(
+        "SELECT id, log_id AS logId FROM user_pay_detail WHERE id=%(id)s LIMIT 1",
+        {"id": cpd_id},
+    ) or {}
+    old_je = Decimal("0")
+    if cpd.get("logId"):
+        old_je = _sum_operate_log_amount(cpd_id, 10, 2)
+    kkje = pay_d - old_je
+    available = _dec(account.get("availableBalance"))
+    after = available - kkje
+    setting = settings_repo.get_setting() or {}
+    rmb_rate = _dec(setting.get("rmbRate") or setting.get("rmb_rate") or 0)
+
+    execute(
+        """
+        UPDATE account
+        SET available_balance=%(available)s, year_reat=%(rate)s
+        WHERE id=%(id)s
+        """,
+        {"available": after, "rate": rmb_rate, "id": account["id"]},
+    )
+    cz_num = "KK" + datetime.now().strftime("%Y%m%d%H%M%S")
+    log_id = execute_insert(
+        """
+        INSERT INTO account_log
+            (addTime, deleteStatus, acc_type, log_amount, after_log_amount, log_status,
+             cz_num, pd_log_info, account_id, year_reat, deal_time)
+        VALUES
+            (NOW(), 0, 10, %(log_amount)s, %(after)s, 1,
+             %(cz_num)s, %(pd_log_info)s, %(account_id)s, %(rate)s, NOW())
+        """,
+        {
+            "log_amount": kkje,
+            "after": after,
+            "cz_num": cz_num,
+            "pd_log_info": f"{year}{month_n}月份个人费用扣除",
+            "account_id": account["id"],
+            "rate": rmb_rate,
+        },
+    )
+    _insert_operate_log(
+        account_log_id=int(log_id or 0),
+        log_user=operator,
+        pay_detail_id=cpd_id,
+        pay_amount=pay_d,
+        log_type=2,
+        log_info=f"个人资金支出明细:{year}{month_n}月份费用扣除",
+    )
+    execute(
+        "UPDATE user_pay_detail SET status=1, log_id=%(log_id)s WHERE id=%(id)s",
+        {"log_id": log_id, "id": cpd_id},
+    )
+    return None
+
+
+def user_pay_update_status(*, row_id: int) -> str | None:
+    """对齐 Java userPay/companyPayUpdate.ajax（修正：status→2）。"""
+    if not row_id:
+        return "请保存后再重试,请重试!!!!"
+    row = fetch_one("SELECT id FROM user_pay_detail WHERE id=%(id)s LIMIT 1", {"id": row_id})
+    if not row:
+        return "请保存后再重试,请重试!!!!"
+    execute("UPDATE user_pay_detail SET status=2 WHERE id=%(id)s", {"id": row_id})
+    return None
 
 
 # ---- company loan ----

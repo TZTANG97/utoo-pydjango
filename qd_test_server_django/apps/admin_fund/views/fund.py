@@ -9,6 +9,7 @@ from apps.admin_core.admin_ajax import admin_ajax_view
 from apps.admin_core.datatable import datatable_payload, parse_datatable_params
 from apps.admin_fund.repositories import account as account_repo
 from apps.admin_fund.repositories import digital as digital_repo
+from apps.admin_fund.repositories import digital_personal as digital_personal_repo
 from apps.admin_fund.repositories import pay_detail as pay_repo
 from apps.admin_fund.repositories import settings as settings_repo
 from apps.admin_system.views.common import merge_payload
@@ -481,6 +482,53 @@ def company_pay_save(request: Request, user=None):
 @authentication_classes([])
 @permission_classes([AllowAny])
 @admin_ajax_view()
+def company_pay_charge_back(request: Request, user=None):
+    """扣款：/companyPay/chargeBack.ajax"""
+    data = merge_payload(request)
+    operator = ""
+    if isinstance(user, dict):
+        operator = str(user.get("userName") or user.get("user_name") or "")
+    elif user is not None:
+        operator = str(
+            getattr(user, "userName", None) or getattr(user, "user_name", None) or ""
+        )
+    err = pay_repo.company_pay_charge_back(
+        company_id=str(data.get("companyId") or data.get("company_id") or ""),
+        year=str(data.get("year") or ""),
+        month=str(data.get("month") or ""),
+        pay_amount=data.get("pay_amount") or data.get("payAmount"),
+        taxes=data.get("taxes"),
+        fees=data.get("fees"),
+        wages=data.get("wages"),
+        system_cost=data.get("system_cost") or data.get("systemCost"),
+        loan=data.get("loan"),
+        account_type=_to_int(data.get("accountType") or data.get("account_type"), 1) or 1,
+        row_id=_to_int(data.get("id"), 0) or 0,
+        operator=operator,
+    )
+    if err:
+        return Response(ajax_fail(err))
+    return Response(ajax_ok(msg="操作成功"))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def company_pay_update(request: Request, user=None):
+    """修正：/companyPay/companyPayUpdate.ajax"""
+    del user
+    data = merge_payload(request)
+    err = pay_repo.company_pay_update_status(row_id=_to_int(data.get("id"), 0) or 0)
+    if err:
+        return Response(ajax_fail(err))
+    return Response(ajax_ok(msg="操作成功"))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
 def user_pay_list(request: Request, user=None):
     del user
     data = merge_payload(request)
@@ -515,6 +563,54 @@ def user_pay_save(request: Request, user=None):
         it.setdefault("accountType", account_type)
     pay_repo.upsert_user_pay(items)
     return Response(ajax_ok(msg="保存成功"))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def user_pay_charge_back(request: Request, user=None):
+    """扣款：/userPay/chargeBack.ajax"""
+    data = merge_payload(request)
+    operator = ""
+    if isinstance(user, dict):
+        operator = str(user.get("userName") or user.get("user_name") or "")
+    elif user is not None:
+        operator = str(
+            getattr(user, "userName", None) or getattr(user, "user_name", None) or ""
+        )
+    err = pay_repo.user_pay_charge_back(
+        user_id=str(data.get("userId") or data.get("user_id") or ""),
+        year=str(data.get("year") or ""),
+        month=str(data.get("month") or ""),
+        pay_amount=data.get("pay_amount") or data.get("payAmount"),
+        taxes=data.get("taxes"),
+        wages=data.get("wages"),
+        loan_interest=data.get("loan_interest") or data.get("loanInterest"),
+        car_amount=data.get("car_amount") or data.get("carAmount"),
+        order_amount=data.get("order_amount") or data.get("orderAmount"),
+        other_amount=data.get("other_amount") or data.get("otherAmount"),
+        account_type=_to_int(data.get("accountType") or data.get("account_type"), 1) or 1,
+        row_id=_to_int(data.get("id"), 0) or 0,
+        operator=operator,
+    )
+    if err:
+        return Response(ajax_fail(err))
+    return Response(ajax_ok(msg="操作成功"))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def user_pay_update(request: Request, user=None):
+    """修正：/userPay/companyPayUpdate.ajax（Java 命名）"""
+    del user
+    data = merge_payload(request)
+    err = pay_repo.user_pay_update_status(row_id=_to_int(data.get("id"), 0) or 0)
+    if err:
+        return Response(ajax_fail(err))
+    return Response(ajax_ok(msg="操作成功"))
 
 
 @api_view(["GET", "POST"])
@@ -657,3 +753,52 @@ def digital_exp_receive_pie(request: Request, user=None):
     data = merge_payload(request)
     order_type = data.get("order_type") or data.get("orderType") or 6
     return Response(ajax_ok(obj=digital_repo.sel_exp_receive_pie(order_type=order_type)))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def digital_user_amount_sygr(request: Request, user=None):
+    """个人实验总额：/digitalManage/selUserAmountByYearsygr.ajax"""
+    data = merge_payload(request)
+    year = str(data.get("year") or "").strip()
+    uid = _resolve_uid(data, user)
+    obj = digital_personal_repo.sel_user_amount_by_year_sygr(user_id=uid, year=year)
+    if isinstance(user, dict):
+        obj["currentUser"] = str(user.get("userName") or user.get("user_name") or "")
+    elif user is not None:
+        obj["currentUser"] = str(
+            getattr(user, "userName", None) or getattr(user, "user_name", None) or ""
+        )
+    return Response(ajax_ok(obj=obj))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def digital_user_amount_syfbgr(request: Request, user=None):
+    """个人实验分包总额：/digitalManage/selUserAmountByYearsyfbgr.ajax"""
+    data = merge_payload(request)
+    year = str(data.get("year") or "").strip()
+    uid = _resolve_uid(data, user)
+    obj = digital_personal_repo.sel_user_amount_by_year_syfbgr(user_id=uid, year=year)
+    if isinstance(user, dict):
+        obj["currentUser"] = str(user.get("userName") or user.get("user_name") or "")
+    elif user is not None:
+        obj["currentUser"] = str(
+            getattr(user, "userName", None) or getattr(user, "user_name", None) or ""
+        )
+    return Response(ajax_ok(obj=obj))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def digital_user_overdue_pies(request: Request, user=None):
+    """个人应收/应付饼图：/digitalManage/selUserOverduePie.ajax"""
+    data = merge_payload(request)
+    uid = _resolve_uid(data, user)
+    return Response(ajax_ok(obj=digital_personal_repo.sel_user_overdue_pies(user_id=uid)))
