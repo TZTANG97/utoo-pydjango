@@ -4,9 +4,10 @@
       <div>
         <p class="welcome-banner__hello">{{ greeting }}，{{ displayName }}</p>
         <h2 class="welcome-banner__title">欢迎回来</h2>
-        <p class="welcome-banner__hint">查看近期交易与系统动态，或从下方快捷入口进入常用模块</p>
+        <p class="welcome-banner__hint">{{ bannerHint }}</p>
       </div>
       <div class="welcome-banner__meta">
+        <span v-if="roleName" class="welcome-banner__role">{{ roleName }}</span>
         <span>{{ todayLabel }}</span>
       </div>
     </section>
@@ -22,14 +23,17 @@
       >
         <span class="quick-card__icon" aria-hidden="true">{{ card.icon }}</span>
         <span class="quick-card__body">
-          <strong>{{ card.title }}</strong>
+          <strong>
+            {{ card.title }}
+            <em v-if="card.badge != null" class="quick-card__badge">{{ card.badge }}</em>
+          </strong>
           <em>{{ card.desc }}</em>
         </span>
         <span class="quick-card__arrow">→</span>
       </button>
     </div>
     <el-alert
-      v-else
+      v-else-if="welcomeUserType !== 1"
       class="role-hint"
       type="info"
       :closable="false"
@@ -37,18 +41,36 @@
       title="当前账号类型在欢迎页无快捷入口，请从左侧菜单进入业务模块"
     />
 
-    <div v-if="showChartAndLogs" class="main-row">
-      <el-card class="panel-card chart-card" shadow="never">
+    <div v-if="showMainPanels" class="main-row" :class="{ 'main-row--single': !showLogs }">
+      <el-card v-if="showRoleChart" class="panel-card chart-card" shadow="never">
         <template #header>
           <div class="panel-head">
-            <span class="panel-head__title">最近 6 个月交易记录</span>
-            <span class="panel-head__sub">销售订单金额（万元）</span>
+            <span class="panel-head__title">{{ chartTitle }}</span>
+            <span v-if="chartUnit" class="panel-head__sub">{{ chartUnit }}</span>
           </div>
         </template>
         <div ref="chartRef" class="chart-box" />
       </el-card>
 
-      <el-card class="panel-card log-card" shadow="never">
+      <el-card v-if="showAssets" class="panel-card asset-card" shadow="never">
+        <template #header>
+          <div class="panel-head">
+            <span class="panel-head__title">我的实际可用总资产</span>
+          </div>
+        </template>
+        <div class="asset-body">
+          <div class="asset-item">
+            <span class="asset-item__label">人民币</span>
+            <strong class="asset-item__value">{{ accountRMB }} <small>元</small></strong>
+          </div>
+          <div class="asset-item">
+            <span class="asset-item__label">美元</span>
+            <strong class="asset-item__value">{{ accountUS }} <small>元</small></strong>
+          </div>
+        </div>
+      </el-card>
+
+      <el-card v-if="showLogs" class="panel-card log-card" shadow="never">
         <template #header>
           <div class="panel-head">
             <span class="panel-head__title">平台系统操作记录</span>
@@ -89,6 +111,7 @@ type QuickCard = {
   desc: string
   icon: string
   tone: string
+  badge?: number
   onClick: () => void
 }
 
@@ -97,22 +120,96 @@ const userStore = useUserStore()
 const chartRef = ref<HTMLDivElement>()
 let chart: ECharts | null = null
 
-const xdate = computed(() => userStore.welcome?.xdate || [])
-const ydata = computed(() => (userStore.welcome?.ydata || []).map((v) => Number(v) || 0))
-const logs = computed<WelcomeLogItem[]>(() => userStore.welcome?.newlogs || [])
+const welcome = computed(() => userStore.welcome)
+const xdate = computed(() => welcome.value?.xdate || [])
+const ydata = computed(() => (welcome.value?.ydata || []).map((v) => Number(v) || 0))
+const logs = computed<WelcomeLogItem[]>(() => welcome.value?.newlogs || [])
 
-/** 对齐 Java welcome.html：1管理员 2公司 3销售主管 4销售 5制单 6投资 7仓库+销售 14=H类 */
+/** 对齐 Java welcome.html：1管理员 2公司 3销售主管 4销售/测试人员 5制单 6投资 7仓库 14=H类 0=其它(测试主管等) */
 const welcomeUserType = computed(() =>
-  Number(userStore.welcome?.userType ?? userStore.userType ?? 0),
+  Number(welcome.value?.userType ?? userStore.userType ?? 0),
 )
+const welcomeUserType2 = computed(() => Number(welcome.value?.userType2 ?? 0))
+const roleName = computed(() => String(welcome.value?.roleName || userStore.roleName || ''))
 
-const showChartAndLogs = computed(() => welcomeUserType.value === 1)
+const showLogs = computed(() => welcomeUserType.value === 1)
+const showRoleChart = computed(() => [1, 2, 3].includes(welcomeUserType2.value))
+const showAssets = computed(() => {
+  if (welcome.value?.showAssets != null) return Boolean(welcome.value.showAssets)
+  return [0, 2, 3, 4, 6, 7, 14].includes(welcomeUserType.value)
+})
+const showMainPanels = computed(() => showRoleChart.value || showAssets.value || showLogs.value)
+
+const chartTitle = computed(() => {
+  if (welcome.value?.chartTitle) return welcome.value.chartTitle
+  if (welcomeUserType2.value === 1) return '最近 6 个月交易记录'
+  if (welcomeUserType2.value === 2) return '我的实验销售额'
+  if (welcomeUserType2.value === 3) return '我的测试数量'
+  return '数据概览'
+})
+const chartUnit = computed(() => {
+  if (welcome.value?.chartUnit) return welcome.value.chartUnit
+  if (welcomeUserType2.value === 3) return '测试数量（单）'
+  return '金额（万元）'
+})
+const chartSeriesName = computed(() => {
+  if (welcomeUserType2.value === 3) return '测试数量'
+  if (welcomeUserType2.value === 2) return '销售额'
+  return '交易金额'
+})
+
+const accountRMB = computed(() => String(welcome.value?.accountRMB ?? '0'))
+const accountUS = computed(() => String(welcome.value?.accountUS ?? '0'))
+const pending = computed(() => welcome.value?.pendingCounts || {})
+
+const bannerHint = computed(() => {
+  const t = welcomeUserType.value
+  if (t === 1) return '查看近期交易与系统动态，或从下方快捷入口进入常用模块'
+  if (t === 3) return '处理待审核订单，或查看个人业绩与资产'
+  if (t === 4 && welcomeUserType2.value === 3) return '查看测试数量与账户资产'
+  if ([2, 3, 4, 7, 14].includes(t)) return '查看个人业绩与资产，或从下方快捷入口进入常用模块'
+  if (t === 0 || t === 6) return '查看账户可用资产，或从左侧菜单进入业务模块'
+  return '从下方快捷入口或左侧菜单进入业务模块'
+})
 
 const quickCards = computed<QuickCard[]>(() => {
   const t = welcomeUserType.value
   const cards: QuickCard[] = []
-  const showFundDigital = [1, 2, 3, 4, 7, 14].includes(t)
-  if (showFundDigital) {
+
+  // 销售主管：待审核入口（对齐 Java welcome.html userType==3）
+  if (t === 3) {
+    cards.push({
+      key: 'audit-exp',
+      title: '待审核实验订单',
+      desc: '实验订单审核',
+      icon: '审',
+      tone: 'quick-card--audit',
+      badge: Number(pending.value.expOrder || 0) || undefined,
+      onClick: () => goExperimentOrders({ orderStatus: '20' }),
+    })
+    cards.push({
+      key: 'audit-sub',
+      title: '待审核实验分包订单',
+      desc: '分包订单审核',
+      icon: '包',
+      tone: 'quick-card--audit',
+      badge: Number(pending.value.subcontractOrder || 0) || undefined,
+      onClick: () => router.push({ name: 'ExperimentSubcontractOrders', query: { orderStatus: '20' } }),
+    })
+    cards.push({
+      key: 'audit-sub-child',
+      title: '待审核实验分包子订单',
+      desc: '分包子订单审核',
+      icon: '子',
+      tone: 'quick-card--audit',
+      badge: Number(pending.value.subcontractSubOrder || 0) || undefined,
+      onClick: () =>
+        router.push({ name: 'ExperimentSubcontractSubOrders', query: { orderStatus: '20' } }),
+    })
+  }
+
+  // 资金账户 + 数字化中心：管理员/公司/销售主管/销售·测试人员/仓库/H类
+  if ([1, 2, 3, 4, 7, 14].includes(t)) {
     cards.push({
       key: 'fund',
       title: '资金账户',
@@ -130,6 +227,7 @@ const quickCards = computed<QuickCard[]>(() => {
       onClick: goDigitalCenter,
     })
   }
+
   if (t === 2) {
     cards.push({
       key: 'company-pay',
@@ -148,7 +246,9 @@ const quickCards = computed<QuickCard[]>(() => {
       onClick: goPersonalPay,
     })
   }
-  if ([3, 4, 7].includes(t)) {
+
+  // 新增实验订单：销售主管/销售·测试人员/仓库/制单
+  if ([3, 4, 5, 7].includes(t)) {
     cards.push({
       key: 'create-order',
       title: '新增实验订单',
@@ -158,6 +258,7 @@ const quickCards = computed<QuickCard[]>(() => {
       onClick: goCreateExpOrder,
     })
   }
+
   return cards
 })
 
@@ -206,16 +307,22 @@ function goCreateExpOrder() {
   router.push({ name: 'ExperimentOrders' })
 }
 
+function goExperimentOrders(query?: Record<string, string>) {
+  router.push({ name: 'ExperimentOrders', query })
+}
+
 function goMoreLogs() {
   router.push({ name: 'SystemOpsLogs' })
 }
 
 function renderChart() {
-  if (!chartRef.value) return
+  if (!chartRef.value || !showRoleChart.value) return
   if (!chart) {
     chart = echarts.init(chartRef.value)
   }
   const hasData = xdate.value.length > 0 && ydata.value.some((v) => v !== 0)
+  const emptyText =
+    welcomeUserType2.value === 3 ? '暂无测试数据' : welcomeUserType2.value === 2 ? '暂无销售数据' : '暂无交易数据'
   chart.setOption({
     color: ['#ea580c'],
     tooltip: {
@@ -253,7 +360,7 @@ function renderChart() {
     },
     series: [
       {
-        name: '交易金额',
+        name: chartSeriesName.value,
         type: 'line',
         smooth: true,
         symbol: 'circle',
@@ -277,7 +384,7 @@ function renderChart() {
             left: 'center',
             top: 'middle',
             style: {
-              text: '暂无交易数据',
+              text: emptyText,
               fill: '#9ca3af',
               fontSize: 14,
             },
@@ -291,17 +398,18 @@ function onResize() {
 }
 
 async function ensureWelcomeData() {
-  const hasChart = Array.isArray(userStore.welcome?.xdate) && Array.isArray(userStore.welcome?.ydata)
-  const hasLogs = Array.isArray(userStore.welcome?.newlogs)
-  if (hasChart && hasLogs) return
   const res = await fetchAdminWelcome({ silentError: true })
   if (isAjaxOk(res) && res.obj) {
     userStore.welcome = { ...(userStore.welcome || {}), ...(res.obj as object) }
   }
 }
 
-watch([xdate, ydata, showChartAndLogs], async () => {
-  if (!showChartAndLogs.value) return
+watch([xdate, ydata, showRoleChart, chartTitle], async () => {
+  if (!showRoleChart.value) {
+    chart?.dispose()
+    chart = null
+    return
+  }
   await nextTick()
   renderChart()
 })
@@ -309,7 +417,7 @@ watch([xdate, ydata, showChartAndLogs], async () => {
 onMounted(async () => {
   await ensureWelcomeData()
   await nextTick()
-  if (showChartAndLogs.value) {
+  if (showRoleChart.value) {
     renderChart()
   }
   window.addEventListener('resize', onResize)
@@ -364,9 +472,21 @@ onBeforeUnmount(() => {
 
 .welcome-banner__meta {
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
   font-size: 13px;
   color: #9ca3af;
   padding-bottom: 2px;
+}
+
+.welcome-banner__role {
+  font-size: 12px;
+  color: #ea580c;
+  background: rgba(249, 115, 22, 0.08);
+  padding: 2px 10px;
+  border-radius: 999px;
 }
 
 .quick-row {
@@ -417,6 +537,10 @@ onBeforeUnmount(() => {
   &--order:hover {
     border-color: #86efac;
   }
+
+  &--audit:hover {
+    border-color: #fcd34d;
+  }
 }
 
 .quick-card__icon {
@@ -455,6 +579,11 @@ onBeforeUnmount(() => {
   color: #16a34a;
 }
 
+.quick-card--audit .quick-card__icon {
+  background: rgba(245, 158, 11, 0.12);
+  color: #d97706;
+}
+
 .role-hint {
   border-radius: 12px;
 }
@@ -470,6 +599,9 @@ onBeforeUnmount(() => {
     font-size: 16px;
     font-weight: 650;
     color: #1f2937;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
   }
 
   em {
@@ -477,6 +609,19 @@ onBeforeUnmount(() => {
     font-size: 12px;
     color: #9ca3af;
   }
+}
+
+.quick-card__badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #ea580c;
+  color: #fff !important;
+  font-size: 11px !important;
+  font-style: normal !important;
+  line-height: 18px;
+  text-align: center;
 }
 
 .quick-card__arrow {
@@ -490,6 +635,10 @@ onBeforeUnmount(() => {
   grid-template-columns: minmax(0, 1.45fr) minmax(300px, 0.85fr);
   gap: 16px;
   align-items: stretch;
+
+  &--single {
+    grid-template-columns: 1fr;
+  }
 }
 
 .panel-card {
@@ -527,6 +676,41 @@ onBeforeUnmount(() => {
 .chart-box {
   width: 100%;
   height: 360px;
+}
+
+.asset-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 12px 4px 8px;
+}
+
+.asset-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 16px;
+  border-radius: 12px;
+  background: #fff7ed;
+  border: 1px solid #ffedd5;
+}
+
+.asset-item__label {
+  font-size: 13px;
+  color: #9a3412;
+}
+
+.asset-item__value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1f2937;
+  font-variant-numeric: tabular-nums;
+
+  small {
+    font-size: 13px;
+    font-weight: 500;
+    color: #6b7280;
+  }
 }
 
 .log-list {
@@ -599,8 +783,13 @@ onBeforeUnmount(() => {
     align-items: flex-start;
   }
 
+  .welcome-banner__meta {
+    align-items: flex-start;
+  }
+
   .quick-row,
-  .main-row {
+  .main-row,
+  .asset-body {
     grid-template-columns: 1fr;
   }
 }
