@@ -40,7 +40,23 @@ export interface WelcomePendingCounts {
 export interface WelcomeOpsCounts {
   notStarted?: number
   inProgress?: number
+  /** 测试通过（销售人员 / 测试人员） */
+  passed?: number
   timeout?: number
+  /** salesperson | tester | manager */
+  opsMode?: string
+}
+
+export interface WelcomeTestYearChart {
+  year?: string
+  months?: string[]
+  values?: number[]
+}
+
+export interface WelcomeTesterMonthChart {
+  month?: string
+  names?: string[]
+  values?: number[]
 }
 
 export interface WelcomeData {
@@ -78,5 +94,9 @@ export interface WelcomeData {
   pendingCounts?: WelcomePendingCounts
   opsCounts?: WelcomeOpsCounts
   showOpsCounts?: boolean
+  /** 销售人员：测试数量(年) / 测试人员测试数量(月) */
+  showSaleTestCharts?: boolean
+  testYearChart?: WelcomeTestYearChart
+  testerMonthChart?: WelcomeTesterMonthChart
   newlogs?: WelcomeLogItem[]
 }

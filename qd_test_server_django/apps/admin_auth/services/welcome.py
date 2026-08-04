@@ -123,10 +123,45 @@ def _pending_for_sale_manager() -> dict[str, Any]:
     }
 
 
+def _count_finish_by_sale_user(*, sale_user_id: str, order_status: int) -> int:
+    """销售人员名下主单关联的测试完成表状态计数（对齐 Java getOrderListSize*）。"""
+    if not sale_user_id:
+        return 0
+    return int(
+        scalar(
+            """
+            SELECT COUNT(t.id)
+            FROM statistic_experiment_finish t
+            INNER JOIN experiment_order eo ON t.order_id = eo.id
+            WHERE IFNULL(t.deleteStatus, 0) = 0
+              AND CAST(eo.sale_user AS CHAR) = CAST(%(uid)s AS CHAR)
+              AND t.order_status = %(st)s
+            """,
+            {"uid": sale_user_id, "st": int(order_status)},
+        )
+        or 0
+    )
+
+
 def _ops_counts(*, user_id: str, user_type: int, user_type2: int) -> dict[str, int]:
-    """未开始 / 进行中 / 超时 —— 对齐 digital stats（销售主管看全量，测试看本人）。"""
+    """运营 KPI。
+
+    - 销售人员(userType=4,ut2=2)：未开始/进行中/测试通过（按 sale_user 过滤）
+    - 销售主管：未开始/进行中/超时（全量）
+    - 测试人员：本人未开始/进行中/通过
+    """
+    # 销售人员：按本人销售主单关联的测试单
+    if user_type == 4 and user_type2 == 2:
+        return {
+            "notStarted": _count_finish_by_sale_user(sale_user_id=user_id, order_status=0),
+            "inProgress": _count_finish_by_sale_user(sale_user_id=user_id, order_status=1),
+            "passed": _count_finish_by_sale_user(sale_user_id=user_id, order_status=2),
+            "timeout": 0,
+            "opsMode": "salesperson",
+        }
+
     scope_uid = ""
-    if user_type2 == 3 or (user_type == 4 and user_type2 != 2):
+    if user_type2 == 3:
         scope_uid = user_id
     try:
         not_started = int(
@@ -135,18 +170,99 @@ def _ops_counts(*, user_id: str, user_type: int, user_type2: int) -> dict[str, i
         in_progress = int(
             stats_repo.order_count(user_id=scope_uid, order_status=1, period_type="5") or 0
         )
-        timeout = int(
-            stats_repo.order_count(
-                user_id=scope_uid, order_status=-1, is_timeout=1, period_type="5"
+        if user_type2 == 3:
+            passed = int(
+                stats_repo.order_count(user_id=scope_uid, order_status=2, period_type="5") or 0
             )
-            or 0
-        )
+            timeout = 0
+            mode = "tester"
+        else:
+            passed = 0
+            timeout = int(
+                stats_repo.order_count(
+                    user_id=scope_uid, order_status=-1, is_timeout=1, period_type="5"
+                )
+                or 0
+            )
+            mode = "manager"
     except Exception:
-        not_started = in_progress = timeout = 0
+        not_started = in_progress = passed = timeout = 0
+        mode = "manager"
     return {
         "notStarted": not_started,
         "inProgress": in_progress,
+        "passed": passed,
         "timeout": timeout,
+        "opsMode": mode,
+    }
+
+
+def _test_qty_year_chart(*, year: int, sale_user_id: str = "") -> dict[str, Any]:
+    """测试数量(年)：按月完成量。销售人员限定其主单关联。"""
+    months = _months_of_year(year)
+    params: dict[str, Any] = {"year": str(year)}
+    sale_sql = ""
+    join_sql = ""
+    if sale_user_id:
+        join_sql = "INNER JOIN experiment_order eo ON t.order_id = eo.id"
+        sale_sql = "AND CAST(eo.sale_user AS CHAR) = CAST(%(uid)s AS CHAR)"
+        params["uid"] = sale_user_id
+    rows = fetch_all(
+        f"""
+        SELECT DATE_FORMAT(t.end_time, '%%Y-%%m') AS ym, COUNT(*) AS cnt
+        FROM statistic_experiment_finish t
+        {join_sql}
+        WHERE IFNULL(t.deleteStatus, 0) = 0
+          AND t.order_status = 2
+          AND t.end_time IS NOT NULL
+          AND DATE_FORMAT(t.end_time, '%%Y') = %(year)s
+          {sale_sql}
+        GROUP BY DATE_FORMAT(t.end_time, '%%Y-%%m')
+        ORDER BY ym
+        """,
+        params,
+    )
+    by_m = {str(r.get("ym") or ""): int(r.get("cnt") or 0) for r in rows}
+    return {
+        "year": str(year),
+        "months": months,
+        "values": [by_m.get(m, 0) for m in months],
+    }
+
+
+def _tester_qty_month_chart(*, year: int, month: int, sale_user_id: str = "") -> dict[str, Any]:
+    """测试人员测试数量(月)：当月各测试员完成量。"""
+    ym = f"{year:04d}-{month:02d}"
+    params: dict[str, Any] = {"ym": ym}
+    sale_sql = ""
+    join_sql = ""
+    if sale_user_id:
+        join_sql = "INNER JOIN experiment_order eo ON t.order_id = eo.id"
+        sale_sql = "AND CAST(eo.sale_user AS CHAR) = CAST(%(uid)s AS CHAR)"
+        params["uid"] = sale_user_id
+    rows = fetch_all(
+        f"""
+        SELECT
+            IFNULL(NULLIF(TRIM(u.true_name), ''), IFNULL(u.user_name, t.test_user_id)) AS name,
+            COUNT(*) AS cnt
+        FROM statistic_experiment_finish t
+        {join_sql}
+        LEFT JOIN sy_users u ON CAST(u.id AS CHAR) = CAST(t.test_user_id AS CHAR)
+        WHERE IFNULL(t.deleteStatus, 0) = 0
+          AND t.order_status = 2
+          AND t.test_user_id IS NOT NULL
+          AND DATE_FORMAT(t.end_time, '%%Y-%%m') = %(ym)s
+          {sale_sql}
+        GROUP BY t.test_user_id, name
+        ORDER BY cnt DESC
+        LIMIT 30
+        """,
+        params,
+    )
+    return {
+        "month": ym,
+        "names": [str(r.get("name") or "") for r in rows],
+        "values": [int(r.get("cnt") or 0) for r in rows],
     }
 
 
@@ -467,13 +583,25 @@ def build_welcome_payload(user: dict[str, Any]) -> dict[str, Any]:
         "subcontractSubOrder": 0,
         "materialSubOrder": 0,
     }
-    # 销售主管 / 销售 / 测试相关：未开始·进行中·超时
+    # 销售主管 / 销售 / 测试相关 KPI
     show_ops = user_type in (3, 4) or user_type2 == 3
     ops = _ops_counts(user_id=user_id, user_type=user_type, user_type2=user_type2) if show_ops else {
         "notStarted": 0,
         "inProgress": 0,
+        "passed": 0,
         "timeout": 0,
+        "opsMode": "",
     }
+
+    # 销售人员：测试数量(年) + 测试人员测试数量(月)
+    is_salesperson = user_type == 4 and user_type2 == 2
+    test_year_chart: dict[str, Any] = {"year": str(year), "months": [], "values": []}
+    tester_month_chart: dict[str, Any] = {"month": "", "names": [], "values": []}
+    if is_salesperson:
+        test_year_chart = _test_qty_year_chart(year=year, sale_user_id=user_id)
+        tester_month_chart = _tester_qty_month_chart(
+            year=year, month=today.month, sale_user_id=user_id
+        )
 
     return {
         "userName": user.get("true_name") or user.get("user_name") or "",
@@ -500,9 +628,13 @@ def build_welcome_payload(user: dict[str, Any]) -> dict[str, Any]:
         "ddslus": sale.get("ddslus"),
         "grmlzhbigdecimal": sale.get("grmlzhbigdecimal"),
         "grmlllbigdecimal": sale.get("grmlllbigdecimal"),
-        # test count
+        # 测试人员本人测试数量
         "expmonth": test_months if user_type2 == 3 else [],
         "expTestAry": test_ydata,
+        # 销售人员：测试数量年/月两图
+        "showSaleTestCharts": is_salesperson,
+        "testYearChart": test_year_chart,
+        "testerMonthChart": tester_month_chart,
         # assets
         "showAssets": show_assets,
         "accountRMB": account_rmb,

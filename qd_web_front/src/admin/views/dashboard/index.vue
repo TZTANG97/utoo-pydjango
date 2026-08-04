@@ -46,7 +46,7 @@
       </button>
     </div>
 
-    <!-- 未开始 / 进行中 / 超时 -->
+    <!-- 未开始 / 进行中 / 通过或超时 -->
     <div v-if="opsKpis.length" class="kpi-row kpi-row--ops">
       <button
         v-for="item in opsKpis"
@@ -59,6 +59,28 @@
         <strong class="kpi-card__num">{{ item.count }}</strong>
         <span class="kpi-card__label">{{ item.label }}</span>
       </button>
+    </div>
+
+    <!-- 销售人员：测试数量(年) + 测试人员测试数量(月) —— 对齐 Java 图一 -->
+    <div v-if="showSaleTestCharts" class="main-row main-row--sale">
+      <el-card class="panel-card" shadow="never">
+        <template #header>
+          <div class="panel-head">
+            <span class="panel-head__title">测试数量(年)</span>
+            <span class="panel-head__sub">{{ testYearChart.year || '' }}</span>
+          </div>
+        </template>
+        <div ref="testYearChartRef" class="chart-box" />
+      </el-card>
+      <el-card class="panel-card" shadow="never">
+        <template #header>
+          <div class="panel-head">
+            <span class="panel-head__title">测试人员测试数量(月)</span>
+            <span class="panel-head__sub">{{ testerMonthChart.month || '' }}</span>
+          </div>
+        </template>
+        <div ref="testerMonthChartRef" class="chart-box" />
+      </el-card>
     </div>
 
     <el-alert
@@ -181,10 +203,14 @@ const assetChartRef = ref<HTMLDivElement>()
 const saleChartRef = ref<HTMLDivElement>()
 const testChartRef = ref<HTMLDivElement>()
 const adminChartRef = ref<HTMLDivElement>()
+const testYearChartRef = ref<HTMLDivElement>()
+const testerMonthChartRef = ref<HTMLDivElement>()
 let assetChart: ECharts | null = null
 let saleChart: ECharts | null = null
 let testChart: ECharts | null = null
 let adminChart: ECharts | null = null
+let testYearChartInst: ECharts | null = null
+let testerMonthChartInst: ECharts | null = null
 
 const welcome = computed(() => userStore.welcome)
 const welcomeUserType = computed(() =>
@@ -267,6 +293,11 @@ const pendingKpis = computed<Kpi[]>(() => {
   ]
 })
 
+const opsMode = computed(() => String(ops.value.opsMode || ''))
+const showSaleTestCharts = computed(() => Boolean(welcome.value?.showSaleTestCharts))
+const testYearChart = computed(() => welcome.value?.testYearChart || {})
+const testerMonthChart = computed(() => welcome.value?.testerMonthChart || {})
+
 const opsKpis = computed<Kpi[]>(() => {
   if (!welcome.value?.showOpsCounts && welcomeUserType.value !== 3 && welcomeUserType.value !== 4) {
     return []
@@ -274,17 +305,17 @@ const opsKpis = computed<Kpi[]>(() => {
   if (!(welcome.value?.showOpsCounts || welcomeUserType.value === 3 || welcomeUserType2.value === 3)) {
     return []
   }
-  const list: Kpi[] = [
-    {
-      key: 'nostart',
-      label: '未开始实验订单',
-      count: Number(ops.value.notStarted || 0),
-      tone: 'kpi-card--warn',
-      onClick: () => router.push({ name: 'DigitalStats' }),
-    },
-  ]
-  if (welcomeUserType.value === 3 || welcomeUserType2.value === 3 || welcomeUserType.value === 4) {
-    list.push(
+  const mode = opsMode.value
+  // 销售人员 / 测试人员：未开始测试、进行中、测试通过（对齐 Java 图一）
+  if (mode === 'salesperson' || mode === 'tester' || (welcomeUserType.value === 4 && welcomeUserType2.value === 2)) {
+    return [
+      {
+        key: 'nostart',
+        label: '未开始测试订单',
+        count: Number(ops.value.notStarted || 0),
+        tone: 'kpi-card--warn',
+        onClick: () => router.push({ name: 'DigitalStats' }),
+      },
       {
         key: 'progress',
         label: '进行中测试订单',
@@ -293,15 +324,38 @@ const opsKpis = computed<Kpi[]>(() => {
         onClick: () => router.push({ name: 'DigitalStats' }),
       },
       {
-        key: 'timeout',
-        label: '测试超时订单',
-        count: Number(ops.value.timeout || 0),
-        tone: 'kpi-card--danger',
+        key: 'passed',
+        label: '测试通过订单',
+        count: Number(ops.value.passed || 0),
+        tone: 'kpi-card--ok',
         onClick: () => router.push({ name: 'DigitalStats' }),
       },
-    )
+    ]
   }
-  return list
+  // 销售主管等：未开始实验、进行中、超时
+  return [
+    {
+      key: 'nostart',
+      label: '未开始实验订单',
+      count: Number(ops.value.notStarted || 0),
+      tone: 'kpi-card--warn',
+      onClick: () => router.push({ name: 'DigitalStats' }),
+    },
+    {
+      key: 'progress',
+      label: '进行中测试订单',
+      count: Number(ops.value.inProgress || 0),
+      tone: 'kpi-card--info',
+      onClick: () => router.push({ name: 'DigitalStats' }),
+    },
+    {
+      key: 'timeout',
+      label: '测试超时订单',
+      count: Number(ops.value.timeout || 0),
+      tone: 'kpi-card--danger',
+      onClick: () => router.push({ name: 'DigitalStats' }),
+    },
+  ]
 })
 
 const actionCards = computed<Card[]>(() => {
@@ -493,11 +547,68 @@ function renderAdminLine() {
   })
 }
 
+function renderSaleTestYear() {
+  if (!testYearChartRef.value || !showSaleTestCharts.value) return
+  if (!testYearChartInst) testYearChartInst = echarts.init(testYearChartRef.value)
+  const months = testYearChart.value.months || []
+  const vals = (testYearChart.value.values || []).map((v) => Number(v) || 0)
+  testYearChartInst.setOption({
+    color: ['#e11d48'],
+    tooltip: { trigger: 'axis' },
+    grid: { left: 48, right: 20, top: 28, bottom: 36 },
+    xAxis: {
+      type: 'category',
+      data: months.length ? months : ['暂无'],
+      axisLabel: { rotate: months.length > 8 ? 30 : 0, color: '#6b7280' },
+    },
+    yAxis: { type: 'value', minInterval: 1 },
+    series: [
+      {
+        name: '测试数量',
+        type: 'line',
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 6,
+        areaStyle: { color: 'rgba(225,29,72,0.12)' },
+        data: vals.length ? vals : [0],
+      },
+    ],
+  })
+}
+
+function renderTesterMonth() {
+  if (!testerMonthChartRef.value || !showSaleTestCharts.value) return
+  if (!testerMonthChartInst) testerMonthChartInst = echarts.init(testerMonthChartRef.value)
+  const names = testerMonthChart.value.names || []
+  const vals = (testerMonthChart.value.values || []).map((v) => Number(v) || 0)
+  testerMonthChartInst.setOption({
+    color: ['#374151'],
+    tooltip: { trigger: 'axis' },
+    grid: { left: 48, right: 20, top: 28, bottom: names.length > 6 ? 64 : 36 },
+    xAxis: {
+      type: 'category',
+      data: names.length ? names : ['暂无'],
+      axisLabel: { rotate: names.length > 5 ? 35 : 0, color: '#6b7280', interval: 0 },
+    },
+    yAxis: { type: 'value', minInterval: 1 },
+    series: [
+      {
+        name: '测试数量',
+        type: 'bar',
+        barMaxWidth: 36,
+        data: vals.length ? vals : [0],
+      },
+    ],
+  })
+}
+
 function renderAllCharts() {
   renderAssetPie()
   renderSaleBars()
   renderTestBars()
   renderAdminLine()
+  renderSaleTestYear()
+  renderTesterMonth()
 }
 
 function onResize() {
@@ -505,6 +616,8 @@ function onResize() {
   saleChart?.resize()
   testChart?.resize()
   adminChart?.resize()
+  testYearChartInst?.resize()
+  testerMonthChartInst?.resize()
 }
 
 async function ensureWelcomeData() {
@@ -520,10 +633,13 @@ watch(
     welcome.value?.userSaleAryrmb,
     welcome.value?.expTestAry,
     welcome.value?.ydata,
+    welcome.value?.testYearChart,
+    welcome.value?.testerMonthChart,
     showAssets.value,
     showSaleChart.value,
     showTestChart.value,
     showAdminChart.value,
+    showSaleTestCharts.value,
   ],
   async () => {
     await nextTick()
@@ -544,7 +660,10 @@ onBeforeUnmount(() => {
   saleChart?.dispose()
   testChart?.dispose()
   adminChart?.dispose()
+  testYearChartInst?.dispose()
+  testerMonthChartInst?.dispose()
   assetChart = saleChart = testChart = adminChart = null
+  testYearChartInst = testerMonthChartInst = null
 })
 </script>
 
@@ -658,6 +777,10 @@ onBeforeUnmount(() => {
 
 .kpi-card--danger .kpi-card__num {
   color: #dc2626;
+}
+
+.kpi-card--ok .kpi-card__num {
+  color: #16a34a;
 }
 
 .action-row {
