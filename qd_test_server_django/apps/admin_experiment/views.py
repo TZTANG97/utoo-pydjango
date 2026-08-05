@@ -778,7 +778,6 @@ def order_share_ratio(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_add_related(request: Request, user=None):
-    del user
     data = merge_payload(request)
     order_id = to_int(data.get("id") or data.get("ofId"))
     if not order_id:
@@ -793,6 +792,7 @@ def order_add_related(request: Request, user=None):
             or ""
         ),
         r_select=str(data.get("rSelect") or data.get("relatedType") or data.get("type") or ""),
+        staff_user_id=_staff_id(user),
     )
     if not ok_flag:
         return fail(msg)
@@ -804,7 +804,6 @@ def order_add_related(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_del_related(request: Request, user=None):
-    del user
     data = merge_payload(request)
     of_id = str(data.get("ofId") or data.get("of_id") or data.get("orderId") or "").strip()
     related_no = str(
@@ -812,7 +811,11 @@ def order_del_related(request: Request, user=None):
     ).strip()
     if not of_id or not related_no:
         return fail("参数错误")
-    ok_flag, msg = order_repo.del_related_order(of_order_no=of_id, related_order_no=related_no)
+    ok_flag, msg = order_repo.del_related_order(
+        of_order_no=of_id,
+        related_order_no=related_no,
+        staff_user_id=_staff_id(user),
+    )
     if not ok_flag:
         return fail(msg)
     return ok(res_msg=msg)
@@ -892,7 +895,7 @@ def order_more_info(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_export(request: Request, user=None):
-    """实验订单(type=6)对齐 Java export.htm：返回 xlsx base64；其它类型仍返回行数据供前端拼 CSV。"""
+    """实验订单(type=6)与实验(子)订单(type=9/10)对齐 Java：返回 xlsx base64；其它类型仍返回行数据。"""
     import base64
 
     from apps.admin_experiment import excel_util
@@ -951,6 +954,36 @@ def order_export(request: Request, user=None):
         return ok(
             {
                 "fileName": "实验订单.xlsx",
+                "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "base64": base64.b64encode(raw).decode("ascii"),
+                "rowCount": len(matrix),
+            },
+            res_msg="ok",
+        )
+    if order_type in ("9", "10"):
+        export_mode = str(data.get("exportMode") or data.get("export_mode") or "").strip().lower()
+        finished_only = export_mode in ("finished", "bj", "bjexport") or str(
+            data.get("bjExport")
+            or data.get("finishedOnly")
+            or data.get("finished_only")
+            or ""
+        ).lower() in ("1", "true", "yes")
+        headers, matrix = order_repo.build_sub_order_export_matrix(
+            order_type=order_type,
+            finished_only=finished_only,
+            limit=5000,
+            **common_filters,
+        )
+        if order_type == "9":
+            sheet = "实验分包子订单测试完成" if finished_only else "实验分包子订单"
+            file_name = "实验分包子订单测试完成.xlsx" if finished_only else "实验分包子订单.xlsx"
+        else:
+            sheet = "实验子订单测试完成" if finished_only else "实验子订单"
+            file_name = "实验子订单测试完成.xlsx" if finished_only else "实验子订单.xlsx"
+        raw = excel_util.rows_to_xlsx(headers, matrix, sheet_name=sheet)
+        return ok(
+            {
+                "fileName": file_name,
                 "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 "base64": base64.b64encode(raw).decode("ascii"),
                 "rowCount": len(matrix),
@@ -1305,6 +1338,12 @@ def order_update_basic(request: Request, user=None):
         supplier_id=data.get("supplierId")
         if "supplierId" in data or "supplier_name" in data or "supplier_id" in data
         else None,
+        customer_id=data.get("customerId")
+        if "customerId" in data or "customer_name" in data or "customerName" in data
+        else None,
+        custom_user_id=data.get("customUserId")
+        if "customUserId" in data or "custom_user_id" in data
+        else None,
         class_id=data.get("classId") if "classId" in data or "class_id" in data else None,
         test_address_id=data.get("testAddressId")
         if "testAddressId" in data or "test_address_id" in data
@@ -1313,6 +1352,7 @@ def order_update_basic(request: Request, user=None):
         if "companyAccountId" in data or "company_account_id" in data
         else None,
         is_video=data.get("isVideo") if "isVideo" in data or "is_video" in data else None,
+        children=data.get("children") if isinstance(data.get("children"), list) else None,
         staff_user_id=_staff_id(user),
     )
     return ok(res_msg=msg) if ok_flag else fail(msg)
