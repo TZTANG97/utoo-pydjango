@@ -10,7 +10,7 @@
           v-model="filters.storeName"
           clearable
           style="width: 160px"
-          @keyup.enter="reload"
+          @keydown.enter.prevent="reload"
         />
       </el-form-item>
       <el-form-item label="负责人">
@@ -18,7 +18,7 @@
           v-model="filters.trueName"
           clearable
           style="width: 140px"
-          @keyup.enter="reload"
+          @keydown.enter.prevent="reload"
         />
       </el-form-item>
       <el-form-item label="手机">
@@ -26,7 +26,7 @@
           v-model="filters.mobile"
           clearable
           style="width: 140px"
-          @keyup.enter="reload"
+          @keydown.enter.prevent="reload"
         />
       </el-form-item>
       <el-form-item>
