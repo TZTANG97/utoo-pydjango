@@ -607,12 +607,14 @@ def grab_order(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_detail(request: Request, user=None):
-    del user
     data = merge_payload(request)
     order_id = to_int(data.get("id") or data.get("ofId"))
     if not order_id:
         return fail("参数错误")
-    detail = order_repo.get_order_detail_bundle(order_id)
+    # viewer 用于子单 canGrab / isqdqx（对齐 Java qdorderdetail）
+    detail = order_repo.get_order_detail_bundle(
+        order_id, viewer_user_id=_staff_id(user)
+    )
     if not detail:
         return fail("订单不存在")
     return ok(detail)
@@ -1317,6 +1319,11 @@ def order_submit_exp(request: Request, user=None):
                     items = parsed
             except Exception:
                 items = []
+        # 兼容个别网关把数组包进 dict 根节点的情况
+        elif isinstance(raw, dict) and len(raw) == 1:
+            only = next(iter(raw.values()))
+            if isinstance(only, list):
+                items = only
     if not items:
         return fail("提交订单失败,订单没有数据，请确认!")
     header = items[0] if isinstance(items[0], dict) else {}

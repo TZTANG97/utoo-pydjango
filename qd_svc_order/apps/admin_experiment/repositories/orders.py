@@ -526,6 +526,64 @@ def list_sub_orders(
 # Java 抢单池哨兵值：experiment_order_child.test_user_id = '22' 表示待抢
 GRAB_POOL_TEST_USER_ID = "22"
 
+# 对齐 Java qdorderdetail isqdqx：系统管理员 / 测试人员 / 测试主管可抢；R 类人员不可抢
+_GRAB_ALLOWED_UTOO_TYPES = frozenset({"系统管理员", "测试人员", "测试主管"})
+_GRAB_DENIED_ROLE_NAME = "R类人员"
+
+
+def _load_grab_perm_ctx(user_id: str | None) -> dict[str, Any] | None:
+    """加载当前用户抢单权限上下文（对齐 Java isqdqx + roleName!=R类人员）。"""
+    uid = str(user_id or "").strip()
+    if not uid:
+        return None
+    u = fetch_one(
+        """
+        SELECT u.utoo_type AS utooType, utr.name AS roleName
+        FROM sy_users u
+        LEFT JOIN sy_user_type sut
+          ON sut.type_name = u.utoo_type AND IFNULL(sut.type, 2) = 2
+        LEFT JOIN user_type_role utr ON utr.id = sut.role_id
+        WHERE CAST(u.id AS CHAR) = CAST(%(id)s AS CHAR)
+        LIMIT 1
+        """,
+        {"id": uid},
+    )
+    if not u:
+        return None
+    utoo = str(u.get("utooType") or "").strip()
+    role = str(u.get("roleName") or "").strip() or utoo
+    # 模板：#if($!roleName!="R类人员")
+    if utoo == _GRAB_DENIED_ROLE_NAME or role == _GRAB_DENIED_ROLE_NAME:
+        return {"denied": True, "user_id": uid}
+    if utoo in _GRAB_ALLOWED_UTOO_TYPES:
+        return {"allowed_all": True, "user_id": uid, "class_ids": set()}
+    rows = fetch_all(
+        """
+        SELECT exp_manage_id AS cid
+        FROM sy_user_expmanage
+        WHERE CAST(user_id AS CHAR) = CAST(%(uid)s AS CHAR)
+        """,
+        {"uid": uid},
+    )
+    class_ids = {str(r.get("cid")) for r in (rows or []) if r.get("cid") not in (None, "")}
+    return {"allowed_all": False, "user_id": uid, "class_ids": class_ids}
+
+
+def _ctx_has_grab_qx(ctx: dict[str, Any] | None, class_id: Any) -> bool:
+    """是否具备该子单三级分类的抢单资格（不含池状态校验）。"""
+    if not ctx or ctx.get("denied"):
+        return False
+    if ctx.get("allowed_all"):
+        return True
+    cid = str(class_id if class_id not in (None, "") else "").strip()
+    if not cid:
+        return False
+    return cid in (ctx.get("class_ids") or set())
+
+
+def _user_has_grab_qx(*, user_id: str, class_id: Any) -> bool:
+    return _ctx_has_grab_qx(_load_grab_perm_ctx(user_id), class_id)
+
 
 def list_grab_orders(
     *,
@@ -559,8 +617,16 @@ def list_grab_orders(
         where += " AND p.order_id LIKE %(source_order)s"
         params["source_order"] = f"%{source_order}%"
     if company_name:
-        where += " AND (q.name LIKE %(company_name)s OR qs.name LIKE %(company_name)s)"
+        # 下拉传所属公司/进货公司 id，或名称模糊（对齐 Java stockCompanyName）
+        where += """ AND (
+            q.name LIKE %(company_name)s
+            OR qs.name LIKE %(company_name)s
+            OR CAST(IFNULL(t.stock_company_name, '') AS CHAR) = %(company_eq)s
+            OR CAST(IFNULL(t.customer_name, '') AS CHAR) = %(company_eq)s
+            OR CAST(IFNULL(t.supplier_name, '') AS CHAR) = %(company_eq)s
+        )"""
         params["company_name"] = f"%{company_name}%"
+        params["company_eq"] = company_name
     if sale_manager:
         where += " AND (sm.user_name LIKE %(sale_manager)s OR sm.true_name LIKE %(sale_manager)s OR t.sale_manager = %(sale_manager_eq)s)"
         params["sale_manager"] = f"%{sale_manager}%"
@@ -626,7 +692,8 @@ def grab_order(*, order_id: int, user_id: str) -> tuple[bool, str]:
     """对齐 Java competitionOrder：ofId 为子单 experiment_order_child.id。"""
     child = fetch_one(
         """
-        SELECT id, test_user_id AS testUserId, order_status AS orderStatus
+        SELECT id, test_user_id AS testUserId, order_status AS orderStatus,
+               experiment_class_id AS classId
         FROM experiment_order_child
         WHERE id = %(id)s AND IFNULL(delete_status, 2) <> 1
         LIMIT 1
@@ -635,6 +702,9 @@ def grab_order(*, order_id: int, user_id: str) -> tuple[bool, str]:
     )
     if not child:
         return False, "子单不存在"
+    # 对齐 Java 详情 isqdqx：接口侧补校验，避免仅靠前端隐藏
+    if not _user_has_grab_qx(user_id=user_id, class_id=child.get("classId")):
+        return False, "无抢单权限"
     if str(child.get("testUserId") or "") != GRAB_POOL_TEST_USER_ID:
         return False, "该子单不可抢或已被抢"
     try:
@@ -707,6 +777,8 @@ def get_order(order_id: int) -> dict[str, Any] | None:
             t.related_order_num AS relatedOrderNum,
             q.name AS companyName,
             u.company_name AS supplierName,
+            cu.mobile AS customUserMobile,
+            pcu.mobile AS parentCustomUserMobile,
             sm.user_name AS saleManagerName, sm.true_name AS saleManagerTrueName,
             su.user_name AS saleUserName, su.true_name AS saleUserTrueName,
             au.user_name AS addUserName, au.true_name AS addUserTrueName,
@@ -724,6 +796,8 @@ def get_order(order_id: int) -> dict[str, Any] | None:
         LEFT JOIN experiment_order p ON t.parent_id = p.id
         LEFT JOIN qd_user_company q ON t.customer_name = q.id
         LEFT JOIN `user` u ON t.supplier_name = u.id
+        LEFT JOIN `user` cu ON t.custom_user_id = cu.id
+        LEFT JOIN `user` pcu ON p.custom_user_id = pcu.id
         LEFT JOIN sy_users sm ON t.sale_manager = sm.id
         LEFT JOIN sy_users su ON t.sale_user = su.id
         LEFT JOIN sy_users au ON t.add_user_id = au.id
@@ -911,28 +985,39 @@ def get_order(order_id: int) -> dict[str, Any] | None:
     if not row.get("orderTime"):
         row["orderTime"] = (row.get("addTime") or "")[:10]
     row["isVideoLabel"] = "是" if str(row.get("isVideo") or "") in ("1", "true") else "否"
-    # type=9：样品回收/电话/寄回地址/云视频取自关联主单（对齐 Java orderParent）
-    if ot == "9":
-        rev = row.get("parentReversoContext")
-        if rev is None:
-            rev = row.get("reversoContext")
+    # type=9/10：样品回收/电话等可回退父单（对齐 Java orderParent / 抢单详情）
+    if ot in ("9", "10"):
+        rev = row.get("reversoContext")
+        if rev is None or str(rev).strip() == "":
+            rev = row.get("parentReversoContext")
         row["reversoLabel"] = "是" if str(rev or "") == "1" else "否"
         phone = (
-            str(row.get("parentMobile") or "").strip()
-            or str(row.get("mobile") or "").strip()
+            str(row.get("mobile") or "").strip()
+            or str(row.get("parentMobile") or "").strip()
             or str(row.get("shipPhone") or "").strip()
         )
         row["contactPhone"] = phone or "-"
-        if not str(row.get("shipAddress") or "").strip():
-            row["shipAddress"] = str(row.get("parentSendAddress") or "").strip()
-        pv = row.get("parentIsVideo")
-        if pv is not None and str(pv).strip() != "":
-            row["isVideoLabel"] = "是" if str(pv) in ("1", "true") else "否"
+        if not str(row.get("mobile") or "").strip() and phone:
+            row["mobile"] = phone
+        if ot == "9":
+            if not str(row.get("shipAddress") or "").strip():
+                row["shipAddress"] = str(row.get("parentSendAddress") or "").strip()
+            pv = row.get("parentIsVideo")
+            if pv is not None and str(pv).strip() != "":
+                row["isVideoLabel"] = "是" if str(pv) in ("1", "true") else "否"
     else:
         rev = row.get("reversoContext")
         row["reversoLabel"] = "是" if str(rev or "") == "1" else "否"
         row["contactPhone"] = str(row.get("mobile") or row.get("shipPhone") or "").strip() or "-"
-    row["customMobile"] = str(row.get("mobile") or "").strip() or row.get("contactPhone") or "-"
+    # 客户账号：优先 custom_user.mobile，其次订单/父单 mobile（对齐 Java customUser.mobile）
+    row["customMobile"] = (
+        str(row.get("customUserMobile") or "").strip()
+        or str(row.get("mobile") or "").strip()
+        or str(row.get("parentCustomUserMobile") or "").strip()
+        or str(row.get("parentMobile") or "").strip()
+        or str(row.get("contactPhone") or "").strip()
+        or "-"
+    )
     # mark 为标志位(bigint)，备注文本只用 msg
     row["msg"] = str(row.get("msg") or "").strip()
     # 预计付款时间/金额（对齐 Java collectionTimes）
@@ -1244,6 +1329,8 @@ def get_order(order_id: int) -> dict[str, Any] | None:
 
 _CHILD_LINE_SELECT = """
             c.id, c.order_id AS childOrderId, c.order_status AS orderStatus,
+            c.goods_id AS goodsId, c.goods_brand_id AS goodsBrandId,
+            c.experiment_project_id AS projectId,
             c.goods_name AS goodsName, c.goods_spec AS goodsSpec,
             c.goods_brand_name AS goodsBrand, c.goods_nums AS goodsCount,
             c.experiment_project_name AS projectName,
@@ -1323,6 +1410,8 @@ def _fetch_children_fallback(order_id: int) -> list[dict[str, Any]]:
         """
         SELECT
             c.id, c.order_id AS childOrderId, c.order_status AS orderStatus,
+            c.goods_id AS goodsId, c.goods_brand_id AS goodsBrandId,
+            c.experiment_project_id AS projectId,
             c.goods_name AS goodsName, c.goods_spec AS goodsSpec,
             c.goods_brand_name AS goodsBrand, c.goods_nums AS goodsCount,
             c.experiment_project_name AS projectName,
@@ -1356,6 +1445,8 @@ def _fetch_children_fallback(order_id: int) -> list[dict[str, Any]]:
         """
         SELECT
             c.id, c.order_id AS childOrderId, c.order_status AS orderStatus,
+            c.goods_id AS goodsId, c.goods_brand_id AS goodsBrandId,
+            c.experiment_project_id AS projectId,
             c.goods_name AS goodsName, c.goods_spec AS goodsSpec,
             c.goods_brand_name AS goodsBrand, c.goods_nums AS goodsCount,
             c.experiment_project_name AS projectName,
@@ -1566,12 +1657,18 @@ def _attach_child_runtime_fields(rows: list[dict[str, Any]]) -> None:
         r["expectFinishTime"] = str(eft)[:19] if eft else ""
 
 
-def list_order_children(order_id: int) -> list[dict[str, Any]]:
-    """对齐 Java getChildsByPurchaseId2：产品行 + 仓位/云视频/样品管理单等。"""
+def list_order_children(
+    order_id: int, *, viewer_user_id: str | None = None
+) -> list[dict[str, Any]]:
+    """对齐 Java getChildsByPurchaseId2：产品行 + 仓位/云视频/样品管理单等。
+
+    canGrab 对齐 Java qdorderdetail：待抢池 + 状态<=36 + isqdqx（角色/三级分类）且非 R 类。
+    """
     try:
         rows = _fetch_children_basic(order_id)
     except Exception:
         rows = _fetch_children_fallback(order_id)
+    grab_ctx = _load_grab_perm_ctx(viewer_user_id)
     for r in rows:
         r["orderStatusLabel"] = _child_line_status_label(r.get("orderStatus"))
         r["testUserName"] = str(r.get("testUserTrueName") or r.get("testUserName") or "-")
@@ -1582,7 +1679,10 @@ def list_order_children(order_id: int) -> list[dict[str, Any]]:
             child_st = int(r.get("orderStatus")) if r.get("orderStatus") is not None else -1
         except (TypeError, ValueError):
             child_st = -1
-        r["canGrab"] = pool and child_st <= 36
+        # 对齐 Java child.put("isqdqx", isqdqx)；前端仍用 canGrab 控制按钮
+        isqdqx = _ctx_has_grab_qx(grab_ctx, r.get("classId"))
+        r["isqdqx"] = isqdqx
+        r["canGrab"] = bool(pool and child_st <= 36 and isqdqx)
         try:
             conf_i = int(r.get("isConfirm")) if r.get("isConfirm") is not None else 0
         except (TypeError, ValueError):
@@ -1772,13 +1872,15 @@ def delete_order_file(*, accessory_id: int) -> tuple[bool, str]:
     return True, "删除成功"
 
 
-def get_order_detail_bundle(order_id: int) -> dict[str, Any] | None:
+def get_order_detail_bundle(
+    order_id: int, *, viewer_user_id: str | None = None
+) -> dict[str, Any] | None:
     """Java orderdetail 聚合：主信息 + 产品行 + 关联子单 + 关联订单 + 操作日志 + 订单资料。"""
     row = get_order(order_id)
     if not row:
         return None
     ot = str(row.get("orderType") or "")
-    children = list_order_children(order_id)
+    children = list_order_children(order_id, viewer_user_id=viewer_user_id)
     logs = list_order_logs(order_id)
     linked: list[dict[str, Any]] = []
     if ot == "6":
