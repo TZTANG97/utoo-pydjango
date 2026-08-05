@@ -22,7 +22,7 @@
       <el-table-column type="index" width="55" label="#" align="center" />
       <el-table-column prop="goodsName" label="产品名称" min-width="160" show-overflow-tooltip />
       <el-table-column prop="brandName" label="品牌" min-width="120" />
-      <el-table-column prop="goodsModel" label="型号" min-width="120" />
+      <el-table-column prop="goodsModel" label="型号" min-width="160" show-overflow-tooltip />
       <el-table-column prop="addTime" label="创建时间" width="170" />
       <el-table-column label="操作" width="140" fixed="right">
         <template #default="{ row }">
@@ -44,7 +44,7 @@
       />
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="form.id ? '编辑产品' : '新增产品'" width="480px">
+    <el-dialog v-model="dialogVisible" :title="form.id ? '编辑产品' : '新增产品'" width="620px">
       <el-form label-width="90px">
         <el-form-item label="品牌">
           <el-select v-model="form.brandId" clearable filterable style="width: 100%">
@@ -54,8 +54,14 @@
         <el-form-item label="产品名称" required>
           <el-input v-model="form.goodsName" />
         </el-form-item>
-        <el-form-item label="型号">
-          <el-input v-model="form.goodsModel" />
+        <el-form-item label="产品型号">
+          <div class="model-list">
+            <div v-for="(m, idx) in form.models" :key="m.key" class="model-row">
+              <el-input v-model="m.value" placeholder="请输入产品型号" />
+              <el-button type="primary" plain @click="addModel">添加</el-button>
+              <el-button type="danger" plain @click="removeModel(idx)">删除</el-button>
+            </div>
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -80,6 +86,22 @@ import {
 import { useDataTable } from '@/composables/useDataTable'
 import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
 
+type ModelRow = { key: number; value: string }
+
+let modelKeySeq = 1
+function newModelRow(value = ''): ModelRow {
+  return { key: modelKeySeq++, value }
+}
+
+/** 对齐 Java：goods_model 逗号分隔多型号 */
+function splitModels(raw: unknown): ModelRow[] {
+  const parts = String(raw || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  return parts.length ? parts.map((v) => newModelRow(v)) : [newModelRow()]
+}
+
 const filters = reactive({ name: '', brandId: '' })
 const brandOpts = ref<Record<string, unknown>[]>([])
 const dialogVisible = ref(false)
@@ -87,8 +109,8 @@ const saving = ref(false)
 const form = reactive({
   id: undefined as number | undefined,
   goodsName: '',
-  goodsModel: '',
   brandId: undefined as number | undefined,
+  models: [newModelRow()] as ModelRow[],
 })
 
 function listParams() {
@@ -107,8 +129,25 @@ function reload() {
   return load(listParams())
 }
 
+function addModel() {
+  form.models.push(newModelRow())
+}
+
+function removeModel(idx: number) {
+  if (form.models.length <= 1) {
+    ElMessage.warning('不可删除最后一个哦！')
+    return
+  }
+  form.models.splice(idx, 1)
+}
+
 function openCreate() {
-  Object.assign(form, { id: undefined, goodsName: '', goodsModel: '', brandId: undefined })
+  Object.assign(form, {
+    id: undefined,
+    goodsName: '',
+    brandId: undefined,
+    models: [newModelRow()],
+  })
   dialogVisible.value = true
 }
 
@@ -122,8 +161,8 @@ async function openEdit(row: Record<string, unknown>) {
   Object.assign(form, {
     id: Number(obj.id),
     goodsName: String(obj.goodsName || ''),
-    goodsModel: String(obj.goodsModel || ''),
     brandId: obj.brandId != null ? Number(obj.brandId) : undefined,
+    models: splitModels(obj.goodsModel),
   })
   dialogVisible.value = true
 }
@@ -133,12 +172,17 @@ async function handleSubmit() {
     ElMessage.warning('请输入产品名称')
     return
   }
+  const models = form.models.map((m) => m.value.trim()).filter(Boolean)
+  if (new Set(models).size !== models.length) {
+    ElMessage.warning('产品型号不能重复!')
+    return
+  }
   saving.value = true
   try {
     const res = await saveExpGoods({
       id: form.id,
       goodsName: form.goodsName.trim(),
-      goodsModel: form.goodsModel.trim(),
+      goodsModel: models.join(','),
       brandId: form.brandId,
     })
     if (isAjaxOk(res)) {
@@ -176,4 +220,16 @@ onMounted(async () => {
 <style scoped lang="scss">
 .filter-form { margin-bottom: 12px; }
 .pager { display: flex; justify-content: flex-end; margin-top: 16px; }
+.model-list {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.model-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  .el-input { flex: 1; }
+}
 </style>
