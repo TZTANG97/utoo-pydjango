@@ -51,7 +51,7 @@
 
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" :disabled="!selectedUrl" @click="confirm">插入图片</el-button>
+      <el-button type="primary" :disabled="!selectedPick" @click="confirm">插入图片</el-button>
     </template>
   </el-dialog>
 </template>
@@ -63,8 +63,11 @@ import { fetchAlbumImages, fetchAlbumList } from '@admin/api/ops'
 
 const OSS_BASE = 'https://qgongye.oss-cn-shanghai.aliyuncs.com/'
 
+type AlbumImagePick = { id: number; url: string }
+
 const visible = defineModel<boolean>({ default: false })
-const emit = defineEmits<{ select: [url: string] }>()
+const emit = defineEmits<{ select: [pick: AlbumImagePick] }>()
+const selectedPick = ref<AlbumImagePick | null>(null)
 
 const albums = ref<Record<string, unknown>[]>([])
 const images = ref<Record<string, unknown>[]>([])
@@ -92,6 +95,7 @@ function imageUrl(row: Record<string, unknown>) {
 async function onOpen() {
   selectedId.value = null
   selectedUrl.value = ''
+  selectedPick.value = null
   pagination.page = 1
   await loadAlbums()
 }
@@ -115,6 +119,7 @@ function onAlbumChange() {
   pagination.page = 1
   selectedId.value = null
   selectedUrl.value = ''
+  selectedPick.value = null
   return loadImages()
 }
 
@@ -137,16 +142,19 @@ async function loadImages() {
 }
 
 function selectImage(img: Record<string, unknown>) {
-  selectedId.value = Number(img.id)
-  selectedUrl.value = imageUrl(img)
+  const id = Number(img.id)
+  const url = imageUrl(img)
+  selectedId.value = id
+  selectedUrl.value = url
+  selectedPick.value = Number.isFinite(id) && id > 0 && url ? { id, url } : null
 }
 
 function confirm() {
-  if (!selectedUrl.value) {
+  if (!selectedPick.value) {
     ElMessage.warning('请选择图片')
     return
   }
-  emit('select', selectedUrl.value)
+  emit('select', selectedPick.value)
   visible.value = false
 }
 </script>

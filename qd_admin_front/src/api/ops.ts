@@ -69,6 +69,15 @@ export function toggleBannerShow(id: string | number) {
   return postAjax('/banner/updateisshow.ajax', { id })
 }
 
+/** 对齐 Java seller/swf_upload.ajax，返回 accessory id + url */
+export async function uploadSellerImage(file: File) {
+  const fd = new FormData()
+  fd.append('imgFile', file)
+  return (await request.post('/seller/swf_upload.ajax', fd, {
+    timeout: 60000,
+  })) as unknown as AjaxBody
+}
+
 // Advert
 export function fetchAdvertList(params: Record<string, unknown>) {
   return fetchDatatable('/admin/advert_list.ajax', params)

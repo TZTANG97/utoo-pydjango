@@ -74,7 +74,9 @@ function initEditor() {
   editorRef.value = editor
 }
 
-function insertImage(url: string) {
+function insertImage(pick: string | { id?: number; url: string }) {
+  const url = typeof pick === 'string' ? pick : pick.url
+  if (!url) return
   const editor = editorRef.value
   if (!editor) return
   editor.focus()

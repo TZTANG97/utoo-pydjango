@@ -17,7 +17,6 @@ import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vu
 import AlbumImagePicker from '@/components/AlbumImagePicker.vue'
 
 const html = defineModel<string>({ default: '' })
-
 const toolbarHost = ref<HTMLDivElement | null>(null)
 const editorHost = ref<HTMLDivElement | null>(null)
 const editorRef = shallowRef<IDomEditor | null>(null)
@@ -75,7 +74,9 @@ function initEditor() {
   editorRef.value = editor
 }
 
-function insertImage(url: string) {
+function insertImage(pick: string | { id?: number; url: string }) {
+  const url = typeof pick === 'string' ? pick : pick.url
+  if (!url) return
   const editor = editorRef.value
   if (!editor) return
   editor.focus()
