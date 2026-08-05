@@ -142,6 +142,9 @@ export const deleteLab = (id: string | number) => postAjax('/lab/del.ajax', { id
 // 实验线（实验室查看页）
 export const fetchLabLineList = (p: Record<string, unknown>) =>
   fetchDatatable('/lab/lineList.ajax', p)
+/** 对齐 Java /lab/selLineList.ajax：选择实验平台（不要求 lab_id） */
+export const fetchSelLineList = (p: Record<string, unknown> = {}) =>
+  fetchDatatable('/lab/selLineList.ajax', p)
 export const fetchLabLineClassOptions = () => postAjax('/lab/lineClassOptions.ajax')
 export const getLabLine = (id: string | number) => postAjax('/lab/getLine.ajax', { id })
 export const submitLabLine = (data: Record<string, unknown>) =>

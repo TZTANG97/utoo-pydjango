@@ -196,9 +196,8 @@ export const uploadSubInvoiceExpOrder = (data: Record<string, unknown>) =>
   postAjax(`${BASE}/order/uploadSubInvoice.ajax`, data)
 
 export const uploadExpOrderFile = (formData: FormData) =>
-  request.post(`${BASE}/order/uploadFile.ajax`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  }) as unknown as Promise<AjaxBody>
+  // 勿手动设 Content-Type，否则缺少 boundary，Django 解析不到 FILES
+  request.post(`${BASE}/order/uploadFile.ajax`, formData) as unknown as Promise<AjaxBody>
 
 export const deleteExpOrderFile = (id: string | number) =>
   postAjax(`${BASE}/order/deleteFile.ajax`, { id })

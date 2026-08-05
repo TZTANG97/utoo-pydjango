@@ -246,7 +246,7 @@
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="客户名称" required>
+              <el-form-item label="客户名称">
                 <el-select
                   v-model="form.customerName"
                   filterable
@@ -283,7 +283,7 @@
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="客户账号" required>
+              <el-form-item label="客户账号">
                 <el-select
                   v-model="form.customUserId"
                   filterable
@@ -492,7 +492,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { createExpSubOrder, getExpOrderDetail, uploadExpOrderFile } from '@admin/api/experiment'
 import { fetchCustomerAccounts, fetchCustomerNames, fetchEnterpriseList } from '@admin/api/member'
-import { fetchLabLineList } from '@admin/api/inventory'
+import { fetchSelLineList } from '@admin/api/inventory'
 import {
   fetchBillTypeAll,
   fetchPaytypeAll,
@@ -677,7 +677,13 @@ async function onUploadOrderFile(options: { file: File }) {
       return
     }
     orderFiles.value.push(res.obj as Record<string, unknown>)
-    ElMessage.success('上传成功')
+    ElMessage.success(String(res.resMsg || '上传成功'))
+  } catch (e: unknown) {
+    const msg =
+      e && typeof e === 'object' && 'response' in e
+        ? ajaxErrorMessage((e as { response?: { data?: unknown } }).response?.data as never, '上传失败')
+        : '上传失败'
+    ElMessage.error(msg)
   } finally {
     uploading.value = false
   }
@@ -724,7 +730,8 @@ async function loadOptions() {
       supplierOptions.value = []
     }
     try {
-      const lines = await fetchLabLineList({ start: 0, length: 999, draw: 1, line_num: '' })
+      // 对齐 Java /lab/selLineList.ajax（全量实验线，不依赖 lab_id）
+      const lines = await fetchSelLineList({ start: 0, length: 999, draw: 1, line_num: '' })
       platformOptions.value = lines.data || []
     } catch {
       platformOptions.value = []
@@ -810,9 +817,9 @@ function validateSubcontract(): string | null {
 function validateExperiment(): string | null {
   if (!form.orderTime) return '请填写下单时间'
   if (!form.saleManager) return '请选择实验室主管'
-  if (!form.customerName) return '请选择客户名称'
+  // 对齐 Java：客户名称与客户账号不能同时为空（有一个即可）
+  if (!form.customerName && !form.customUserId) return '客户名称和客户账号不能同时为空'
   if (!form.supplierName) return '请选择所属公司'
-  if (!form.customUserId) return '请选择客户账号'
   if (!form.saleUser) return '请选择销售人员'
   if (!form.stockUser) return '请选择仓库管理员'
   if (!form.deliveryTime) return '请填写预计收货时间'
