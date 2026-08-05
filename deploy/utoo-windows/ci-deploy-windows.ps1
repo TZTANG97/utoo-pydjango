@@ -217,31 +217,86 @@ try {
 		'-o', 'IdentitiesOnly=yes',
 		'-o', "UserKnownHostsFile=$knownHostsFile",
 		'-o', 'StrictHostKeyChecking=yes',
-		'-o', 'BatchMode=yes'
+		'-o', 'BatchMode=yes',
+		'-o', 'ConnectTimeout=30',
+		'-o', 'ConnectionAttempts=3',
+		'-o', 'ServerAliveInterval=15',
+		'-o', 'ServerAliveCountMax=4'
 	)
 	$SshTarget = "$DeployUser@$deployHost"
 
+	function Test-UtooSshTransportFailed([int]$ExitCode) {
+		# OpenSSH: 255 = connection/protocol failure (timeout, reset, etc.)
+		return ($ExitCode -eq 255 -or $ExitCode -eq 124)
+	}
+
+	function Invoke-UtooSshRetry {
+		param(
+			[Parameter(Mandatory)][scriptblock]$Action,
+			[Parameter(Mandatory)][string]$What,
+			[int]$Retries = 3
+		)
+		$lastEc = 1
+		$lastOut = ''
+		for ($i = 1; $i -le $Retries; $i++) {
+			$global:LASTEXITCODE = 0
+			# ssh/scp stderr must not become terminating errors under ErrorActionPreference=Stop
+			$prevEap = $ErrorActionPreference
+			$ErrorActionPreference = 'Continue'
+			try {
+				$lastOut = & $Action 2>&1
+				$lastEc = [int]$LASTEXITCODE
+			} finally {
+				$ErrorActionPreference = $prevEap
+			}
+			if ($lastEc -eq 0) { return $lastOut }
+			if (-not (Test-UtooSshTransportFailed $lastEc) -or $i -eq $Retries) {
+				break
+			}
+			Write-Host ("[deploy] SSH transport fail (exit={0}) retry {1}/{2}: {3}" -f $lastEc, $i, $Retries, $What) -ForegroundColor Yellow
+			Start-Sleep -Seconds (3 * $i)
+		}
+		$msg = (($lastOut | ForEach-Object { "$_" } | Out-String).Trim())
+		throw ("{0} failed (exit {1}): {2}" -f $What, $lastEc, $msg)
+	}
+
 	function Invoke-Remote([string]$RemoteCmd) {
-		& $script:UtooSshExe @SshArgs $SshTarget $RemoteCmd
-		if ($LASTEXITCODE -ne 0) { throw "Remote command failed (exit $LASTEXITCODE): $RemoteCmd" }
+		Invoke-UtooSshRetry -What ("ssh: $RemoteCmd") -Action {
+			& $script:UtooSshExe @SshArgs $SshTarget $RemoteCmd
+		} | Out-Null
 	}
 	function Invoke-RemoteCapture([string]$RemoteCmd) {
-		$out = & $script:UtooSshExe @SshArgs $SshTarget $RemoteCmd 2>&1
-		if ($LASTEXITCODE -ne 0) { throw "Remote command failed (exit $LASTEXITCODE): $RemoteCmd`n$out" }
+		$out = Invoke-UtooSshRetry -What ("ssh: $RemoteCmd") -Action {
+			& $script:UtooSshExe @SshArgs $SshTarget $RemoteCmd
+		}
 		return (($out | Out-String).Trim())
 	}
 	function Invoke-RemoteSudo([string]$RemoteCmd) {
+		# Prefer passwordless sudo. Do NOT fall back to non-sudo on SSH timeout:
+		# that caused deploy_all to hit Permission denied on __pycache__ while single deploy looked fine.
 		$escaped = $RemoteCmd -replace "'", "'\''"
 		$cmd = "sudo -n bash -c '$escaped'"
-		& $script:UtooSshExe @SshArgs $SshTarget $cmd
-		if ($LASTEXITCODE -ne 0) {
-			& $script:UtooSshExe @SshArgs $SshTarget $RemoteCmd
-			if ($LASTEXITCODE -ne 0) { throw "Remote sudo/cmd failed (exit $LASTEXITCODE): $RemoteCmd" }
+		try {
+			Invoke-UtooSshRetry -What ("sudo: $RemoteCmd") -Action {
+				& $script:UtooSshExe @SshArgs $SshTarget $cmd
+			} | Out-Null
+			return
+		} catch {
+			# Only fall back when sudo itself is unavailable/denied (not SSH transport).
+			$errText = "$_"
+			if ($errText -match 'exit 255|Connection timed out|Connection refused|Connection reset') {
+				throw
+			}
+			Write-Host ('[deploy] sudo -n failed; retrying without sudo: {0}' -f $RemoteCmd) -ForegroundColor Yellow
+			Invoke-UtooSshRetry -What ("ssh(no-sudo): $RemoteCmd") -Action {
+				& $script:UtooSshExe @SshArgs $SshTarget $RemoteCmd
+			} | Out-Null
 		}
 	}
 	function Invoke-Scp([string]$LocalPath, [string]$RemotePath) {
-		& $script:UtooScpExe @SshArgs $LocalPath "${SshTarget}:$RemotePath"
-		if ($LASTEXITCODE -ne 0) { throw "scp failed: $LocalPath -> $RemotePath" }
+		Invoke-UtooSshRetry -What ("scp: $LocalPath -> $RemotePath") -Action {
+			& $script:UtooScpExe @SshArgs $LocalPath "${SshTarget}:$RemotePath"
+		} | Out-Null
 	}
 	function Get-UtooPackTarExe {
 		$winTar = Join-Path $env:SystemRoot 'System32\tar.exe'
@@ -277,12 +332,22 @@ try {
 	function Invoke-RemoteSudoCapture([string]$RemoteCmd) {
 		$escaped = $RemoteCmd -replace "'", "'\''"
 		$cmd = "sudo -n bash -c '$escaped'"
-		$out = & $script:UtooSshExe @SshArgs $SshTarget $cmd 2>&1
-		if ($LASTEXITCODE -ne 0) {
-			$out = & $script:UtooSshExe @SshArgs $SshTarget $RemoteCmd 2>&1
-			if ($LASTEXITCODE -ne 0) { throw "Remote sudo/capture failed (exit $LASTEXITCODE): $RemoteCmd`n$out" }
+		try {
+			$out = Invoke-UtooSshRetry -What ("sudo-capture: $RemoteCmd") -Action {
+				& $script:UtooSshExe @SshArgs $SshTarget $cmd
+			}
+			return (($out | Out-String).Trim())
+		} catch {
+			$errText = "$_"
+			if ($errText -match 'exit 255|Connection timed out|Connection refused|Connection reset') {
+				throw
+			}
+			Write-Host ('[deploy] sudo -n capture failed; retrying without sudo: {0}' -f $RemoteCmd) -ForegroundColor Yellow
+			$out = Invoke-UtooSshRetry -What ("ssh-capture(no-sudo): $RemoteCmd") -Action {
+				& $script:UtooSshExe @SshArgs $SshTarget $RemoteCmd
+			}
+			return (($out | Out-String).Trim())
 		}
-		return (($out | Out-String).Trim())
 	}
 	function Invoke-RemoteBashScriptCapture([string]$LocalScriptPath, [hashtable]$Replacements) {
 		$text = [IO.File]::ReadAllText($LocalScriptPath)
@@ -303,7 +368,15 @@ try {
 	function Sync-DirToRemote([string]$LocalDir, [string]$RemoteDir, [string[]]$Exclude, [string[]]$PreserveNames) {
 		$preserveExpr = ($PreserveNames | ForEach-Object { "-not -name $_" }) -join ' '
 		if ([string]::IsNullOrWhiteSpace($preserveExpr)) { $preserveExpr = '-not -name .keep' }
-		Invoke-RemoteSudo ("mkdir -p {0} && find {0} -mindepth 1 -maxdepth 1 {1} -print0 | xargs -0r rm -rf" -f $RemoteDir, $preserveExpr)
+		# chown first so leftover root/service-owned __pycache__ can be removed under sudo.
+		$clean = @(
+			"mkdir -p {0}",
+			"chown -R {2}:{2} {0} || true",
+			"find {0} -mindepth 1 -maxdepth 1 {1} -print0 | xargs -0r rm -rf",
+			"find {0} -type d -name __pycache__ -prune -print0 2>/dev/null | xargs -0r rm -rf || true",
+			"find {0} -type f -name '*.pyc' -delete 2>/dev/null || true"
+		) -join '; '
+		Invoke-RemoteSudo ($clean -f $RemoteDir, $preserveExpr, $DeployUser)
 		$tarLocal = Join-Path $env:TEMP ("utoo_sync_{0}.tar" -f [Guid]::NewGuid().ToString('N'))
 		$tarRemote = "/tmp/utoo_sync_{0}.tar" -f [Guid]::NewGuid().ToString('N')
 		try {
@@ -430,6 +503,8 @@ try {
 		$remoteDir = "{0}/{1}" -f $SlotRoot, $dir
 
 		Write-Host ("[deploy] === sync {0} ({1} :{2}) ===" -f $dir, $svc, $port) -ForegroundColor Cyan
+		# Idle unit may still be running; stop so wipe does not race with writing .pyc
+		Invoke-RemoteSudo ("systemctl stop {0} || true" -f $svc)
 		Sync-DirToRemote `
 			-LocalDir $localDir `
 			-RemoteDir $remoteDir `
@@ -501,6 +576,11 @@ try {
 			-Exclude @('.venv', '__pycache__', '*.pyc', '.git', '*.egg-info') `
 			-PreserveNames @('.keep')
 		Invoke-RemoteSudo ("mkdir -p {0}/config {1}" -f $RemoteRoot, $SharedConfig)
+
+		# Stop idle-slot units before wipe/sync so gunicorn cannot recreate root-owned __pycache__.
+		$stopList = ($UpstreamUnits | ForEach-Object { $_.Service }) -join ' '
+		Write-Host ("[deploy] stop idle units before sync: {0}" -f $stopList) -ForegroundColor Cyan
+		Invoke-RemoteSudo ("systemctl stop {0} || true" -f $stopList)
 
 		# Sync code sequentially (SCP from Windows), then pip/restart in parallel on the server.
 		$specParts = @()
