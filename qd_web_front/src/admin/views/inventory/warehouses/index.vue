@@ -4,18 +4,33 @@
       <el-button type="primary" @click="openCreate">新增仓库</el-button>
     </template>
 
-    <el-form :inline="true" class="filter-form" @submit.prevent>
+    <el-form :inline="true" class="filter-form" @submit.prevent="reload">
       <el-form-item label="仓库名称">
-        <el-input v-model="filters.storeName" clearable style="width: 160px" />
+        <el-input
+          v-model="filters.storeName"
+          clearable
+          style="width: 160px"
+          @keyup.enter="reload"
+        />
       </el-form-item>
       <el-form-item label="负责人">
-        <el-input v-model="filters.trueName" clearable style="width: 140px" />
+        <el-input
+          v-model="filters.trueName"
+          clearable
+          style="width: 140px"
+          @keyup.enter="reload"
+        />
       </el-form-item>
       <el-form-item label="手机">
-        <el-input v-model="filters.mobile" clearable style="width: 140px" />
+        <el-input
+          v-model="filters.mobile"
+          clearable
+          style="width: 140px"
+          @keyup.enter="reload"
+        />
       </el-form-item>
       <el-form-item>
-        <el-button type="primary" @click="reload">查询</el-button>
+        <el-button type="primary" native-type="submit" @click="reload">查询</el-button>
       </el-form-item>
     </el-form>
 
