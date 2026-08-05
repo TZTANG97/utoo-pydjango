@@ -179,7 +179,7 @@
           </el-form-item>
         </el-col>
         <el-col :span="12">
-          <el-form-item label="是否含视频">
+          <el-form-item label="是否云视频">
             <el-switch v-model="form.isVideo" />
           </el-form-item>
         </el-col>
