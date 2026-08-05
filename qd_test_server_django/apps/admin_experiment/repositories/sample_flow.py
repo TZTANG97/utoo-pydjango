@@ -1,11 +1,14 @@
 """实验子订单(type=10)样品/测试流转，对齐 Java ExperimentSubOrderController 核心状态机。"""
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from apps.core.db_utils import execute, execute_insert, fetch_all, fetch_one, scalar
 from django.db import transaction
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 # child line statuses (jy.main.js childOrderStatus / ChildOrderStatusEnum)
 ST_PROCESSED = 2
@@ -130,7 +133,7 @@ def _all_children_done(order_id: int) -> bool:
 def _complete_sub_order_if_ready(
     order_id: int, staff_user_id: str | int | None = None
 ) -> None:
-    """对齐 Java updateSubOrderStatus：全部子行=50 时主单→50。"""
+    """对齐 Java updateSubOrderStatus：全部子行=50 时子单→50，并尝试完成父主单。"""
     if not _all_children_done(order_id):
         return
     try:
@@ -148,6 +151,21 @@ def _complete_sub_order_if_ready(
             {"st": ST_DONE, "id": order_id},
         )
     _write_log(order_id, "子订单全部完成", user_id=staff_user_id)
+    # 对齐 Java：子单完成后调用 orderFinish(parent_id)
+    parent = fetch_one(
+        "SELECT parent_id AS parentId FROM experiment_order WHERE id = %(id)s LIMIT 1",
+        {"id": order_id},
+    )
+    parent_id = (parent or {}).get("parentId")
+    if parent_id not in (None, "", 0, "0"):
+        try:
+            from apps.admin_experiment.repositories import orders as order_repo
+
+            order_repo.try_finish_main_order(
+                order_id=int(parent_id), staff_user_id=staff_user_id
+            )
+        except Exception:
+            logger.exception("try_finish_main_order after sub done order=%s", order_id)
 
 
 def list_children_for_order(order_id: int) -> list[dict[str, Any]]:

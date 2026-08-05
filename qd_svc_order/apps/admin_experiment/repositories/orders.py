@@ -5260,12 +5260,8 @@ def build_sub_order_export_matrix(
         require_finish_log=bool(finished_only),
         page=1,
         page_size=limit,
+        scope=filters.get("scope"),
     )
-    # qd_svc_order / 部分分支可能带 scope
-    import inspect
-
-    if "scope" in inspect.signature(list_sub_orders).parameters and filters.get("scope") is not None:
-        list_kwargs["scope"] = filters.get("scope")
 
     orders, _ = list_sub_orders(**list_kwargs)
     if not orders:

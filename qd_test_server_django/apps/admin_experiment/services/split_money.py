@@ -625,5 +625,23 @@ def save_receive_bill(
         try_split_on_receive(order_id)
     except Exception as exc:
         logger.exception("split after save_receive_bill")
-        return True, f"收款已保存，分钱失败：{exc}"
+        split_msg = f"收款已保存，分钱失败：{exc}"
+    else:
+        split_msg = ""
+    try:
+        from apps.admin_experiment.repositories import orders as order_repo
+
+        order_repo._write_order_log(
+            order_id,
+            f"收款 {float(amt)}" + (f"：{log_info}" if log_info else ""),
+            user_id=staff_user_id,
+        )
+        order_repo.auto_generate_appointment_after_online_pay(
+            order_id=order_id, staff_user_id=staff_user_id
+        )
+        order_repo.try_finish_main_order(order_id=order_id, staff_user_id=staff_user_id)
+    except Exception:
+        logger.exception("post receive hooks failed order_id=%s", order_id)
+    if split_msg:
+        return True, split_msg
     return True, "收款成功"
