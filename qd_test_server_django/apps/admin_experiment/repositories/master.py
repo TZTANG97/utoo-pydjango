@@ -440,13 +440,16 @@ def soft_delete_exp_brand(row_id: int) -> None:
 
 
 def list_exp_brand_options() -> list[dict[str, Any]]:
+    """对齐 Java goodsbrand/queryBrand.ajax?type=2 → getAllByType。"""
     return fetch_all(
         """
         SELECT id AS value, name AS label
         FROM goodsbrand
-        WHERE IFNULL(deleteStatus, 0) = 0 AND type = 2 AND IFNULL(audit, 1) = 1
-        ORDER BY sequence ASC, name ASC
-        LIMIT 1000
+        WHERE IFNULL(deleteStatus, 0) = 0
+          AND CAST(IFNULL(type, 0) AS SIGNED) = 2
+          AND IFNULL(audit, 1) = 1
+        ORDER BY IFNULL(sequence, 0) ASC, id DESC, name ASC
+        LIMIT 5000
         """
     )
 

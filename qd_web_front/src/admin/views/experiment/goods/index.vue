@@ -6,7 +6,14 @@
 
     <el-form :inline="true" class="filter-form" @submit.prevent>
       <el-form-item label="品牌">
-        <el-select v-model="filters.brandId" clearable filterable placeholder="全部" style="width: 160px">
+        <el-select
+          v-model="filters.brandId"
+          clearable
+          filterable
+          placeholder="全部"
+          style="width: 160px"
+          @visible-change="(open: boolean) => open && loadBrandOptions()"
+        >
           <el-option v-for="o in brandOpts" :key="String(o.value)" :label="String(o.label)" :value="String(o.value)" />
         </el-select>
       </el-form-item>
@@ -47,7 +54,13 @@
     <el-dialog v-model="dialogVisible" :title="form.id ? '编辑产品' : '新增产品'" width="620px">
       <el-form label-width="90px">
         <el-form-item label="品牌">
-          <el-select v-model="form.brandId" clearable filterable style="width: 100%">
+          <el-select
+            v-model="form.brandId"
+            clearable
+            filterable
+            style="width: 100%"
+            @visible-change="(open: boolean) => open && loadBrandOptions()"
+          >
             <el-option v-for="o in brandOpts" :key="String(o.value)" :label="String(o.label)" :value="Number(o.value)" />
           </el-select>
         </el-form-item>
@@ -73,7 +86,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onActivated, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminPageCard from '@admin/components/AdminPageCard.vue'
 import {
@@ -113,6 +126,17 @@ const form = reactive({
   models: [newModelRow()] as ModelRow[],
 })
 
+async function loadBrandOptions() {
+  try {
+    const res = await fetchExpBrandOptions()
+    if (isAjaxOk(res) && Array.isArray(res.obj)) {
+      brandOpts.value = res.obj as Record<string, unknown>[]
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 function listParams() {
   const p: Record<string, string> = {}
   if (filters.name) p.name = filters.name.trim()
@@ -141,7 +165,8 @@ function removeModel(idx: number) {
   form.models.splice(idx, 1)
 }
 
-function openCreate() {
+async function openCreate() {
+  await loadBrandOptions()
   Object.assign(form, {
     id: undefined,
     goodsName: '',
@@ -152,6 +177,7 @@ function openCreate() {
 }
 
 async function openEdit(row: Record<string, unknown>) {
+  await loadBrandOptions()
   const res = await getExpGoods(String(row.id))
   if (!isAjaxOk(res) || !res.obj) {
     ElMessage.error(ajaxErrorMessage(res, '加载失败'))
@@ -209,11 +235,13 @@ async function handleDelete(row: Record<string, unknown>) {
 }
 
 onMounted(async () => {
-  const res = await fetchExpBrandOptions()
-  if (isAjaxOk(res) && Array.isArray(res.obj)) {
-    brandOpts.value = res.obj as Record<string, unknown>[]
-  }
+  await loadBrandOptions()
   reload()
+})
+
+// keep-alive：从品牌管理返回时刷新下拉，避免搜不到刚新增的品牌
+onActivated(() => {
+  loadBrandOptions()
 })
 </script>
 
