@@ -4,34 +4,126 @@
       <el-button v-if="showExport" type="warning" :loading="exporting" @click="handleExport">导出</el-button>
     </template>
 
-    <el-form :inline="true" class="filter-form" @submit.prevent>
-      <el-form-item label="订单号">
-        <el-input v-model="filters.orderId" clearable placeholder="订单号" style="width: 180px" />
-      </el-form-item>
-      <el-form-item v-if="isGrab" label="来源单号">
-        <el-input v-model="filters.sourceOrder" clearable placeholder="来源单号" style="width: 180px" />
-      </el-form-item>
-      <el-form-item label="客户">
-        <el-input v-model="filters.companyName" clearable placeholder="客户名称" style="width: 160px" />
-      </el-form-item>
-      <el-form-item v-if="!isGrab" label="销售经理">
-        <el-input v-model="filters.saleManager" clearable placeholder="销售经理" style="width: 140px" />
-      </el-form-item>
-      <el-form-item v-if="!isGrab" label="销售员">
-        <el-input v-model="filters.saleUser" clearable placeholder="销售员" style="width: 140px" />
-      </el-form-item>
-      <el-form-item v-if="!isGrab" label="状态">
-        <el-select v-model="filters.orderStatus" clearable placeholder="全部" style="width: 130px">
-          <el-option
-            v-for="o in statusOpts"
-            :key="String(o.value)"
-            :label="String(o.label)"
-            :value="String(o.value)"
+    <el-form :inline="true" class="filter-form" @submit.prevent="reload">
+      <!-- 抢单：对齐 Java listPage1 — 所属公司 / 来源订单 / 订单编号 / 销售主管 / 采购人员 -->
+      <template v-if="isGrab">
+        <el-form-item>
+          <el-select
+            v-model="filters.companyName"
+            clearable
+            filterable
+            placeholder="全部所属公司"
+            style="width: 160px"
+          >
+            <el-option
+              v-for="o in companyOpts"
+              :key="String(o.value)"
+              :label="String(o.label)"
+              :value="String(o.value)"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <el-input
+            v-model="filters.sourceOrder"
+            clearable
+            placeholder="来源订单"
+            style="width: 160px"
+            @keyup.enter="reload"
           />
-        </el-select>
-      </el-form-item>
+        </el-form-item>
+        <el-form-item>
+          <el-input
+            v-model="filters.orderId"
+            clearable
+            placeholder="订单编号"
+            style="width: 160px"
+            @keyup.enter="reload"
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-select
+            v-model="filters.saleManager"
+            clearable
+            filterable
+            placeholder="全部销售主管"
+            style="width: 140px"
+          >
+            <el-option
+              v-for="o in managerOpts"
+              :key="String(o.value)"
+              :label="String(o.label)"
+              :value="String(o.value)"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <el-select
+            v-model="filters.saleUser"
+            clearable
+            filterable
+            placeholder="全部采购人员"
+            style="width: 140px"
+          >
+            <el-option
+              v-for="o in purchaseOpts"
+              :key="String(o.value)"
+              :label="String(o.label)"
+              :value="String(o.value)"
+            />
+          </el-select>
+        </el-form-item>
+      </template>
+      <template v-else>
+        <el-form-item label="订单号">
+          <el-input
+            v-model="filters.orderId"
+            clearable
+            placeholder="订单号"
+            style="width: 180px"
+            @keyup.enter="reload"
+          />
+        </el-form-item>
+        <el-form-item label="客户">
+          <el-input
+            v-model="filters.companyName"
+            clearable
+            placeholder="客户名称"
+            style="width: 160px"
+            @keyup.enter="reload"
+          />
+        </el-form-item>
+        <el-form-item label="销售经理">
+          <el-input
+            v-model="filters.saleManager"
+            clearable
+            placeholder="销售经理"
+            style="width: 140px"
+            @keyup.enter="reload"
+          />
+        </el-form-item>
+        <el-form-item label="销售员">
+          <el-input
+            v-model="filters.saleUser"
+            clearable
+            placeholder="销售员"
+            style="width: 140px"
+            @keyup.enter="reload"
+          />
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-select v-model="filters.orderStatus" clearable placeholder="全部" style="width: 130px">
+            <el-option
+              v-for="o in statusOpts"
+              :key="String(o.value)"
+              :label="String(o.label)"
+              :value="String(o.value)"
+            />
+          </el-select>
+        </el-form-item>
+      </template>
       <el-form-item>
-        <el-button type="primary" @click="reload">查询</el-button>
+        <el-button type="primary" native-type="submit">查询</el-button>
       </el-form-item>
     </el-form>
 
@@ -44,7 +136,7 @@
       </el-table-column>
       <el-table-column v-if="showParent" prop="parentOrderId" label="来源单号" min-width="140" show-overflow-tooltip />
       <el-table-column prop="companyName" label="客户" min-width="140" show-overflow-tooltip />
-      <el-table-column prop="saleManager" label="销售经理" min-width="110" />
+      <el-table-column prop="saleManager" :label="isGrab ? '销售主管' : '销售经理'" min-width="110" />
       <el-table-column prop="saleUser" :label="isGrab ? '采购人员' : '销售员'" min-width="100" />
       <el-table-column prop="orderStatusLabel" label="状态" width="100" />
       <el-table-column v-if="!isGrab" prop="totalPrice" label="金额" width="100" align="right" />
@@ -87,6 +179,7 @@ import {
   fetchExpOrderStatusOptions,
   fetchGrabOrderList,
 } from '@admin/api/experiment'
+import { fetchSupplierAll, fetchUserList } from '@admin/api/system'
 import { useDataTable } from '@admin/composables/useDataTable'
 import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
@@ -120,6 +213,9 @@ const filters = reactive({
   orderStatus: '',
 })
 const statusOpts = ref<Record<string, unknown>[]>([])
+const companyOpts = ref<Record<string, unknown>[]>([])
+const managerOpts = ref<Record<string, unknown>[]>([])
+const purchaseOpts = ref<Record<string, unknown>[]>([])
 const exporting = ref(false)
 
 function listParams() {
@@ -128,6 +224,8 @@ function listParams() {
   if (filters.companyName) p.companyName = filters.companyName.trim()
   if (isGrab.value) {
     if (filters.sourceOrder) p.sourceOrder = filters.sourceOrder.trim()
+    if (filters.saleManager) p.saleManager = filters.saleManager.trim()
+    if (filters.saleUser) p.saleUser = filters.saleUser.trim()
   } else {
     p.orderType = props.orderType
     if (filters.saleManager) p.saleManager = filters.saleManager.trim()
@@ -145,6 +243,50 @@ const { loading, rows, total, pagination, load } = useDataTable((p) => {
 function reload() {
   pagination.page = 1
   return load(listParams())
+}
+
+function mapUserRows(data: Record<string, unknown>[]) {
+  return data
+    .map((u) => ({
+      value: String(u.id ?? u.userId ?? ''),
+      label: String(u.userName || u.trueName || u.user_name || u.true_name || u.id || ''),
+    }))
+    .filter((o) => o.value)
+}
+
+async function loadGrabOptions() {
+  const silent = { silentError: true }
+  try {
+    const supRes = await fetchSupplierAll(silent)
+    if (isAjaxOk(supRes)) {
+      const raw = (supRes.obj || supRes.data) as unknown
+      const list = Array.isArray(raw)
+        ? raw
+        : Array.isArray((raw as Record<string, unknown>)?.list)
+          ? ((raw as Record<string, unknown>).list as unknown[])
+          : []
+      companyOpts.value = (list as Record<string, unknown>[])
+        .map((s) => ({
+          value: String(s.id ?? ''),
+          label: String(s.companyName || s.company_name || s.name || s.id || ''),
+        }))
+        .filter((o) => o.value)
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    const mgr = await fetchUserList({ start: 0, length: 500, type: 1, draw: 1 }, silent)
+    managerOpts.value = mapUserRows(Array.isArray(mgr.data) ? mgr.data : [])
+  } catch {
+    /* ignore */
+  }
+  try {
+    const purchase = await fetchUserList({ start: 0, length: 500, type: -1, draw: 1 }, silent)
+    purchaseOpts.value = mapUserRows(Array.isArray(purchase.data) ? purchase.data : [])
+  } catch {
+    /* ignore */
+  }
 }
 
 function openDetail(row: Record<string, unknown>) {
@@ -240,7 +382,9 @@ async function handleExport() {
 }
 
 onMounted(async () => {
-  if (!isGrab.value) {
+  if (isGrab.value) {
+    await loadGrabOptions()
+  } else {
     const res = await fetchExpOrderStatusOptions()
     if (isAjaxOk(res) && Array.isArray(res.obj)) {
       statusOpts.value = res.obj as Record<string, unknown>[]
