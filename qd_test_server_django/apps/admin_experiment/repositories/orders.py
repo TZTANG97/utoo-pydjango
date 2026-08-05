@@ -276,6 +276,123 @@ def _companies_from_sy_user_company(user_id: str) -> list[str]:
     return [str(r["cid"]) for r in (rows or []) if r.get("cid") not in (None, "")]
 
 
+def _sale_user_ids_for_user(user_id: str) -> list[str]:
+    """对齐 Java syUserSaleUserService.findSaleUserIdByUserId。"""
+    rows = fetch_all(
+        """
+        SELECT saleuser_id AS sid
+        FROM sy_user_saleuser
+        WHERE IFNULL(deleteStatus, 0) = 0
+          AND CAST(pt_type AS CHAR) = '2'
+          AND CAST(user_id AS CHAR) = CAST(%(uid)s AS CHAR)
+        """,
+        {"uid": user_id},
+    )
+    return [str(r["sid"]) for r in (rows or []) if r.get("sid") not in (None, "")]
+
+
+def build_sub_order_list_scope(
+    user: dict[str, Any] | None,
+    *,
+    order_type: str = "10",
+) -> dict[str, Any]:
+    """
+    对齐 Java experimentChildOrder/list_dpt1.ajax 数据范围：
+    - 系统管理员：不限制（userId2 为空）
+    - 其他：userId2 = 当前用户；可见本人相关子单，以及绑定公司、下属销售人员订单
+    """
+    uid = str((user or {}).get("user_id") or (user or {}).get("id") or "").strip()
+    empty = {"user_id": "", "supplier_ids": [], "sale_user_ids": []}
+    if not uid:
+        return empty
+
+    urow = fetch_one(
+        "SELECT utoo_type AS utooType FROM sy_users WHERE CAST(id AS CHAR) = CAST(%(id)s AS CHAR) LIMIT 1",
+        {"id": uid},
+    )
+    utoo = str((urow or {}).get("utooType") or (user or {}).get("utoo_type") or "").strip()
+    role = _resolve_utoo_role_name(utoo)
+    if role == "系统管理员":
+        return empty
+
+    supplier_ids = list(_companies_by_syuser(uid))
+    sale_user_ids: list[str] = []
+    ot = str(order_type or "10")
+    if _has_exp_order_type_perm(uid, ot):
+        for cid in _companies_from_sy_user_company(uid):
+            if cid not in supplier_ids:
+                supplier_ids.append(cid)
+        sale_user_ids = _sale_user_ids_for_user(uid)
+
+    return {
+        "user_id": uid,
+        "supplier_ids": supplier_ids,
+        "sale_user_ids": sale_user_ids,
+        "role": role,
+        "utoo_type": utoo,
+    }
+
+
+def _append_sub_list_scope_sql(
+    where: str,
+    params: dict[str, Any],
+    scope: dict[str, Any] | None,
+    *,
+    alias: str = "t",
+    parent_alias: str = "p",
+) -> str:
+    """对齐 Java listPagesdpt1024 的 userId2 / supplier_nameg2 / saleUser2。"""
+    if not scope:
+        return where
+    uid = str(scope.get("user_id") or "").strip()
+    if not uid:
+        return where
+
+    params["scope_uid"] = uid
+    params["scope_uid_like"] = f"%{uid}%"
+    parts = [
+        f"CAST({alias}.sale_user AS CHAR) = CAST(%(scope_uid)s AS CHAR)",
+        f"CAST({alias}.add_user_id AS CHAR) = CAST(%(scope_uid)s AS CHAR)",
+        f"CAST({alias}.sale_manager AS CHAR) = CAST(%(scope_uid)s AS CHAR)",
+        f"CAST({alias}.test_manager AS CHAR) = CAST(%(scope_uid)s AS CHAR)",
+        f"CAST({alias}.warehouse_user AS CHAR) = CAST(%(scope_uid)s AS CHAR)",
+        f"CAST({parent_alias}.sale_user AS CHAR) = CAST(%(scope_uid)s AS CHAR)",
+        f"CAST({parent_alias}.add_user_id AS CHAR) = CAST(%(scope_uid)s AS CHAR)",
+        f"CAST({parent_alias}.sale_manager AS CHAR) = CAST(%(scope_uid)s AS CHAR)",
+        f"IFNULL({parent_alias}.user_scale_info, '') LIKE %(scope_uid_like)s",
+        f"IFNULL({parent_alias}.cb_user_scale_info, '') LIKE %(scope_uid_like)s",
+        f"IFNULL({parent_alias}.salecb_user_scale_info, '') LIKE %(scope_uid_like)s",
+        f"""EXISTS (
+              SELECT 1 FROM exp_qd_purchase_order_child poc
+              JOIN experiment_order_child ocf ON poc.order_child_id = ocf.id
+              WHERE poc.purchase_order_id = {alias}.id
+                AND CAST(IFNULL(ocf.test_user_id, '') AS CHAR) LIKE %(scope_uid_like)s
+            )""",
+    ]
+    supplier_ids = [str(x) for x in (scope.get("supplier_ids") or []) if str(x)]
+    if supplier_ids:
+        in_keys = []
+        for i, sid in enumerate(supplier_ids):
+            k = f"scope_sub_sup_{i}"
+            params[k] = sid
+            in_keys.append(f"%({k})s")
+        # Java order_type 9/10：父单 supplier_name
+        parts.append(
+            f"CAST({parent_alias}.supplier_name AS CHAR) IN ({', '.join(in_keys)})"
+        )
+    sale_user_ids = [str(x) for x in (scope.get("sale_user_ids") or []) if str(x)]
+    if sale_user_ids:
+        in_keys = []
+        for i, sid in enumerate(sale_user_ids):
+            k = f"scope_sub_su_{i}"
+            params[k] = sid
+            in_keys.append(f"%({k})s")
+        parts.append(f"CAST({parent_alias}.sale_user AS CHAR) IN ({', '.join(in_keys)})")
+
+    where += " AND (" + " OR ".join(parts) + ")"
+    return where
+
+
 def build_exp_order_list_scope(
     user: dict[str, Any] | None,
     *,
@@ -640,6 +757,7 @@ def list_sub_orders(
     require_finish_log: bool = False,
     page: int,
     page_size: int,
+    scope: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """对齐 Java listPagesdpt1024：order_type=10 实验子订单 / =9 实验分包子订单。"""
     ot = str(order_type or "10")
@@ -700,6 +818,9 @@ def list_sub_orders(
             where += " AND log.addTime <= %(finish_end)s"
             params["finish_end"] = f"{finish_end} 23:59:59"
         where += ")"
+
+    # 对齐 Java list_dpt1 userId2 数据权限
+    where = _append_sub_list_scope_sql(where, params, scope, alias="t", parent_alias="p")
 
     total = int(
         scalar(
@@ -2174,7 +2295,7 @@ def list_order_bills(order_id: int) -> list[dict[str, Any]]:
         """
         SELECT
             b.id, b.money, b.type, b.bill_date AS billDate, b.add_time AS addTime,
-            b.mark AS mark, b.is_online AS isOnline,
+            b.mark AS mark,
             COALESCE(u.true_name, u.user_name, '') AS addUserName
         FROM qd_bill b
         LEFT JOIN sy_users u ON CAST(b.add_user_id AS CHAR) = CAST(u.id AS CHAR)
@@ -2183,12 +2304,29 @@ def list_order_bills(order_id: int) -> list[dict[str, Any]]:
         """,
         {"oid": order_id},
     )
+    online_ids: set[int] = set()
+    try:
+        online_rows = fetch_all(
+            "SELECT qd_bill_id AS bid FROM exp_online_qd_bill WHERE exp_of_id = %(oid)s",
+            {"oid": order_id},
+        ) or []
+        for r in online_rows:
+            try:
+                online_ids.add(int(r.get("bid")))
+            except (TypeError, ValueError):
+                pass
+    except Exception:
+        online_ids = set()
     out: list[dict[str, Any]] = []
     for r in rows or []:
         try:
             btype = int(r.get("type") or 0)
         except (TypeError, ValueError):
             btype = 0
+        try:
+            bid = int(r.get("id") or 0)
+        except (TypeError, ValueError):
+            bid = 0
         bd = r.get("billDate") or r.get("addTime")
         out.append(
             {
@@ -2198,7 +2336,7 @@ def list_order_bills(order_id: int) -> list[dict[str, Any]]:
                 "typeLabel": "开票" if btype == 1 else ("收款" if btype == 2 else str(btype)),
                 "billDate": str(bd)[:19] if bd else "",
                 "mark": str(r.get("mark") or ""),
-                "isOnline": int(r.get("isOnline") or 0) if r.get("isOnline") is not None else 0,
+                "isOnline": 1 if bid in online_ids else 0,
                 "addUserName": str(r.get("addUserName") or "").strip() or "-",
             }
         )
@@ -5139,12 +5277,8 @@ def build_sub_order_export_matrix(
         require_finish_log=bool(finished_only),
         page=1,
         page_size=limit,
+        scope=filters.get("scope"),
     )
-    # qd_svc_order / 部分分支可能带 scope
-    import inspect
-
-    if "scope" in inspect.signature(list_sub_orders).parameters and filters.get("scope") is not None:
-        list_kwargs["scope"] = filters.get("scope")
 
     orders, _ = list_sub_orders(**list_kwargs)
     if not orders:

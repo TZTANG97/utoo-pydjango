@@ -802,12 +802,13 @@ def list_sub_orders(
           )
         """
         params["test_user_id"] = test_user_id
-    if finish_start or finish_end:
-        # Java：按 order_log「测试完成」最早时间过滤
+    if finish_start or finish_end or require_finish_log:
+        # Java：按 order_log「测试完成」最早时间过滤；bjexport 的 getAllOrders1 要求 cewctime 非空
         where += """
           AND EXISTS (
             SELECT 1 FROM experiment_order_log log
             WHERE log.of_id = t.id AND log.log_info LIKE %(finish_kw)s
+              AND IFNULL(log.deleteStatus, 0) = 0
         """
         params["finish_kw"] = "%测试完成%"
         if finish_start:
@@ -2294,7 +2295,7 @@ def list_order_bills(order_id: int) -> list[dict[str, Any]]:
         """
         SELECT
             b.id, b.money, b.type, b.bill_date AS billDate, b.add_time AS addTime,
-            b.mark AS mark, b.is_online AS isOnline,
+            b.mark AS mark,
             COALESCE(u.true_name, u.user_name, '') AS addUserName
         FROM qd_bill b
         LEFT JOIN sy_users u ON CAST(b.add_user_id AS CHAR) = CAST(u.id AS CHAR)
@@ -2303,12 +2304,29 @@ def list_order_bills(order_id: int) -> list[dict[str, Any]]:
         """,
         {"oid": order_id},
     )
+    online_ids: set[int] = set()
+    try:
+        online_rows = fetch_all(
+            "SELECT qd_bill_id AS bid FROM exp_online_qd_bill WHERE exp_of_id = %(oid)s",
+            {"oid": order_id},
+        ) or []
+        for r in online_rows:
+            try:
+                online_ids.add(int(r.get("bid")))
+            except (TypeError, ValueError):
+                pass
+    except Exception:
+        online_ids = set()
     out: list[dict[str, Any]] = []
     for r in rows or []:
         try:
             btype = int(r.get("type") or 0)
         except (TypeError, ValueError):
             btype = 0
+        try:
+            bid = int(r.get("id") or 0)
+        except (TypeError, ValueError):
+            bid = 0
         bd = r.get("billDate") or r.get("addTime")
         out.append(
             {
@@ -2318,7 +2336,7 @@ def list_order_bills(order_id: int) -> list[dict[str, Any]]:
                 "typeLabel": "开票" if btype == 1 else ("收款" if btype == 2 else str(btype)),
                 "billDate": str(bd)[:19] if bd else "",
                 "mark": str(r.get("mark") or ""),
-                "isOnline": int(r.get("isOnline") or 0) if r.get("isOnline") is not None else 0,
+                "isOnline": 1 if bid in online_ids else 0,
                 "addUserName": str(r.get("addUserName") or "").strip() or "-",
             }
         )
@@ -4931,7 +4949,6 @@ def list_export_orders(
             finish_end=str(filters.get("finish_end") or ""),
             page=1,
             page_size=limit,
-            scope=filters.get("scope"),
         )
         return rows
     rows, _ = list_orders(
