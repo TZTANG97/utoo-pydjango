@@ -7,7 +7,9 @@
           <div class="hero-title-row">
             <h2 class="hero-title">{{ titleText }}</h2>
             <el-tag :type="statusTagType" effect="dark" round>{{ detail.orderStatusLabel }}</el-tag>
-            <el-tag v-if="isChildKind" type="info" effect="plain" round>{{ detail.confirmLabel }}</el-tag>
+            <el-tag v-if="isChildKind && !isGrabMode" type="info" effect="plain" round>{{
+              detail.confirmLabel
+            }}</el-tag>
           </div>
           <p class="hero-sub">
             <span class="mono">{{ detail.orderId }}</span>
@@ -373,6 +375,48 @@
           </el-descriptions-item>
           <el-descriptions-item label="是否云视频">{{ detail.isVideoLabel || '-' }}</el-descriptions-item>
         </el-descriptions>
+        <!-- 抢单详情：对齐 Java qdorderdetail，仅保留必要字段 -->
+        <el-descriptions
+          v-else-if="orderType === '10' && isGrabMode"
+          :column="3"
+          border
+          class="soft-desc"
+        >
+          <el-descriptions-item label="订单状态">{{ detail.orderStatusLabel || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="订单编号">
+            <span class="mono">{{ detail.orderId || '-' }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="来源单号">
+            <el-button
+              v-if="detail.parentPkId"
+              link
+              type="primary"
+              @click="goDetail(Number(detail.parentPkId), '6', detail.parentOrderId)"
+            >
+              {{ detail.parentOrderId || '-' }}
+            </el-button>
+            <span v-else>{{ detail.parentOrderId || '-' }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="订单类型">
+            {{ detail.testClassName || orderTypeLabel }}
+          </el-descriptions-item>
+          <el-descriptions-item label="客户名称">
+            {{ detail.customerName || detail.companyName || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="所属公司">{{ detail.supplierName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="审核主管">{{ detail.saleManager || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="销售人员">{{ detail.saleUser || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="制单人">{{ detail.addUser || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="下单时间">{{ detail.orderTime || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="预计收货时间">{{ detail.deliveryTime || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="客户账号">
+            {{ detail.customMobile || detail.mobile || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="联系电话">
+            {{ detail.contactPhone || detail.mobile || detail.shipPhone || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="样品是否回收">{{ detail.reversoLabel || '-' }}</el-descriptions-item>
+        </el-descriptions>
         <el-descriptions v-else-if="orderType === '10'" :column="3" border class="soft-desc">
           <el-descriptions-item label="订单状态">{{ detail.orderStatusLabel || '-' }}</el-descriptions-item>
           <el-descriptions-item label="订单编号">
@@ -403,7 +447,9 @@
           <el-descriptions-item label="预计收货时间">{{ detail.deliveryTime || '-' }}</el-descriptions-item>
           <el-descriptions-item label="客户账号">{{ detail.customMobile || detail.mobile || '-' }}</el-descriptions-item>
           <el-descriptions-item label="仓库管理员">{{ detail.warehouseUser || detail.stockUser || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="联系电话">{{ detail.shipPhone || detail.contactPhone || detail.mobile || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="联系电话">
+            {{ detail.contactPhone || detail.mobile || detail.shipPhone || '-' }}
+          </el-descriptions-item>
           <el-descriptions-item label="样品是否回收">{{ detail.reversoLabel || '-' }}</el-descriptions-item>
           <el-descriptions-item label="寄回地址" :span="2">{{ detail.shipAddress || '-' }}</el-descriptions-item>
           <el-descriptions-item label="是否云视频">{{ detail.isVideoLabel || '-' }}</el-descriptions-item>
@@ -475,48 +521,50 @@
           </el-descriptions-item>
           <el-descriptions-item label="是否云视频">{{ detail.isVideoLabel || '-' }}</el-descriptions-item>
         </el-descriptions>
-        <!-- 订单资料 / 发票资料 / 订单备注（type=6/8/9，对齐小程序） -->
+        <!-- 订单资料 / 发票资料 / 订单备注；抢单详情仅保留订单备注（对齐 Java） -->
         <div v-if="showOrderDocsBlock" class="order-files-block">
-          <div class="files-row">
-            <span class="files-label">订单资料</span>
-            <div class="files-list">
-              <div v-for="f in orderFiles" :key="'of-' + String(f.id)" class="file-item">
-                <a
-                  class="file-name"
-                  :href="fileUrl(f)"
-                  target="_blank"
-                  rel="noopener"
-                >{{ fileLabel(f) }}</a>
-                <el-button type="success" size="small" @click="onDownloadFile(f)">下载</el-button>
-                <el-button type="danger" size="small" :loading="acting" @click="onDeleteFile(f)">
-                  删除
-                </el-button>
+          <template v-if="!isGrabMode">
+            <div class="files-row">
+              <span class="files-label">订单资料</span>
+              <div class="files-list">
+                <div v-for="f in orderFiles" :key="'of-' + String(f.id)" class="file-item">
+                  <a
+                    class="file-name"
+                    :href="fileUrl(f)"
+                    target="_blank"
+                    rel="noopener"
+                  >{{ fileLabel(f) }}</a>
+                  <el-button type="success" size="small" @click="onDownloadFile(f)">下载</el-button>
+                  <el-button type="danger" size="small" :loading="acting" @click="onDeleteFile(f)">
+                    删除
+                  </el-button>
+                </div>
+                <span v-if="!orderFiles.length" class="files-empty">暂无</span>
+                <el-upload
+                  :show-file-list="false"
+                  :http-request="onUploadOrderFile"
+                  accept="*/*"
+                >
+                  <el-button type="primary">上传文件</el-button>
+                </el-upload>
               </div>
-              <span v-if="!orderFiles.length" class="files-empty">暂无</span>
-              <el-upload
-                :show-file-list="false"
-                :http-request="onUploadOrderFile"
-                accept="*/*"
-              >
-                <el-button type="primary">上传文件</el-button>
-              </el-upload>
             </div>
-          </div>
-          <div class="files-row">
-            <span class="files-label">发票资料</span>
-            <div class="files-list">
-              <div v-for="f in invoiceFiles" :key="'inv-' + String(f.id)" class="file-item">
-                <a
-                  class="file-name"
-                  :href="fileUrl(f)"
-                  target="_blank"
-                  rel="noopener"
-                >{{ fileLabel(f) }}</a>
-                <el-button type="success" size="small" @click="onDownloadFile(f)">下载</el-button>
+            <div class="files-row">
+              <span class="files-label">发票资料</span>
+              <div class="files-list">
+                <div v-for="f in invoiceFiles" :key="'inv-' + String(f.id)" class="file-item">
+                  <a
+                    class="file-name"
+                    :href="fileUrl(f)"
+                    target="_blank"
+                    rel="noopener"
+                  >{{ fileLabel(f) }}</a>
+                  <el-button type="success" size="small" @click="onDownloadFile(f)">下载</el-button>
+                </div>
+                <span v-if="!invoiceFiles.length" class="files-empty">暂无</span>
               </div>
-              <span v-if="!invoiceFiles.length" class="files-empty">暂无</span>
             </div>
-          </div>
+          </template>
           <div class="remark-row">
             <span class="files-label">订单备注</span>
             <el-input
@@ -535,7 +583,49 @@
           <h3 class="card-title">产品 / 测试明细</h3>
           <span class="card-hint">共 {{ editChildren.length }} 行</span>
         </div>
-        <el-table :data="editChildren" border stripe class="detail-table">
+        <!-- 抢单：对齐 Java 产品列（不含子单号/单价/设备/确认等） -->
+        <el-table
+          v-if="isGrabMode"
+          :data="editChildren"
+          border
+          stripe
+          class="detail-table"
+        >
+          <el-table-column prop="goodsName" label="产品名称" min-width="140" show-overflow-tooltip />
+          <el-table-column prop="goodsSpec" label="产品型号" min-width="100" show-overflow-tooltip />
+          <el-table-column prop="goodsBrand" label="产品品牌" min-width="100" show-overflow-tooltip />
+          <el-table-column prop="goodsCount" label="数量" width="70" align="center" />
+          <el-table-column
+            prop="projectName"
+            label="实验测试项目"
+            min-width="120"
+            show-overflow-tooltip
+          />
+          <el-table-column
+            prop="className"
+            label="实验测试分类"
+            min-width="110"
+            show-overflow-tooltip
+          />
+          <el-table-column prop="testUserName" label="测试人员" width="100" />
+          <el-table-column prop="platformName" label="实验平台" min-width="100" show-overflow-tooltip />
+          <el-table-column prop="orderStatusLabel" label="状态" width="100" />
+          <el-table-column label="抢单" width="100" align="center" fixed="right">
+            <template #default="{ row }">
+              <el-button
+                v-if="row.canGrab"
+                link
+                type="success"
+                :loading="acting"
+                @click="onGrabChild(row)"
+              >
+                抢单
+              </el-button>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-table v-else :data="editChildren" border stripe class="detail-table">
           <el-table-column type="index" width="50" label="#" align="center" />
           <el-table-column prop="childOrderId" label="子单号" min-width="130" show-overflow-tooltip />
           <el-table-column prop="goodsName" label="产品名称" min-width="120" show-overflow-tooltip />
@@ -580,7 +670,7 @@
             align="right"
           />
           <el-table-column
-            v-if="isChildKind || isGrabMode"
+            v-if="isChildKind"
             prop="testUserName"
             label="测试员"
             width="100"
@@ -588,20 +678,6 @@
           <el-table-column v-if="orderType === '10'" prop="deviceName" label="设备名称" min-width="100" show-overflow-tooltip />
           <el-table-column v-if="orderType === '10'" prop="platformName" label="实验平台" min-width="100" show-overflow-tooltip />
           <el-table-column v-if="orderType === '9'" prop="costPrice" label="分包单价" width="90" align="right" />
-          <el-table-column v-if="isGrabMode" label="抢单" width="100" align="center" fixed="right">
-            <template #default="{ row }">
-              <el-button
-                v-if="row.canGrab"
-                link
-                type="success"
-                :loading="acting"
-                @click="onGrabChild(row)"
-              >
-                抢单
-              </el-button>
-              <span v-else>-</span>
-            </template>
-          </el-table-column>
           <el-table-column v-if="isChildKind" prop="confirmLabel" label="确认" width="80" align="center" />
           <el-table-column v-if="isChildKind && orderType === '10'" label="预计完成时间" width="170">
             <template #default="{ row }">
@@ -623,7 +699,7 @@
             width="170"
           />
           <el-table-column
-            v-if="isChildKind || isGrabMode"
+            v-if="isChildKind"
             prop="orderStatusLabel"
             label="状态"
             width="100"

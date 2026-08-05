@@ -230,7 +230,7 @@
             <div class="op-group">
               <el-button link type="primary" @click="openDetail(row)">查看</el-button>
               <el-button
-                v-if="String(row.orderStatus) !== '66'"
+                v-if="String(row.orderStatus) !== '0'"
                 link
                 type="primary"
                 @click="onCopy(row)"
@@ -435,6 +435,19 @@ function onCopy(row: Record<string, unknown>) {
   })
 }
 
+function downloadBase64File(fileName: string, base64: string, contentType: string) {
+  const bin = atob(base64)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  const blob = new Blob([bytes], { type: contentType || 'application/octet-stream' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = fileName
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 function downloadCsv(filename: string, dataRows: Record<string, unknown>[]) {
   const headers = [
     ['orderId', '订单编号'],
@@ -471,7 +484,24 @@ async function handleExport() {
       ElMessage.error(ajaxErrorMessage(res, '导出失败'))
       return
     }
-    const dataRows = Array.isArray(res.obj) ? (res.obj as Record<string, unknown>[]) : []
+    const obj = res.obj as Record<string, unknown> | unknown[] | null
+    // 对齐 Java：实验订单导出 xlsx（base64）
+    if (
+      obj &&
+      !Array.isArray(obj) &&
+      typeof obj === 'object' &&
+      typeof obj.base64 === 'string' &&
+      obj.base64
+    ) {
+      downloadBase64File(
+        String(obj.fileName || '实验订单.xlsx'),
+        String(obj.base64),
+        String(obj.contentType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+      )
+      ElMessage.success(`已导出 ${Number(obj.rowCount) || 0} 条`)
+      return
+    }
+    const dataRows = Array.isArray(obj) ? (obj as Record<string, unknown>[]) : []
     downloadCsv('experiment_orders.csv', dataRows)
     ElMessage.success(`已导出 ${dataRows.length} 条`)
   } catch {

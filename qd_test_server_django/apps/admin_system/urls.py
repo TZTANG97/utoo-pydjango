@@ -76,7 +76,7 @@ urlpatterns = [
     path("sys/userType/typeRoleOptions.ajax", user_type_views.type_role_options),
     # district (area)
     path("district/getAreaList.ajax", area_views.area_list),
-    path("district/submitArea.ajax", area_views.area_add),
+path("district/submitArea.ajax", area_views.area_add),
     path("district/updateArea.ajax", area_views.area_update),
     path("district/updateStatus.ajax", area_views.area_delete),
     path("district/areaOptions.ajax", area_views.area_options),

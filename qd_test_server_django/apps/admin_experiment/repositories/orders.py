@@ -187,6 +187,255 @@ def _attach_subcontract_gross_profit(rows: list[dict[str, Any]]) -> None:
         r["maoli"] = profit
 
 
+# Java UserTypes.name → roleName（UserRoles）；测试主管与销售主管同属「销售主管」权限
+_UTOO_TYPE_ROLE = {
+    "系统管理员": "系统管理员",
+    "公共账号": "公共账号",
+    "公司账号": "公司账号",
+    "外部合作公司": "外部合作公司",
+    "外部公司": "外部公司",
+    "销售主管": "销售主管",
+    "测试主管": "销售主管",
+    "C类销售人员": "C类销售人员",
+    "R类人员": "R类人员",
+    "H类用户": "H类用户",
+    "A类销售人员": "A类销售人员",
+    "制单员": "A类销售人员",
+    "销售人员": "A类销售人员",
+    "内勤主管": "A类销售人员",
+    "仓库管理": "A类销售人员",
+    "公司基金": "A类销售人员",
+    "原厂销售人员": "A类销售人员",
+    "外部投资": "A类销售人员",
+}
+
+
+def _resolve_utoo_role_name(utoo_type: str) -> str:
+    """对齐 Java UserTypeTools.getUserRoleName。"""
+    name = str(utoo_type or "").strip()
+    if not name:
+        return "A类销售人员"
+    if name in _UTOO_TYPE_ROLE:
+        return _UTOO_TYPE_ROLE[name]
+    row = fetch_one(
+        """
+        SELECT utr.name AS roleName
+        FROM sy_user_type sut
+        LEFT JOIN user_type_role utr ON utr.id = sut.role_id
+        WHERE sut.type_name = %(n)s AND IFNULL(sut.type, 2) = 2
+        LIMIT 1
+        """,
+        {"n": name},
+    )
+    role = str((row or {}).get("roleName") or "").strip()
+    return role or "A类销售人员"
+
+
+def _companies_by_syuser(user_id: str) -> list[str]:
+    rows = fetch_all(
+        """
+        SELECT id
+        FROM `user`
+        WHERE deleteStatus = 0
+          AND CAST(syuser_id AS CHAR) = CAST(%(uid)s AS CHAR)
+        """,
+        {"uid": user_id},
+    )
+    return [str(r["id"]) for r in (rows or []) if r.get("id") not in (None, "")]
+
+
+def _has_exp_order_type_perm(user_id: str, order_type: str = "6") -> bool:
+    """对齐 Java selListByTypeAndTable(userId, experiment_order, orderType)。"""
+    n = scalar(
+        """
+        SELECT COUNT(1)
+        FROM sy_user_ordertype t
+        LEFT JOIN order_type ot ON t.type_id = ot.id
+        LEFT JOIN order_type_table ott ON ot.table_id = ott.id
+        WHERE IFNULL(t.deleteStatus, 0) = 0
+          AND IFNULL(t.pt_type, 2) = 2
+          AND CAST(t.user_id AS CHAR) = CAST(%(uid)s AS CHAR)
+          AND ott.table_name = 'experiment_order'
+          AND CAST(ott.order_type AS CHAR) = CAST(%(ot)s AS CHAR)
+        """,
+        {"uid": user_id, "ot": str(order_type)},
+    )
+    return int(n or 0) > 0
+
+
+def _companies_from_sy_user_company(user_id: str) -> list[str]:
+    rows = fetch_all(
+        """
+        SELECT company_id AS cid
+        FROM sy_user_company
+        WHERE CAST(user_id AS CHAR) = CAST(%(uid)s AS CHAR)
+          AND company_id IS NOT NULL
+        """,
+        {"uid": user_id},
+    )
+    return [str(r["cid"]) for r in (rows or []) if r.get("cid") not in (None, "")]
+
+
+def build_exp_order_list_scope(
+    user: dict[str, Any] | None,
+    *,
+    order_type: str = "6",
+) -> dict[str, Any]:
+    """
+    对齐 Java ExperimentOrderController.list.ajax 数据范围：
+    - filter_list=2 系统管理员：不限制
+    - filter_list=0 公共账号：sale_user/add_user/所属公司
+    - filter_list=1 外部合作公司：分成/制单/销售
+    - filter_list=3 其他（含销售主管/销售人员）：分成/制单/销售/主管/公司绑定
+    - filter_list=4 绑定了外部公司账号：分成/制单/销售/主管/公司 syuser
+    """
+    uid = str((user or {}).get("user_id") or (user or {}).get("id") or "").strip()
+    if not uid:
+        return {"filter_list": 2, "user_id": "", "supplier_ids": []}
+
+    urow = fetch_one(
+        "SELECT utoo_type AS utooType FROM sy_users WHERE CAST(id AS CHAR) = CAST(%(id)s AS CHAR) LIMIT 1",
+        {"id": uid},
+    )
+    utoo = str((urow or {}).get("utooType") or (user or {}).get("utoo_type") or "").strip()
+    role = _resolve_utoo_role_name(utoo)
+    linked = _companies_by_syuser(uid)
+
+    if role == "系统管理员":
+        filter_list = 2
+    elif role == "公共账号":
+        filter_list = 0
+    elif linked:
+        filter_list = 4
+    elif role == "外部合作公司":
+        filter_list = 1
+    else:
+        filter_list = 3
+
+    # 非销售主管/管理员：预取所属公司 id 列表（supplier_namegl）
+    supplier_ids: list[str] = []
+    is_sale_mgr_or_admin = role in ("系统管理员", "销售主管")
+    if not is_sale_mgr_or_admin:
+        supplier_ids = list(linked)
+        if _has_exp_order_type_perm(uid, order_type):
+            for cid in _companies_from_sy_user_company(uid):
+                if cid not in supplier_ids:
+                    supplier_ids.append(cid)
+
+    # filter_list 1/3/4 强制带当前用户 id（对齐 Java）
+    scope_uid = uid if filter_list in (0, 1, 3, 4) else ""
+    if filter_list in (1, 3, 4):
+        scope_uid = uid
+
+    return {
+        "filter_list": filter_list,
+        "user_id": scope_uid,
+        "supplier_ids": supplier_ids,
+        "sy_order_type": 43 if filter_list in (1, 3, 4) else None,
+        "role": role,
+        "utoo_type": utoo,
+    }
+
+
+def _append_list_scope_sql(
+    where: str,
+    params: dict[str, Any],
+    scope: dict[str, Any] | None,
+    *,
+    alias: str = "t",
+) -> str:
+    """把 Java listPages 的 filter_list 条件拼到 WHERE。"""
+    if not scope:
+        return where
+    fl = int(scope.get("filter_list") or 2)
+    uid = str(scope.get("user_id") or "").strip()
+    if fl == 2 or not uid:
+        return where
+
+    params["scope_uid"] = uid
+    params["scope_uid_like"] = f"%{uid}%"
+    supplier_ids = [str(x) for x in (scope.get("supplier_ids") or []) if str(x)]
+    if fl == 0:
+        # sale_user / add_user / supplier_namegl
+        parts = [
+            f"CAST({alias}.sale_user AS CHAR) = CAST(%(scope_uid)s AS CHAR)",
+            f"CAST({alias}.add_user_id AS CHAR) = CAST(%(scope_uid)s AS CHAR)",
+        ]
+        if supplier_ids:
+            in_keys = []
+            for i, sid in enumerate(supplier_ids):
+                k = f"scope_sup_{i}"
+                params[k] = sid
+                in_keys.append(f"%({k})s")
+            parts.append(f"CAST({alias}.supplier_name AS CHAR) IN ({', '.join(in_keys)})")
+        where += " AND (" + " OR ".join(parts) + ")"
+        return where
+
+    if fl == 1:
+        where += f"""
+          AND (
+            IFNULL({alias}.user_scale_info, '') LIKE %(scope_uid_like)s
+            OR IFNULL({alias}.cb_user_scale_info, '') LIKE %(scope_uid_like)s
+            OR IFNULL({alias}.salecb_user_scale_info, '') LIKE %(scope_uid_like)s
+            OR CAST({alias}.add_user_id AS CHAR) LIKE %(scope_uid_like)s
+            OR CAST({alias}.sale_user AS CHAR) LIKE %(scope_uid_like)s
+          )
+        """
+        return where
+
+    if fl == 4:
+        where += f"""
+          AND (
+            IFNULL({alias}.user_scale_info, '') LIKE %(scope_uid_like)s
+            OR IFNULL({alias}.cb_user_scale_info, '') LIKE %(scope_uid_like)s
+            OR IFNULL({alias}.salecb_user_scale_info, '') LIKE %(scope_uid_like)s
+            OR CAST({alias}.add_user_id AS CHAR) LIKE %(scope_uid_like)s
+            OR CAST({alias}.sale_user AS CHAR) LIKE %(scope_uid_like)s
+            OR CAST({alias}.sale_manager AS CHAR) LIKE %(scope_uid_like)s
+            OR (SELECT syuser_id FROM `user` WHERE id = {alias}.supplier_name LIMIT 1) = %(scope_uid)s
+          )
+        """
+        return where
+
+    # filter_list == 3（默认其他角色，含销售主管/销售人员）
+    sy_ot = scope.get("sy_order_type")
+    extra_company = ""
+    if sy_ot not in (None, ""):
+        params["scope_sy_ot"] = int(sy_ot)
+        extra_company = f"""
+            OR (
+              {alias}.supplier_name IN (
+                SELECT suc.company_id FROM sy_user_company suc
+                WHERE CAST(suc.user_id AS CHAR) = CAST(%(scope_uid)s AS CHAR)
+              )
+              AND %(scope_sy_ot)s IN (
+                SELECT type_id FROM sy_user_ordertype
+                WHERE CAST(user_id AS CHAR) = CAST(%(scope_uid)s AS CHAR)
+              )
+            )
+        """
+    where += f"""
+      AND (
+        IFNULL({alias}.user_scale_info, '') LIKE %(scope_uid_like)s
+        OR IFNULL({alias}.cb_user_scale_info, '') LIKE %(scope_uid_like)s
+        OR IFNULL({alias}.salecb_user_scale_info, '') LIKE %(scope_uid_like)s
+        OR CAST({alias}.add_user_id AS CHAR) LIKE %(scope_uid_like)s
+        OR CAST({alias}.sale_user AS CHAR) LIKE %(scope_uid_like)s
+        OR CAST({alias}.sale_manager AS CHAR) LIKE %(scope_uid_like)s
+        OR {alias}.parent_id IN (
+          SELECT ofm.id FROM experiment_order ofm
+          WHERE CAST(ofm.sale_user AS CHAR) LIKE %(scope_uid_like)s
+             OR CAST(ofm.sale_manager AS CHAR) LIKE %(scope_uid_like)s
+        )
+        {extra_company}
+        OR {alias}.supplier_name IN (
+          SELECT id FROM `user` WHERE CAST(syuser_id AS CHAR) = CAST(%(scope_uid)s AS CHAR)
+        )
+      )
+    """
+    return where
+
+
 def list_orders(
     *,
     order_type: str | int,
@@ -201,6 +450,7 @@ def list_orders(
     order_end: str = "",
     page: int,
     page_size: int,
+    scope: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """实验订单列表（对齐 Java list_dpt / listPagesdpt 主字段）。"""
     where = (
@@ -228,10 +478,9 @@ def list_orders(
         where += " AND IFNULL(t.is_evaluate, 0) = 1"
     elif order_status == "70":
         where += " AND t.invoiceType = 1"
-    elif order_status == "0":
-        # 显式查已取消：去掉默认 order_status > 0
-        where = where.replace(" AND t.order_status > 0", " AND t.order_status = 0")
     elif order_status:
+        # 对齐 Java listPages：默认 order_status > 0，再叠加 = status。
+        # 筛「已取消」(0) 时 >0 与 =0 互斥，结果为空。
         where += " AND t.order_status = %(order_status)s"
         params["order_status"] = order_status
     if order_start:
@@ -250,6 +499,8 @@ def list_orders(
           )
         """
         params["goods_name"] = f"%{goods_name}%"
+
+    where = _append_list_scope_sql(where, params, scope, alias="t")
 
     total = int(
         scalar(
@@ -302,7 +553,7 @@ def list_orders(
         {**params, **page_params},
     )
     for r in rows:
-        # 对齐 Java list_dpt 收款/开票派生状态
+        # 对齐 Java list_dpt 收款/开票派生状态（已取消不改写）
         status = r.get("orderStatus")
         try:
             st = int(status) if status is not None else None
@@ -325,7 +576,8 @@ def list_orders(
                     kpflag = True
         except (TypeError, ValueError):
             pass
-        if st not in (50, 55):
+        # 0=已取消：保持原状态，避免被改成「已付款」
+        if st not in (0, 50, 55):
             if skflag and not kpflag:
                 st = 41
             elif (not skflag) and kpflag:
@@ -2108,11 +2360,44 @@ def _user_display_name(user_id: str) -> str:
 
 
 def _format_scale_label(raw: str) -> str:
-    """userId_value,... -> 「姓名 比例%；...」便于详情展示。"""
+    """userId_value,... -> 「姓名 比例%；...」便于详情展示（毛利分成）。"""
     pairs = _parse_scale_pairs(raw or "")
     if not pairs:
         return (raw or "").strip()
     return "；".join(f"{_user_display_name(uid)} {val}%" for uid, val in pairs)
+
+
+def _format_cost_scale_label(raw: str) -> str:
+    """成本分成按固定金额展示，不加 %（对齐 Java / 小程序）。"""
+    pairs = _parse_scale_pairs(raw or "")
+    if not pairs:
+        return (raw or "").strip()
+    return "；".join(f"{_user_display_name(uid)} {val}" for uid, val in pairs)
+
+
+def _viewer_can_see_share(viewer_user_id: str | int | None) -> bool:
+    """测试主管/测试人员及 R/H 类不可看分成信息。"""
+    uid = str(viewer_user_id or "").strip()
+    if not uid:
+        return True
+    u = fetch_one(
+        """
+        SELECT utoo_type AS utooType
+        FROM sy_users
+        WHERE CAST(id AS CHAR) = CAST(%(id)s AS CHAR)
+        LIMIT 1
+        """,
+        {"id": uid},
+    )
+    utoo = str((u or {}).get("utooType") or "").strip()
+    if "测试主管" in utoo:
+        return False
+    if "测试人员" in utoo and "测试主管" not in utoo:
+        return False
+    role = _resolve_utoo_role_name(utoo)
+    if role in ("R类人员", "H类用户"):
+        return False
+    return True
 
 
 def update_share_ratio(
@@ -3888,6 +4173,234 @@ def create_exp_order(
     return True, str(order_pk), int(order_pk)
 
 
+# 对齐 Java excel-config.xml id=experimentOrder 的订单状态 format
+_EXPORT_ORDER_STATUS_LABEL = {
+    0: "已取消",
+    5: "待提交审核",
+    10: "已驳回",
+    20: "待审核",
+    30: "已审核",
+    40: "已确认",
+    50: "已完成",
+    60: "已评价",
+    66: "待平台确认",
+    67: "待客户确认",
+}
+
+# 对齐 Java excel-config.xml id=experimentOrder 列标题
+EXPERIMENT_ORDER_EXPORT_HEADERS = [
+    "序号",
+    "下单时间",
+    "订单编号",
+    "客户公司",
+    "子订单的产品名称",
+    "产品型号",
+    "实验测试项目",
+    "实验测试项目的隶属国家",
+    "订单总金额",
+    "子订单价格",
+    "开票状态",
+    "开票时间",
+    "开票金额",
+    "付款状态",
+    "付款时间",
+    "付款金额",
+    "订单状态",
+]
+
+
+def _export_order_status_label(status: Any) -> str:
+    try:
+        st = int(status) if status is not None else None
+    except (TypeError, ValueError):
+        st = None
+    if st is None:
+        return ""
+    return _EXPORT_ORDER_STATUS_LABEL.get(st, str(st))
+
+
+def _fmt_export_dt(value: Any, *, date_only: bool = False) -> str:
+    if value in (None, ""):
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    if date_only:
+        return text[:10]
+    return text[:19].replace("T", " ")
+
+
+def _to_decimal(value: Any):
+    from decimal import Decimal, InvalidOperation
+
+    if value in (None, ""):
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
+
+def build_experiment_order_export_matrix(
+    *,
+    limit: int = 5000,
+    scope: dict[str, Any] | None = None,
+    **filters: Any,
+) -> tuple[list[str], list[list]]:
+    """对齐 Java experimentOrder/export.htm：按子单展开行，首行保留主单字段。"""
+    orders, _ = list_orders(
+        order_type="6",
+        order_id=str(filters.get("order_id") or ""),
+        company_name=str(filters.get("customer_name") or filters.get("company_name") or ""),
+        supplier_name=str(filters.get("supplier_name") or ""),
+        sale_manager=str(filters.get("sale_manager") or ""),
+        sale_user=str(filters.get("sale_user") or ""),
+        order_status=str(filters.get("order_status") or ""),
+        goods_name=str(filters.get("goods_name") or ""),
+        order_start=str(filters.get("order_start") or filters.get("finish_start") or ""),
+        order_end=str(filters.get("order_end") or filters.get("finish_end") or ""),
+        page=1,
+        page_size=limit,
+        scope=scope,
+    )
+    if not orders:
+        return EXPERIMENT_ORDER_EXPORT_HEADERS, []
+
+    order_ids = [int(o["id"]) for o in orders if o.get("id") is not None]
+    if not order_ids:
+        return EXPERIMENT_ORDER_EXPORT_HEADERS, []
+
+    placeholders = ", ".join(f"%(oid{i})s" for i in range(len(order_ids)))
+    oid_params = {f"oid{i}": oid for i, oid in enumerate(order_ids)}
+    child_rows = fetch_all(
+        f"""
+        SELECT
+            c.order_form_id AS ofId,
+            c.goods_name AS goodsName,
+            c.goods_spec AS goodsSpec,
+            c.experiment_project_name AS projectName,
+            c.goods_nums AS goodsNums,
+            c.goods_price AS goodsPrice,
+            ep.country AS country
+        FROM experiment_order_child c
+        LEFT JOIN experiment_project ep ON c.experiment_project_id = ep.id
+        WHERE c.order_form_id IN ({placeholders})
+          AND IFNULL(c.delete_status, 2) = 2
+          AND c.order_status > 0
+        ORDER BY c.order_form_id ASC, c.id ASC
+        """,
+        oid_params,
+    )
+    children_by_of: dict[int, list[dict[str, Any]]] = {}
+    for ch in child_rows:
+        try:
+            of_id = int(ch.get("ofId"))
+        except (TypeError, ValueError):
+            continue
+        children_by_of.setdefault(of_id, []).append(ch)
+
+    bill_rows = fetch_all(
+        f"""
+        SELECT
+            exp_of_id AS ofId,
+            type AS billType,
+            money,
+            bill_date AS billDate
+        FROM qd_bill
+        WHERE exp_of_id IN ({placeholders})
+        ORDER BY bill_date ASC, id ASC
+        """,
+        oid_params,
+    )
+    first_kp: dict[int, str] = {}
+    first_sk: dict[int, str] = {}
+    for b in bill_rows:
+        try:
+            of_id = int(b.get("ofId"))
+            btype = int(b.get("billType"))
+        except (TypeError, ValueError):
+            continue
+        dt = _fmt_export_dt(b.get("billDate"), date_only=True)
+        if btype == 1 and of_id not in first_kp:
+            first_kp[of_id] = dt
+        elif btype == 2 and of_id not in first_sk:
+            first_sk[of_id] = dt
+
+    matrix: list[list] = []
+    nums = 0
+    for of in orders:
+        try:
+            of_id = int(of["id"])
+        except (TypeError, ValueError, KeyError):
+            continue
+        kids = children_by_of.get(of_id) or []
+        if not kids:
+            continue
+        nums += 1
+        kp_cnt = int(of.get("kpCount") or 0)
+        sk_cnt = int(of.get("skCount") or 0)
+        iskp = "已开票" if kp_cnt > 0 else "未开票"
+        isfk = "已付款" if sk_cnt > 0 else "未付款"
+        kpje = of.get("invoiceAmount")
+        skje = of.get("receiveAmount")
+        order_time = _fmt_export_dt(of.get("orderTime") or of.get("addTime"))
+        order_id = of.get("orderId") or ""
+        company = of.get("customerName") or ""
+        total_price = of.get("totalPrice")
+        status_label = _export_order_status_label(of.get("orderStatus"))
+        xskprq = first_kp.get(of_id, "")
+        xsskrq = first_sk.get(of_id, "")
+
+        for i, ch in enumerate(kids):
+            goods_total = None
+            child_price = _to_decimal(ch.get("goodsPrice"))
+            child_nums = _to_decimal(ch.get("goodsNums"))
+            if child_price is not None and child_nums is not None:
+                goods_total = child_price * child_nums
+            if i == 0:
+                row = [
+                    str(nums),
+                    order_time,
+                    order_id,
+                    company,
+                    ch.get("goodsName") or "",
+                    ch.get("goodsSpec") or "",
+                    ch.get("projectName") or "",
+                    ch.get("country") or "",
+                    total_price if total_price is not None else "",
+                    goods_total if goods_total is not None else "",
+                    iskp,
+                    xskprq,
+                    kpje if kpje is not None else "",
+                    isfk,
+                    xsskrq,
+                    skje if skje is not None else "",
+                    status_label,
+                ]
+            else:
+                row = [
+                    "",
+                    "",
+                    "",
+                    "",
+                    ch.get("goodsName") or "",
+                    ch.get("goodsSpec") or "",
+                    ch.get("projectName") or "",
+                    ch.get("country") or "",
+                    "",
+                    goods_total if goods_total is not None else "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                ]
+            matrix.append(row)
+    return EXPERIMENT_ORDER_EXPORT_HEADERS, matrix
+
+
 def list_export_orders(
     *,
     order_type: str | int,
@@ -3925,5 +4438,6 @@ def list_export_orders(
         order_end=str(filters.get("order_end") or filters.get("finish_end") or ""),
         page=1,
         page_size=limit,
+        scope=filters.get("scope"),
     )
     return rows

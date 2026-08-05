@@ -528,6 +528,12 @@ export const constantRoutes: RouteRecordRaw[] = [
         meta: { title: '编辑订单', hidden: true },
       },
       {
+        path: 'experiment/order-create',
+        name: 'ExperimentOrderCreate',
+        component: () => import('@/views/experiment/order-create/index.vue'),
+        meta: { title: '新增实验订单', hidden: true },
+      },
+      {
         path: 'experiment/sub-order-create',
         name: 'ExperimentSubOrderCreate',
         component: () => import('@/views/experiment/sub-order-create/index.vue'),

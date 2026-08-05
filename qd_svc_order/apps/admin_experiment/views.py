@@ -491,10 +491,10 @@ def sample_attr_options(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_list(request: Request, user=None):
-    del user
     data = merge_payload(request)
     draw, page, page_size = parse_datatable_params(request)
     order_type = str(data.get("orderType") or data.get("order_type") or "6")
+    scope = order_repo.build_exp_order_list_scope(user, order_type=order_type)
     if order_type in ("9", "10"):
         rows, total = order_repo.list_sub_orders(
             order_type=order_type,
@@ -558,6 +558,7 @@ def order_list(request: Request, user=None):
             ).strip(),
             page=page,
             page_size=page_size,
+            scope=scope,
         )
     return Response(datatable_payload(draw=draw, total=total, rows=rows))
 
@@ -891,13 +892,16 @@ def order_more_info(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_export(request: Request, user=None):
-    """返回可导出的订单行（前端拼 CSV），避免 axios 对 blob 的拦截干扰。"""
-    del user
+    """实验订单(type=6)对齐 Java export.htm：返回 xlsx base64；其它类型仍返回行数据供前端拼 CSV。"""
+    import base64
+
+    from apps.admin_experiment import excel_util
+
     data = merge_payload(request)
     order_type = str(data.get("orderType") or data.get("order_type") or "6")
-    rows = order_repo.list_export_orders(
-        order_type=order_type,
-        limit=5000,
+    scope = order_repo.build_exp_order_list_scope(user, order_type=order_type)
+    common_filters = dict(
+        scope=scope,
         order_id=(data.get("orderId") or data.get("order_id") or "").strip(),
         parent_order_id=(
             data.get("parentOrderId")
@@ -938,6 +942,25 @@ def order_export(request: Request, user=None):
         order_end=(
             data.get("orderEnd") or data.get("order_endtime") or data.get("orderEndtime") or ""
         ).strip(),
+    )
+    if order_type == "6":
+        headers, matrix = order_repo.build_experiment_order_export_matrix(
+            limit=5000, **common_filters
+        )
+        raw = excel_util.rows_to_xlsx(headers, matrix, sheet_name="实验订单")
+        return ok(
+            {
+                "fileName": "实验订单.xlsx",
+                "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "base64": base64.b64encode(raw).decode("ascii"),
+                "rowCount": len(matrix),
+            },
+            res_msg="ok",
+        )
+    rows = order_repo.list_export_orders(
+        order_type=order_type,
+        limit=5000,
+        **common_filters,
     )
     return ok(rows, res_msg="ok")
 
