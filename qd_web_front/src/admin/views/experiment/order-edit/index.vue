@@ -23,7 +23,39 @@
         </el-col>
         <el-col :span="12">
           <el-form-item label="客户名称">
-            <el-input :model-value="String(detail.customerName || detail.companyName || '')" disabled />
+            <el-select
+              v-model="form.customerId"
+              filterable
+              clearable
+              placeholder="请选择"
+              style="width: 100%"
+              @change="onCustomerChange"
+            >
+              <el-option
+                v-for="o in customerOpts"
+                :key="String(o.value)"
+                :label="o.label"
+                :value="o.value"
+              />
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="客户账号">
+            <el-select
+              v-model="form.customUserId"
+              filterable
+              clearable
+              placeholder="请选择"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="o in accountOpts"
+                :key="String(o.value)"
+                :label="o.label"
+                :value="o.value"
+              />
+            </el-select>
           </el-form-item>
         </el-col>
         <el-col :span="12">
@@ -172,7 +204,7 @@
           <el-form-item label="公司汇款账户">
             <el-select v-model="form.companyAccountId" filterable clearable placeholder="请选择" style="width: 100%">
               <el-option
-                v-for="o in accountOpts"
+                v-for="o in companyAccountOpts"
                 :key="String(o.value)"
                 :label="o.label"
                 :value="o.value"
@@ -201,6 +233,29 @@
           </el-form-item>
         </el-col>
       </el-row>
+
+      <div class="lines-block">
+        <h3>产品明细</h3>
+        <el-table :data="lines" border stripe empty-text="暂无产品行">
+          <el-table-column type="index" label="#" width="50" />
+          <el-table-column prop="goodsName" label="产品名称" min-width="140" />
+          <el-table-column prop="goodsSpec" label="产品型号" min-width="120" />
+          <el-table-column prop="goodsBrandName" label="产品品牌" min-width="100" />
+          <el-table-column label="数量" width="110">
+            <template #default="{ row }">
+              <el-input-number v-model="row.goodsNums" :min="1" :controls="false" style="width: 90px" />
+            </template>
+          </el-table-column>
+          <el-table-column label="单价" width="120">
+            <template #default="{ row }">
+              <el-input v-model="row.goodsPrice" clearable />
+            </template>
+          </el-table-column>
+          <el-table-column prop="projectName" label="实验项目" min-width="120" />
+          <el-table-column prop="className" label="实验分类" min-width="120" />
+        </el-table>
+      </div>
+
       <el-form-item>
         <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
         <el-button @click="goBack">取消</el-button>
@@ -215,6 +270,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { fetchManageOptions, getExpOrderDetail, updateExpOrderBasic } from '@admin/api/experiment'
+import { fetchCustomerAccounts, fetchCustomerNames } from '@admin/api/member'
 import { fetchBillTypeAll, fetchPaytypeAll } from '@admin/api/order-settings'
 import {
   fetchCompanyAccountList,
@@ -225,6 +281,16 @@ import {
 import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
 type Opt = { value: string | number; label: string }
+type LineRow = {
+  id: string | number
+  goodsName: string
+  goodsSpec: string
+  goodsBrandName: string
+  goodsNums: number
+  goodsPrice: string
+  projectName: string
+  className: string
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -233,6 +299,7 @@ const orderId = String(route.params.id || '')
 const loading = ref(false)
 const saving = ref(false)
 const detail = ref<Record<string, unknown> | null>(null)
+const lines = ref<LineRow[]>([])
 const form = reactive({
   totalPrice: '',
   shipUser: '',
@@ -252,22 +319,38 @@ const form = reactive({
   saleManagerId: '' as string | number | '',
   saleUserId: '' as string | number | '',
   supplierId: '' as string | number | '',
+  customerId: '' as string | number | '',
+  customUserId: '' as string | number | '',
   classId: '' as string | number | '',
   testAddressId: '' as string | number | '',
   companyAccountId: '' as string | number | '',
 })
 
 const supplierOpts = ref<Opt[]>([])
+const customerOpts = ref<Opt[]>([])
+const accountOpts = ref<Opt[]>([])
 const managerOpts = ref<Opt[]>([])
 const saleUserOpts = ref<Opt[]>([])
 const classOpts = ref<Opt[]>([])
 const payWayOpts = ref<Opt[]>([])
 const outBillOpts = ref<Opt[]>([])
 const addressOpts = ref<Opt[]>([])
-const accountOpts = ref<Opt[]>([])
+const companyAccountOpts = ref<Opt[]>([])
 
 function goBack() {
   router.push({ name: 'ExperimentOrderDetail', params: { id: orderId } })
+}
+
+function asOptValue(v: unknown): string | number | '' {
+  if (v == null || v === '') return ''
+  return typeof v === 'number' ? v : String(v)
+}
+
+function ensureOpt(opts: { value: Opt[] }, value: string | number | '', label?: string) {
+  if (value === '' || value == null) return
+  const key = String(value)
+  if (opts.value.some((o) => String(o.value) === key)) return
+  opts.value.unshift({ value, label: (label || key).trim() || key })
 }
 
 function mapUserRows(rows: Record<string, unknown>[]): Opt[] {
@@ -279,15 +362,55 @@ function mapUserRows(rows: Record<string, unknown>[]): Opt[] {
     .filter((o) => o.value !== '' && o.value != null)
 }
 
+async function loadCustomers() {
+  try {
+    const res = await fetchCustomerNames()
+    const list = Array.isArray(res.obj) ? res.obj : Array.isArray(res.data) ? res.data : []
+    customerOpts.value = (list as Record<string, unknown>[])
+      .map((r) => ({
+        value: (r.id ?? '') as string | number,
+        label: String(r.name || r.companyName || r.company_name || r.id || ''),
+      }))
+      .filter((o) => o.value !== '' && o.value != null)
+  } catch {
+    /* ignore */
+  }
+}
+
+async function loadAccounts(parentId: string | number | '') {
+  accountOpts.value = []
+  if (parentId === '' || parentId == null) return
+  try {
+    const res = await fetchCustomerAccounts(parentId)
+    const list = Array.isArray(res.obj) ? res.obj : Array.isArray(res.data) ? res.data : []
+    accountOpts.value = (list as Record<string, unknown>[])
+      .map((r) => ({
+        value: (r.id ?? '') as string | number,
+        label: String(r.mobile || r.userName || r.trueName || r.id || ''),
+      }))
+      .filter((o) => o.value !== '' && o.value != null)
+  } catch {
+    /* ignore */
+  }
+}
+
+async function onCustomerChange(val: string | number | '') {
+  form.customUserId = ''
+  await loadAccounts(val)
+}
+
 async function loadOptions() {
   const silent = { silentError: true } as const
+  await loadCustomers()
   try {
     const res = await fetchSupplierAll(silent)
     const list = Array.isArray(res.obj) ? res.obj : Array.isArray(res.data) ? res.data : []
-    supplierOpts.value = (list as Record<string, unknown>[]).map((r) => ({
-      value: (r.id ?? '') as string | number,
-      label: String(r.companyName || r.company_name || r.name || r.id || ''),
-    })).filter((o) => o.value !== '' && o.value != null)
+    supplierOpts.value = (list as Record<string, unknown>[])
+      .map((r) => ({
+        value: (r.id ?? '') as string | number,
+        label: String(r.companyName || r.company_name || r.name || r.id || ''),
+      }))
+      .filter((o) => o.value !== '' && o.value != null)
   } catch {
     /* ignore */
   }
@@ -366,7 +489,7 @@ async function loadOptions() {
   }
   try {
     const acc = await fetchCompanyAccountList({ start: 0, length: 500, draw: 1 })
-    accountOpts.value = (Array.isArray(acc.data) ? acc.data : [])
+    companyAccountOpts.value = (Array.isArray(acc.data) ? acc.data : [])
       .map((a) => {
         const row = a as Record<string, unknown>
         return {
@@ -378,7 +501,9 @@ async function loadOptions() {
               row.bank,
             ]
               .filter(Boolean)
-              .join(' ') || row.id || ''
+              .join(' ') ||
+              row.id ||
+              ''
           ),
         }
       })
@@ -409,26 +534,58 @@ async function load() {
     form.orderTime = String(obj.orderTime || '').slice(0, 10)
     form.collectionTime = String(obj.collectionTime || '')
     form.currencyType = Number(obj.currencyType || 1) === 2 ? 2 : 1
-    form.payWay = (obj.payWay ?? '') as string | number | ''
+    form.payWay = asOptValue(obj.payWay)
     form.invoiceType = String(obj.invoiceType || '') === '1' || obj.invoiceLabel === '是'
     form.reversoContext =
       String(obj.reversoContext || '').toUpperCase() === 'ON' ||
       String(obj.reversoLabel || '') === '是'
     form.isVideo = String(obj.isVideo || '') === '1' || obj.isVideoLabel === '是'
     form.taxes = obj.taxes != null ? String(obj.taxes) : ''
-    form.outBillTypeId = (obj.outBillTypeId ?? '') as string | number | ''
-    form.saleManagerId = (obj.saleManagerId ?? '') as string | number | ''
-    form.saleUserId = (obj.saleUserId ?? '') as string | number | ''
-    form.supplierId = (obj.supplierId ?? '') as string | number | ''
-    form.classId = (obj.classId ?? '') as string | number | ''
-    form.testAddressId = (obj.testAddressId ?? '') as string | number | ''
-    form.companyAccountId = (obj.companyAccountId ?? '') as string | number | ''
+    form.outBillTypeId = asOptValue(obj.outBillTypeId)
+    form.saleManagerId = asOptValue(obj.saleManagerId)
+    form.saleUserId = asOptValue(obj.saleUserId)
+    form.supplierId = asOptValue(obj.supplierId)
+    form.customerId = asOptValue(obj.customerId)
+    form.customUserId = asOptValue(obj.customUserId)
+    form.classId = asOptValue(obj.classId)
+    form.testAddressId = asOptValue(obj.testAddressId)
+    form.companyAccountId = asOptValue(obj.companyAccountId)
+
+    ensureOpt(supplierOpts, form.supplierId, String(obj.supplierName || ''))
+    ensureOpt(
+      customerOpts,
+      form.customerId,
+      String(obj.customerName || obj.companyName || '')
+    )
+    ensureOpt(managerOpts, form.saleManagerId, String(obj.saleManager || ''))
+    ensureOpt(saleUserOpts, form.saleUserId, String(obj.saleUser || ''))
+    ensureOpt(classOpts, form.classId, String(obj.testClassName || ''))
+    ensureOpt(payWayOpts, form.payWay, String(obj.payWayName || ''))
+
+    await loadAccounts(form.customerId)
+    ensureOpt(accountOpts, form.customUserId, String(obj.customMobile || obj.mobile || ''))
+
+    const children = Array.isArray(obj.children) ? (obj.children as Record<string, unknown>[]) : []
+    lines.value = children.map((ch) => ({
+      id: (ch.id ?? '') as string | number,
+      goodsName: String(ch.goodsName || ''),
+      goodsSpec: String(ch.goodsSpec || ''),
+      goodsBrandName: String(ch.goodsBrandName || ch.goodsBrand || ''),
+      goodsNums: Number(ch.goodsNums || ch.goodsCount || 1) || 1,
+      goodsPrice: ch.goodsPrice != null ? String(ch.goodsPrice) : '',
+      projectName: String(ch.projectName || ch.experimentProjectName || ''),
+      className: String(ch.className || ch.experimentClassName || ch.deviceName || ''),
+    }))
   } finally {
     loading.value = false
   }
 }
 
 async function onSave() {
+  if (!form.customerId && !form.customUserId) {
+    ElMessage.warning('客户名称和客户账号不能同时为空')
+    return
+  }
   saving.value = true
   try {
     const res = await updateExpOrderBasic({
@@ -451,9 +608,16 @@ async function onSave() {
       saleManagerId: form.saleManagerId,
       saleUserId: form.saleUserId,
       supplierId: form.supplierId,
+      customerId: form.customerId,
+      customUserId: form.customUserId,
       classId: form.classId,
       testAddressId: form.testAddressId,
       companyAccountId: form.companyAccountId,
+      children: lines.value.map((row) => ({
+        id: row.id,
+        goodsNums: row.goodsNums,
+        goodsPrice: row.goodsPrice,
+      })),
     })
     if (!isAjaxOk(res)) {
       ElMessage.error(ajaxErrorMessage(res, '保存失败'))
@@ -503,6 +667,13 @@ onMounted(async () => {
   border: 1px solid #ebeef5;
   border-radius: 8px;
   padding: 20px 20px 8px;
-  max-width: 1100px;
+  max-width: 1200px;
+}
+.lines-block {
+  margin: 8px 0 20px;
+}
+.lines-block h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
 }
 </style>

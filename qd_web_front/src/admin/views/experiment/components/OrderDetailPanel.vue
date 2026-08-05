@@ -487,9 +487,42 @@
             <template v-for="(ep, idx) in expectPayRows" :key="'ep6-' + idx">
               <el-descriptions-item label="预计收款时间">{{ ep.time || '-' }}</el-descriptions-item>
               <el-descriptions-item label="预计收款金额" :span="2">{{ ep.price || '-' }}</el-descriptions-item>
+              <el-descriptions-item v-if="ep.actualReceiveTime" label="实际收款时间">
+                {{ ep.actualReceiveTime }}
+                <template v-if="ep.actualReceiveOnline">（线上）</template>
+              </el-descriptions-item>
+              <el-descriptions-item v-if="ep.actualReceiveAmount != null" label="实际收款金额" :span="2">
+                {{ ep.actualReceiveAmount }}
+              </el-descriptions-item>
+              <el-descriptions-item v-if="ep.actualInvoiceTime" label="开票时间">
+                {{ ep.actualInvoiceTime }}
+              </el-descriptions-item>
+              <el-descriptions-item v-if="ep.actualInvoiceAmount != null" label="开票金额" :span="2">
+                {{ ep.actualInvoiceAmount }}
+              </el-descriptions-item>
             </template>
           </template>
-          <el-descriptions-item v-if="!isChildKind" label="实际收款">
+          <template v-if="receiveBillRows.length && !expectPayRows.length">
+            <template v-for="(b, idx) in receiveBillRows" :key="'rb-' + idx">
+              <el-descriptions-item :label="'实际收款时间' + (receiveBillRows.length > 1 ? idx + 1 : '')">
+                {{ b.billDate || '-' }}
+              </el-descriptions-item>
+              <el-descriptions-item :label="'实际收款金额' + (receiveBillRows.length > 1 ? idx + 1 : '')" :span="2">
+                {{ b.money ?? '-' }}
+              </el-descriptions-item>
+            </template>
+          </template>
+          <template v-if="invoiceBillRows.length && !expectPayRows.some((e) => e.actualInvoiceTime)">
+            <template v-for="(b, idx) in invoiceBillRows" :key="'ib-' + idx">
+              <el-descriptions-item :label="'开票时间' + (invoiceBillRows.length > 1 ? idx + 1 : '')">
+                {{ b.billDate || '-' }}
+              </el-descriptions-item>
+              <el-descriptions-item :label="'开票金额' + (invoiceBillRows.length > 1 ? idx + 1 : '')" :span="2">
+                {{ b.money ?? '-' }}
+              </el-descriptions-item>
+            </template>
+          </template>
+          <el-descriptions-item v-if="!isChildKind" label="实际收款合计">
             {{ detail.receiveAmount ?? 0 }}
           </el-descriptions-item>
           <el-descriptions-item v-if="!isChildKind" label="是否开票">
@@ -1315,7 +1348,37 @@ const isGrabMode = computed(() => String(route.query.from || '') === 'grab-order
 
 const expectPayRows = computed(() => {
   const list = detail.value?.expectPayList
-  return Array.isArray(list) ? (list as { time?: string; price?: string }[]) : []
+  return Array.isArray(list)
+    ? (list as {
+        time?: string
+        price?: string
+        actualReceiveTime?: string
+        actualReceiveAmount?: string | number
+        actualReceiveOnline?: boolean
+        actualInvoiceTime?: string
+        actualInvoiceAmount?: string | number
+      }[])
+    : []
+})
+
+const receiveBillRows = computed(() => {
+  const list = detail.value?.receiveBills
+  if (Array.isArray(list) && list.length) return list as { billDate?: string; money?: string | number }[]
+  const bills = detail.value?.bills
+  if (!Array.isArray(bills)) return []
+  return (bills as { type?: number; billDate?: string; money?: string | number }[]).filter(
+    (b) => Number(b.type) === 2
+  )
+})
+
+const invoiceBillRows = computed(() => {
+  const list = detail.value?.invoiceBills
+  if (Array.isArray(list) && list.length) return list as { billDate?: string; money?: string | number }[]
+  const bills = detail.value?.bills
+  if (!Array.isArray(bills)) return []
+  return (bills as { type?: number; billDate?: string; money?: string | number }[]).filter(
+    (b) => Number(b.type) === 1
+  )
 })
 
 const orderTypeLabel = computed(() => {
