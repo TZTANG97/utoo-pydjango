@@ -4949,6 +4949,7 @@ def list_export_orders(
             finish_end=str(filters.get("finish_end") or ""),
             page=1,
             page_size=limit,
+            scope=filters.get("scope"),
         )
         return rows
     rows, _ = list_orders(
