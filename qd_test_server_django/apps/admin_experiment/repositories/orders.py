@@ -1217,11 +1217,11 @@ def get_order(order_id: int) -> dict[str, Any] | None:
     row["inBillType"] = (
         {"id": in_id, "name": in_name or "未知"} if in_id not in (None, "", 0, "0") else None
     )
-    # 分成信息：解析为可读姓名+比例
+    # 分成信息：毛利带 %；成本为固定金额不带 %
     row["userScaleLabel"] = _format_scale_label(
         str(row.get("userScaleInfo") or row.get("scaleInfo") or "")
     )
-    row["costScaleLabel"] = _format_scale_label(str(row.get("salecbUserScaleInfo") or ""))
+    row["costScaleLabel"] = _format_cost_scale_label(str(row.get("salecbUserScaleInfo") or ""))
     ct = row.get("currencyType")
     try:
         ct_i = int(ct) if ct is not None else 1
@@ -1978,10 +1978,12 @@ def list_linked_child_orders(parent_id: int, *, child_order_type: str) -> list[d
         SELECT
             t.id, t.order_id AS orderId, t.order_status AS orderStatus,
             t.totalPrice AS totalPrice, t.order_time AS orderTime, t.addTime,
-            t.is_confirm AS isConfirm,
+            t.is_confirm AS isConfirm, t.order_type AS orderType,
+            u.company_name AS supplierName,
             sm.user_name AS managerName, sm.true_name AS managerTrueName,
             su.user_name AS saleUserName, su.true_name AS saleUserTrueName
         FROM experiment_order t
+        LEFT JOIN `user` u ON t.supplier_name = u.id
         LEFT JOIN sy_users sm ON t.sale_manager = sm.id
         LEFT JOIN sy_users su ON t.sale_user = su.id
         WHERE t.parent_id = %(pid)s
@@ -1995,12 +1997,15 @@ def list_linked_child_orders(parent_id: int, *, child_order_type: str) -> list[d
         r["orderStatusLabel"] = _sub_status_label(r.get("orderStatus"))
         r["saleManager"] = str(r.get("managerName") or r.get("managerTrueName") or "").strip()
         r["saleUser"] = str(r.get("saleUserName") or r.get("saleUserTrueName") or "").strip()
+        r["supplierName"] = r.get("supplierName") or "-"
         try:
             conf_i = int(r.get("isConfirm")) if r.get("isConfirm") is not None else 0
         except (TypeError, ValueError):
             conf_i = 0
         r["confirmLabel"] = "已确认" if conf_i == 1 else "未确认"
-        otm = r.get("orderTime") or r.get("addTime")
+        add_t = r.get("addTime")
+        r["addTime"] = str(add_t)[:19] if add_t else ""
+        otm = r.get("orderTime") or add_t
         r["orderTime"] = str(otm)[:10] if otm else ""
     return rows
 
@@ -2031,7 +2036,7 @@ def list_related_orders(related_order_num: Any) -> list[dict[str, Any]]:
         SELECT
             t.id, t.order_id AS orderId, t.order_type AS orderType,
             t.order_status AS orderStatus, t.totalPrice AS totalPrice,
-            t.order_time AS orderTime, t.addTime,
+            t.order_time AS orderTime, t.addTime, t.invoiceType AS invoiceType,
             q.name AS companyName,
             u.company_name AS supplierName,
             sm.user_name AS managerName, sm.true_name AS managerTrueName,
@@ -2062,7 +2067,10 @@ def list_related_orders(related_order_num: Any) -> list[dict[str, Any]]:
         r["supplierName"] = r.get("supplierName") or "-"
         r["saleManager"] = str(r.get("managerTrueName") or r.get("managerName") or "-")
         r["saleUser"] = str(r.get("saleUserTrueName") or r.get("saleUserName") or "-")
-        otm = r.get("orderTime") or r.get("addTime")
+        r["invoiceLabel"] = "是" if str(r.get("invoiceType") or "") == "1" else "否"
+        add_t = r.get("addTime")
+        r["addTime"] = str(add_t)[:19] if add_t else ""
+        otm = r.get("orderTime") or add_t
         r["orderTime"] = str(otm)[:19] if otm else ""
         ordered.append(r)
     return ordered
@@ -2143,6 +2151,15 @@ def get_order_detail_bundle(
     files = list_order_files(order_id)
     invoice_files = list_invoice_files(order_id)
     yyd_files = [f for f in files if str(f.get("type") or "") == "6"]
+    can_view_share = _viewer_can_see_share(viewer_user_id)
+    row["canViewShareInfo"] = can_view_share
+    if not can_view_share:
+        row["userScaleLabel"] = ""
+        row["costScaleLabel"] = ""
+        row["userScaleInfo"] = ""
+        row["scaleInfo"] = ""
+        row["salecbUserScaleInfo"] = ""
+        row["canShareRatio"] = False
     return {
         **row,
         "children": children,

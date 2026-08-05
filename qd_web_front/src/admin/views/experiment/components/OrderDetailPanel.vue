@@ -507,7 +507,7 @@
           <el-descriptions-item v-if="!isChildKind" label="成本结清">
             {{ detail.costSettleLabel || '-' }}
           </el-descriptions-item>
-          <el-descriptions-item v-if="!isChildKind" label="分成信息" :span="3">
+          <el-descriptions-item v-if="!isChildKind && detail.canViewShareInfo !== false" label="分成信息" :span="3">
             <div>毛利：{{ detail.userScaleLabel || detail.userScaleInfo || '-' }}</div>
             <div v-if="detail.costScaleLabel || detail.salecbUserScaleInfo">
               成本：{{ detail.costScaleLabel || detail.salecbUserScaleInfo }}
@@ -560,8 +560,18 @@
                     rel="noopener"
                   >{{ fileLabel(f) }}</a>
                   <el-button type="success" size="small" @click="onDownloadFile(f)">下载</el-button>
+                  <el-button type="danger" size="small" :loading="acting" @click="onDeleteFile(f)">
+                    删除
+                  </el-button>
                 </div>
                 <span v-if="!invoiceFiles.length" class="files-empty">暂无</span>
+                <el-upload
+                  :show-file-list="false"
+                  :http-request="onUploadInvoiceFile"
+                  accept="*/*"
+                >
+                  <el-button type="primary">上传文件</el-button>
+                </el-upload>
               </div>
             </div>
           </template>
@@ -636,14 +646,14 @@
           <el-table-column prop="className" label="分类" min-width="100" show-overflow-tooltip />
           <el-table-column
             v-if="!isChildKind"
-            prop="referencePrice"
-            label="实际测试金额"
+            prop="price"
+            label="实验测试金额"
             width="110"
             align="right"
           />
           <el-table-column
             v-if="!isChildKind"
-            prop="price"
+            prop="referencePrice"
             label="标准测试金额"
             width="110"
             align="right"
@@ -656,8 +666,9 @@
           >
             <template #default="{ row }">
               {{
-                Number(row.referencePrice ?? row.price ?? 0) *
-                  Number(row.goodsCount ?? 1) || row.price || '-'
+                (
+                  Number(row.price ?? 0) * Number(row.goodsCount ?? 1)
+                ).toFixed(2)
               }}
             </template>
           </el-table-column>
@@ -725,9 +736,10 @@
           <el-table-column prop="companyName" label="客户" min-width="120" show-overflow-tooltip />
           <el-table-column prop="supplierName" label="供应商" min-width="120" show-overflow-tooltip />
           <el-table-column prop="saleManager" label="销售主管" width="100" />
-          <el-table-column prop="saleUser" label="销售" width="100" />
+          <el-table-column prop="saleUser" label="销售人员" width="100" />
           <el-table-column prop="totalPrice" label="金额" width="90" align="right" />
-          <el-table-column prop="orderTime" label="时间" width="160" />
+          <el-table-column prop="addTime" label="录入订单时间" width="170" />
+          <el-table-column prop="invoiceLabel" label="是否开票" width="90" align="center" />
           <el-table-column prop="orderStatusLabel" label="状态" width="100" />
           <el-table-column label="操作" width="90" fixed="right">
             <template #default="{ row }">
@@ -742,8 +754,12 @@
       <section v-if="!isGrabMode && linkedOrders.length" class="card">
         <h3 class="card-title">{{ linkedTitle }}</h3>
         <el-table :data="linkedOrders" border stripe class="detail-table">
-          <el-table-column type="index" width="50" label="#" align="center" />
-          <el-table-column prop="orderId" label="订单编号" min-width="160" show-overflow-tooltip>
+          <el-table-column
+            prop="orderId"
+            :label="orderType === '8' ? '分包子订单编号' : '实验子订单编号'"
+            min-width="180"
+            show-overflow-tooltip
+          >
             <template #default="{ row }">
               <el-button
                 link
@@ -754,23 +770,9 @@
               </el-button>
             </template>
           </el-table-column>
-          <el-table-column prop="saleManager" label="销售主管" width="100" />
-          <el-table-column prop="saleUser" label="采购人员" width="100" />
-          <el-table-column prop="orderTime" label="下单时间" width="110" />
-          <el-table-column prop="confirmLabel" label="确认状态" width="90" />
+          <el-table-column prop="addTime" label="创建时间" width="170" />
+          <el-table-column prop="supplierName" label="所属公司" min-width="140" show-overflow-tooltip />
           <el-table-column prop="orderStatusLabel" label="状态" width="120" />
-          <el-table-column prop="totalPrice" label="金额" width="90" align="right" />
-          <el-table-column label="操作" width="80">
-            <template #default="{ row }">
-              <el-button
-                link
-                type="primary"
-                @click="goDetail(Number(row.id), row.orderType, row.orderId)"
-              >
-                查看
-              </el-button>
-            </template>
-          </el-table-column>
         </el-table>
       </section>
 
@@ -1498,6 +1500,23 @@ async function onUploadOrderFile(options: { file: File }) {
   fd.append('orderdata', options.file)
   fd.append('id', String(props.orderId))
   fd.append('type', '3')
+  await runAction(async () => {
+    const res = await uploadExpOrderFile(fd)
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '上传失败'))
+      return
+    }
+    ElMessage.success(String(res.resMsg || '上传成功'))
+    await load()
+  })
+}
+
+async function onUploadInvoiceFile(options: { file: File }) {
+  if (!props.orderId) return
+  const fd = new FormData()
+  fd.append('orderdata', options.file)
+  fd.append('id', String(props.orderId))
+  fd.append('type', '5')
   await runAction(async () => {
     const res = await uploadExpOrderFile(fd)
     if (!isAjaxOk(res)) {
