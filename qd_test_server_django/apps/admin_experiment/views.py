@@ -494,8 +494,9 @@ def order_list(request: Request, user=None):
     data = merge_payload(request)
     draw, page, page_size = parse_datatable_params(request)
     order_type = str(data.get("orderType") or data.get("order_type") or "6")
-    scope = order_repo.build_exp_order_list_scope(user, order_type=order_type)
     if order_type in ("9", "10"):
+        # 对齐 Java list_dpt1：非管理员按 userId2 过滤
+        sub_scope = order_repo.build_sub_order_list_scope(user, order_type=order_type)
         rows, total = order_repo.list_sub_orders(
             order_type=order_type,
             order_id=(data.get("orderId") or data.get("order_id") or "").strip(),
@@ -530,8 +531,10 @@ def order_list(request: Request, user=None):
             ).strip(),
             page=page,
             page_size=page_size,
+            scope=sub_scope,
         )
     else:
+        scope = order_repo.build_exp_order_list_scope(user, order_type=order_type)
         rows, total = order_repo.list_orders(
             order_type=order_type,
             order_id=(data.get("orderId") or data.get("order_id") or "").strip(),
@@ -902,7 +905,10 @@ def order_export(request: Request, user=None):
 
     data = merge_payload(request)
     order_type = str(data.get("orderType") or data.get("order_type") or "6")
-    scope = order_repo.build_exp_order_list_scope(user, order_type=order_type)
+    if order_type in ("9", "10"):
+        scope = order_repo.build_sub_order_list_scope(user, order_type=order_type)
+    else:
+        scope = order_repo.build_exp_order_list_scope(user, order_type=order_type)
     common_filters = dict(
         scope=scope,
         order_id=(data.get("orderId") or data.get("order_id") or "").strip(),
