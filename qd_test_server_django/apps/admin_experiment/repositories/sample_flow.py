@@ -648,6 +648,15 @@ def sample_arrive(
         extra_params=extra_params or None,
         staff_user_id=staff_user_id,
     )
+    if ok:
+        try:
+            from apps.admin_experiment.services.wx_suborder_notify import (
+                notify_sample_arrive,
+            )
+
+            notify_sample_arrive(order_id=order_id, staff_user_id=staff_user_id)
+        except Exception:
+            logger.exception("wx notify sample_arrive failed order=%s", order_id)
     if ok and sid and spos:
         return True, "样品入库成功！"
     return ok, msg
@@ -790,6 +799,14 @@ def sample_pick(
             )
         except Exception:
             pass
+    try:
+        from apps.admin_experiment.services.wx_suborder_notify import (
+            notify_sample_pick_video,
+        )
+
+        notify_sample_pick_video(order_id=order_id, child_ids=ids)
+    except Exception:
+        logger.exception("wx notify sample_pick_video failed order=%s", order_id)
     return True, "操作成功"
 
 
@@ -879,6 +896,12 @@ def test_start(
         )
     except Exception:
         pass
+    try:
+        from apps.admin_experiment.services.wx_suborder_notify import notify_test_start
+
+        notify_test_start(order_id=order_id)
+    except Exception:
+        logger.exception("wx notify test_start failed order=%s", order_id)
     return True, "操作成功"
 
 
@@ -948,6 +971,12 @@ def test_end(
                 )
         except Exception:
             pass
+    try:
+        from apps.admin_experiment.services.wx_suborder_notify import notify_test_end
+
+        notify_test_end(order_id=order_id)
+    except Exception:
+        logger.exception("wx notify test_end failed order=%s", order_id)
     return True, "操作成功"
 
 
@@ -1222,6 +1251,14 @@ def sample_ship_back(
                 )
             except Exception:
                 pass
+    try:
+        from apps.admin_experiment.services.wx_suborder_notify import notify_sample_ship
+
+        notify_sample_ship(
+            order_id=order_id, express_name=name, express_no=no
+        )
+    except Exception:
+        logger.exception("wx notify sample_ship failed order=%s", order_id)
     return True, "样品寄回成功！"
 
 

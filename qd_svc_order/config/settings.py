@@ -89,6 +89,14 @@ OSS_BUCKET = env("OSS_BUCKET", default="qgongye")
 OSS_PUBLIC_BASE_URL = env("OSS_PUBLIC_BASE_URL", default="")
 IMAGE_WEB_SERVER = env("IMAGE_WEB_SERVER", default="")
 
+# 公众号模板消息（对齐 Java gzh.appid / gzh.secret / gzh.send）
+WEIXIN_APPID = env("WEIXIN_APPID", default="")
+WEIXIN_SECRET = env("WEIXIN_SECRET", default="")
+WEIXIN_MP_APPID = env("WEIXIN_MP_APPID", default="")
+WEIXIN_GZH_APPID = env("WEIXIN_GZH_APPID", default="")
+WEIXIN_GZH_SECRET = env("WEIXIN_GZH_SECRET", default="")
+WEIXIN_GZH_SEND = env("WEIXIN_GZH_SEND", default="1")
+
 LANGUAGE_CODE = "zh-hans"
 TIME_ZONE = "Asia/Shanghai"
 USE_TZ = True

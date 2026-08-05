@@ -2567,6 +2567,14 @@ def audit_order(
         ("审核通过" if pass_ else "审核驳回") + (f"：{remark}" if remark else ""),
         user_id=staff_user_id,
     )
+    try:
+        from apps.admin_experiment.services.wx_suborder_notify import notify_audit_result
+
+        notify_audit_result(
+            order_id=order_id, passed=pass_, staff_user_id=staff_user_id
+        )
+    except Exception:
+        pass
     return True, "审核成功" if pass_ else "已驳回"
 
 
@@ -2641,6 +2649,12 @@ def submit_audit(*, order_id: int, staff_user_id: str | int | None = None) -> tu
         return False, "当前状态不可提交审核"
     _set_order_status(order_id, 20)
     _write_order_log(order_id, "提交审核", user_id=staff_user_id)
+    try:
+        from apps.admin_experiment.services.wx_suborder_notify import notify_submit_audit
+
+        notify_submit_audit(order_id=order_id)
+    except Exception:
+        pass
     return True, "已提交审核"
 
 
@@ -3797,7 +3811,12 @@ def update_sub_order_status(*, order_id: int, order_status: int) -> tuple[bool, 
     return False, "不支持的状态变更"
 
 
-def update_sub_pay(*, order_id: int, pay_type: str | int) -> tuple[bool, str]:
+def update_sub_pay(
+    *,
+    order_id: int,
+    pay_type: str | int,
+    staff_user_id: str | int | None = None,
+) -> tuple[bool, str]:
     """
     对齐 Java pay.ajax / updatePayPurchaseOrder：
     type=1 申请/重提 → 32；type=2 审核通过 → 34；type=3 驳回 → 33。
@@ -3831,6 +3850,14 @@ def update_sub_pay(*, order_id: int, pay_type: str | int) -> tuple[bool, str]:
             {"id": order_id},
         )
         _write_order_log(order_id, log_txt)
+        try:
+            from apps.admin_experiment.services.wx_suborder_notify import notify_pay_flow
+
+            notify_pay_flow(
+                order_id=order_id, pay_type="1", staff_user_id=staff_user_id
+            )
+        except Exception:
+            pass
         return True, "已提交付款申请"
     if t == "2":
         if not row.get("canAuditPay"):
@@ -3840,6 +3867,14 @@ def update_sub_pay(*, order_id: int, pay_type: str | int) -> tuple[bool, str]:
             {"id": order_id},
         )
         _write_order_log(order_id, "申请付款审核通过")
+        try:
+            from apps.admin_experiment.services.wx_suborder_notify import notify_pay_flow
+
+            notify_pay_flow(
+                order_id=order_id, pay_type="2", staff_user_id=staff_user_id
+            )
+        except Exception:
+            pass
         return True, "付款申请已通过"
     if t == "3":
         if not row.get("canAuditPay"):
@@ -3849,6 +3884,14 @@ def update_sub_pay(*, order_id: int, pay_type: str | int) -> tuple[bool, str]:
             {"id": order_id},
         )
         _write_order_log(order_id, "申请付款驳回")
+        try:
+            from apps.admin_experiment.services.wx_suborder_notify import notify_pay_flow
+
+            notify_pay_flow(
+                order_id=order_id, pay_type="3", staff_user_id=staff_user_id
+            )
+        except Exception:
+            pass
         return True, "付款申请已驳回"
     return False, "无法处理此类别"
 

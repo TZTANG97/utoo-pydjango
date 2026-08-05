@@ -1498,7 +1498,6 @@ def order_confirm_ordered(request: Request, user=None):
 @admin_ajax_view()
 def order_sub_pay(request: Request, user=None):
     """type=9 付款申请：type 1申请/重提 2通过 3驳回。"""
-    del user
     data = merge_payload(request)
     oid = _order_id_from(data) or to_int(data.get("ofId"))
     if not oid:
@@ -1506,6 +1505,7 @@ def order_sub_pay(request: Request, user=None):
     ok_flag, msg = order_repo.update_sub_pay(
         order_id=oid,
         pay_type=data.get("type") or data.get("payType") or "",
+        staff_user_id=_staff_id(user),
     )
     return ok(res_msg=msg) if ok_flag else fail(msg)
 

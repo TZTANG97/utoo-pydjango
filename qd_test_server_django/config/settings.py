@@ -235,6 +235,8 @@ WEIXIN_GZH_APPID = env("WEIXIN_GZH_APPID", default="")
 WEIXIN_GZH_SECRET = env("WEIXIN_GZH_SECRET", default="")
 WEIXIN_GZH_TOKEN = env("WEIXIN_GZH_TOKEN", default="")
 WEIXIN_GZH_MINI_THUMB_MEDIA_ID = env("WEIXIN_GZH_MINI_THUMB_MEDIA_ID", default="")
+# 1=发送公众号模板（对齐 Java gzh.send）
+WEIXIN_GZH_SEND = env("WEIXIN_GZH_SEND", default="1")
 WEIXIN_MP_AUTH_PAGEPATH = env(
     "WEIXIN_MP_AUTH_PAGEPATH", default="staffB/auth_phone/auth_phone"
 )
