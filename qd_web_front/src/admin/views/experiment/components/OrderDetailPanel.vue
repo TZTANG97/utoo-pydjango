@@ -1000,13 +1000,15 @@
         <el-form-item
           v-if="sampleAction === 'arrive' || sampleAction === 'return' || sampleAction === 'pick'"
           label="仓库名称"
-          :required="sampleAction === 'return' || sampleAction === 'pick'"
+          :required="sampleAction === 'pick'"
         >
           <el-select
             v-model="sampleStoreId"
             filterable
             clearable
-            :placeholder="sampleAction === 'arrive' ? '请选择（可不填）' : '请选择'"
+            :placeholder="
+              sampleAction === 'arrive' || sampleAction === 'return' ? '请选择（可不填）' : '请选择'
+            "
             style="width: 100%"
             @change="onSampleStoreChange"
           >
@@ -1021,7 +1023,7 @@
         <el-form-item
           v-if="sampleAction === 'arrive' || sampleAction === 'return' || sampleAction === 'pick'"
           label="仓库位置"
-          :required="sampleAction === 'return' || sampleAction === 'pick'"
+          :required="sampleAction === 'pick'"
         >
           <el-select
             v-model="sampleStorePosId"
@@ -1030,7 +1032,7 @@
             :placeholder="
               sampleAction === 'pick' && sampleExpectedPosLabel
                 ? `请确认：${sampleExpectedPosLabel}`
-                : sampleAction === 'arrive'
+                : sampleAction === 'arrive' || sampleAction === 'return'
                   ? '请选择（可不填）'
                   : '请选择'
             "
@@ -1052,11 +1054,20 @@
             placeholder="请勾选一行以确认实验平台"
           />
         </el-form-item>
-        <el-form-item v-if="sampleAction === 'ship'" label="快递公司">
-          <el-input v-model="sampleExpressName" placeholder="快递公司（可选）" clearable />
+        <el-form-item v-if="sampleAction === 'ship'" label="快递公司" required>
+          <el-input v-model="sampleExpressName" placeholder="必填" clearable />
         </el-form-item>
-        <el-form-item v-if="sampleAction === 'ship'" label="快递单号">
-          <el-input v-model="sampleExpress" placeholder="快递单号（可选）" clearable />
+        <el-form-item v-if="sampleAction === 'ship'" label="快递单号" required>
+          <el-input v-model="sampleExpress" placeholder="必填" clearable />
+        </el-form-item>
+        <el-form-item v-if="sampleAction === 'video'" label="预约时间" required>
+          <el-date-picker
+            v-model="sampleVideoTime"
+            type="datetime"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            placeholder="请选择预约云视频时间"
+            style="width: 100%"
+          />
         </el-form-item>
         <el-form-item v-if="sampleAction === 'video'" label="会议号" required>
           <el-input v-model="sampleMeeting" placeholder="请输入云视频会议号" clearable />
@@ -1068,6 +1079,9 @@
           </el-radio-group>
         </el-form-item>
         <template v-if="sampleAction === 'retain' && sampleRetainMode === 'retain'">
+          <el-form-item v-if="sampleConfirmLocation" label="确认位置">
+            <el-input :model-value="sampleConfirmLocation" disabled />
+          </el-form-item>
           <el-form-item label="是否入库" required>
             <el-radio-group v-model="sampleIsPosition">
               <el-radio value="1">入库到留存仓库</el-radio>
@@ -1330,6 +1344,7 @@ const samplePosOptions = ref<Record<string, unknown>[]>([])
 const sampleExpress = ref('')
 const sampleExpressName = ref('')
 const sampleMeeting = ref('')
+const sampleVideoTime = ref('')
 const sampleConfirmMark = ref('')
 const sampleRetainMode = ref<'retain' | 'scrap'>('retain')
 const sampleIsPosition = ref('1')
@@ -1458,22 +1473,36 @@ const sampleConfirmPlatform = computed(() => {
   const row = sampleSelected.value[0]
   return String(row.platformName || row.lineId || '')
 })
+/** 留存/寄回：展示当前样品仓库位置供确认（对齐 Java storeInfo） */
+const sampleConfirmLocation = computed(() => {
+  if (sampleSelected.value.length !== 1) return ''
+  const row = sampleSelected.value[0]
+  const parts = [
+    row.sampleStoreName || row.storeName,
+    row.storeBlock || row.blockName,
+    row.storeNumber || row.storePosNumber || row.number,
+    row.storePosition,
+  ]
+    .map((x) => String(x || '').trim())
+    .filter(Boolean)
+  return parts.length ? parts.join(' / ') : String(row.storePosId || '')
+})
 const sampleExtraHint = computed(() => {
   if (sampleAction.value === 'arrive')
     return '请勾选已处理(状态2)的子行；仓库名称/位置可不填，填了则入库到对应仓位（选仓位时请只勾选一行）'
   if (sampleAction.value === 'return')
-    return '请勾选测试完成(状态39)的子行，并选择归还仓库位置（每次仅一行）'
+    return '请勾选测试完成(状态39)的子行；仓库名称/位置可不填，不选仓可多选批量归还'
   if (sampleAction.value === 'pick')
     return sampleExpectedPosLabel.value
       ? `请勾选样品到货(状态36)的子行，并确认出库仓库位置（${sampleExpectedPosLabel.value}）`
       : '请勾选样品到货(状态36)的子行；若已入库则须确认仓库位置出库'
   if (sampleAction.value === 'ship')
-    return '请勾选已归还(状态41)的子行；寄回后子行变为已完成，全部完成后订单变为已完成'
-  if (sampleAction.value === 'video') return '请勾选尚未预约会议的子行'
+    return '请勾选已归还(状态41)的子行；快递公司与单号必填，可多选批量寄回'
+  if (sampleAction.value === 'video') return '请勾选尚未预约会议的子行，并填写预约时间与会议号'
   if (sampleAction.value === 'testStart')
     return '请勾选已领用(状态37)的子行（单行），并确认实验平台与创建子单时一致'
   if (sampleAction.value === 'retain')
-    return '请勾选已归还(状态41)的子行；可入库到留存仓库，完成后子行/订单变为已完成'
+    return '请勾选已归还(状态41)的子行；可先确认原仓库位置；不入库/报废时可多选'
   if (sampleAction.value === 'confirmDone')
     return '请勾选测试完成且未确认的子行，备注必填（确认完成≠订单已完成）'
   return ''
@@ -2255,6 +2284,7 @@ async function openSampleAction(act: SampleAction) {
   sampleExpress.value = ''
   sampleExpressName.value = ''
   sampleMeeting.value = ''
+  sampleVideoTime.value = ''
   sampleConfirmMark.value = ''
   sampleRetainMode.value = 'retain'
   sampleIsPosition.value = '1'
@@ -2282,6 +2312,20 @@ async function onSubmitSampleAction() {
     ElMessage.warning('请填写会议号')
     return
   }
+  if (sampleAction.value === 'video' && !sampleVideoTime.value) {
+    ElMessage.warning('请选择预约云视频时间')
+    return
+  }
+  if (sampleAction.value === 'ship') {
+    if (!sampleExpressName.value.trim()) {
+      ElMessage.warning('请填写快递公司')
+      return
+    }
+    if (!sampleExpress.value.trim()) {
+      ElMessage.warning('请填写快递单号')
+      return
+    }
+  }
   if (sampleAction.value === 'confirmDone' && !sampleConfirmMark.value.trim()) {
     ElMessage.warning('请填写确认备注')
     return
@@ -2299,11 +2343,13 @@ async function onSubmitSampleAction() {
     }
   }
   if (sampleAction.value === 'return') {
-    if (!sampleStoreId.value || !sampleStorePosId.value) {
-      ElMessage.warning('请选择仓库位置')
+    const hasStore = !!sampleStoreId.value
+    const hasPos = !!sampleStorePosId.value
+    if (hasStore !== hasPos) {
+      ElMessage.warning(hasStore ? '请选择仓库位置!' : '请选择仓库!')
       return
     }
-    if (ids.length > 1) {
+    if (hasStore && hasPos && ids.length > 1) {
       ElMessage.warning('选择仓库位置时请只勾选一行')
       return
     }
@@ -2333,11 +2379,11 @@ async function onSubmitSampleAction() {
     }
   }
   if (sampleAction.value === 'retain' && sampleRetainMode.value === 'retain') {
-    if (ids.length !== 1) {
-      ElMessage.warning('样品留存请只勾选一行')
-      return
-    }
     if (sampleIsPosition.value === '1') {
+      if (ids.length !== 1) {
+        ElMessage.warning('入库到留存仓库时请只勾选一行')
+        return
+      }
       if (!sampleRetainStoreId.value || !sampleRetainStorePosId.value) {
         ElMessage.warning('请选择留存仓库位置')
         return
@@ -2392,7 +2438,11 @@ async function onSubmitSampleAction() {
     } else if (act === 'retest') {
       res = await retestExpOrder(base)
     } else if (act === 'video') {
-      res = await addVideoExpOrder({ ...base, meetingNum: sampleMeeting.value.trim() })
+      res = await addVideoExpOrder({
+        ...base,
+        meetingNum: sampleMeeting.value.trim(),
+        settingTime: sampleVideoTime.value,
+      })
     } else {
       res = await confirmDoneExpOrder({ ...base, mark: sampleConfirmMark.value.trim() })
     }

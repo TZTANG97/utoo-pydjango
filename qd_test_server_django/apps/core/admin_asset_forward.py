@@ -36,6 +36,15 @@ def _local_asset_fallback(request: Request):
         from apps.admin_digital.views.digital import lab_sale_order_list
 
         return lab_sale_order_list(request)
+    # 留存仓库下拉：Asset 旧版缺路由时回退网关本地
+    if path.endswith("/sampleremainstoreHouse/queryStore.ajax"):
+        from apps.admin_inventory.views import inventory as inv
+
+        return inv.remain_sample_order_options(request)
+    if path.endswith("/sampleremainstoreHouse/queryListByStoreId.ajax"):
+        from apps.admin_inventory.views import inventory as inv
+
+        return inv.sample_store_positions(request)
     return None
 
 

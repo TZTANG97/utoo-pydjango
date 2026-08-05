@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div v-loading="loading" class="create-page">
     <header class="page-head">
       <button type="button" class="back-link" @click="goBack">← 返回列表</button>
@@ -237,6 +237,40 @@
             />
           </el-form-item>
         </el-col>
+        <el-col :span="12">
+          <el-form-item label="是否含视频">
+            <el-switch
+              v-model="form.isVideo"
+              inline-prompt
+              active-text="ON"
+              inactive-text="OFF"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="实验测试地址">
+            <el-select v-model="form.testAddressId" filterable clearable placeholder="请选择" style="width: 100%">
+              <el-option
+                v-for="o in addressOpts"
+                :key="String(o.value)"
+                :label="o.label"
+                :value="o.value"
+              />
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="公司汇款账户">
+            <el-select v-model="form.companyAccountId" filterable clearable placeholder="请选择" style="width: 100%">
+              <el-option
+                v-for="o in companyAccountOpts"
+                :key="String(o.value)"
+                :label="o.label"
+                :value="o.value"
+              />
+            </el-select>
+          </el-form-item>
+        </el-col>
         <el-col v-if="form.reversoOn" :span="12">
           <el-form-item label="样品回收地址">
             <el-input v-model="form.sendAddress" clearable />
@@ -429,12 +463,17 @@ import {
   getExpOrderDetail,
   submitExpOrder,
   uploadExpOrderFile,
-} from '@/api/experiment'
-import { fetchCustomerAccounts, fetchCustomerNames } from '@/api/member'
-import { fetchBillTypeAll, fetchPaytypeAll, fetchTaxAll } from '@/api/order-settings'
-import { fetchSupplierAll, fetchUserList } from '@/api/system'
-import { useTagsViewStore } from '@/stores/tags-view'
-import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
+} from '@admin/api/experiment'
+import { fetchCustomerAccounts, fetchCustomerNames } from '@admin/api/member'
+import { fetchBillTypeAll, fetchPaytypeAll, fetchTaxAll } from '@admin/api/order-settings'
+import {
+  fetchCompanyAccountList,
+  fetchSupplierAll,
+  fetchTestAddressList,
+  fetchUserList,
+} from '@admin/api/system'
+import { useTagsViewStore } from '@admin/stores/tags-view'
+import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
 type Opt = { value: string | number; label: string }
 
@@ -496,6 +535,9 @@ const form = reactive({
   outBillTypeId: '' as string | number | '',
   taxes: '' as string | number | '',
   reversoOn: true,
+  isVideo: false,
+  testAddressId: '' as string | number | '',
+  companyAccountId: '' as string | number | '',
   sendAddress: '',
   addresseeName: '',
   addresseeMobile: '',
@@ -511,6 +553,8 @@ const outBillOpts = ref<Opt[]>([])
 const taxOpts = ref<Opt[]>([])
 const customerOpts = ref<Opt[]>([])
 const accountOpts = ref<Opt[]>([])
+const addressOpts = ref<Opt[]>([])
+const companyAccountOpts = ref<Opt[]>([])
 const orderFiles = ref<Record<string, unknown>[]>([])
 
 function emptyLine(): LineRow {
@@ -811,6 +855,55 @@ async function loadOptions() {
           taxOpts.value = []
         }
       })(),
+      (async () => {
+        try {
+          const addr = await fetchTestAddressList({ start: 0, length: 500, draw: 1 })
+          addressOpts.value = (Array.isArray(addr.data) ? addr.data : [])
+            .map((a) => {
+              const row = a as Record<string, unknown>
+              return {
+                value: (row.id ?? '') as string | number,
+                label: String(
+                  row.name ||
+                    [row.trueName || row.true_name, row.mobile, row.address]
+                      .filter(Boolean)
+                      .join(' ') ||
+                    row.id ||
+                    ''
+                ),
+              }
+            })
+            .filter((o) => o.value !== '' && o.value != null)
+        } catch {
+          addressOpts.value = []
+        }
+      })(),
+      (async () => {
+        try {
+          const acc = await fetchCompanyAccountList({ start: 0, length: 500, draw: 1 })
+          companyAccountOpts.value = (Array.isArray(acc.data) ? acc.data : [])
+            .map((a) => {
+              const row = a as Record<string, unknown>
+              return {
+                value: (row.id ?? '') as string | number,
+                label: String(
+                  [
+                    row.companyName || row.company_name,
+                    row.bankCardNum || row.bank_card_num,
+                    row.bank,
+                  ]
+                    .filter(Boolean)
+                    .join(' ') ||
+                    row.id ||
+                    ''
+                ),
+              }
+            })
+            .filter((o) => o.value !== '' && o.value != null)
+        } catch {
+          companyAccountOpts.value = []
+        }
+      })(),
     ])
     if (copyFromId.value) {
       await fillFromCopy(copyFromId.value)
@@ -1002,6 +1095,9 @@ async function onSave() {
     outBillTypeId: form.invoiceOn ? form.outBillTypeId : null,
     taxes: form.invoiceOn ? form.taxes : null,
     reverso_context: form.reversoOn ? 1 : 2,
+    is_video: form.isVideo ? 1 : 0,
+    test_address_id: form.testAddressId || null,
+    company_account_id: form.companyAccountId || null,
     send_address: form.reversoOn ? form.sendAddress : '',
     addressee_name: form.reversoOn ? form.addresseeName : '',
     addressee_mobile: form.reversoOn ? form.addresseeMobile : '',

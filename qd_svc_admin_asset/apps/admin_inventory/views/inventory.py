@@ -394,6 +394,16 @@ def sample_order_options(request: Request, user=None):
 @authentication_classes([])
 @permission_classes([AllowAny])
 @admin_ajax_view()
+def remain_sample_order_options(request: Request, user=None):
+    """对齐 Java sampleremainstoreHouse/queryStore.ajax。"""
+    del user, request
+    return Response(ajax_ok(obj={"stores": sample_repo.list_remain_sample_store_options()}))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
 def sample_store_positions(request: Request, user=None):
     """对齐 Java samplestoreHouse/queryListByStoreId.ajax。"""
     del user

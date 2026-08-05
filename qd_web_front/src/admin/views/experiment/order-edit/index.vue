@@ -228,6 +228,26 @@
           </el-form-item>
         </el-col>
         <el-col :span="24">
+          <el-form-item label="订单资料">
+            <div class="file-row">
+              <el-upload :show-file-list="false" :http-request="onUploadOrderFile">
+                <el-button type="primary" :loading="uploading">上传文件</el-button>
+              </el-upload>
+              <div v-if="orderFiles.length" class="file-list">
+                <el-tag
+                  v-for="(f, idx) in orderFiles"
+                  :key="String(f.id || idx)"
+                  closable
+                  class="file-tag"
+                  @close="removeOrderFile(idx)"
+                >
+                  {{ String(f.info || f.name || f.id || '附件') }}
+                </el-tag>
+              </div>
+            </div>
+          </el-form-item>
+        </el-col>
+        <el-col :span="24">
           <el-form-item label="备注">
             <el-input v-model="form.mark" type="textarea" :rows="3" clearable />
           </el-form-item>
@@ -269,7 +289,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { fetchManageOptions, getExpOrderDetail, updateExpOrderBasic } from '@admin/api/experiment'
+import { fetchManageOptions, getExpOrderDetail, updateExpOrderBasic, uploadExpOrderFile, deleteExpOrderFile } from '@admin/api/experiment'
 import { fetchCustomerAccounts, fetchCustomerNames } from '@admin/api/member'
 import { fetchBillTypeAll, fetchPaytypeAll } from '@admin/api/order-settings'
 import {
@@ -298,8 +318,10 @@ const orderId = String(route.params.id || '')
 
 const loading = ref(false)
 const saving = ref(false)
+const uploading = ref(false)
 const detail = ref<Record<string, unknown> | null>(null)
 const lines = ref<LineRow[]>([])
+const orderFiles = ref<Record<string, unknown>[]>([])
 const form = reactive({
   totalPrice: '',
   shipUser: '',
@@ -525,6 +547,8 @@ async function load() {
     }
     const obj = res.obj as Record<string, unknown>
     detail.value = obj
+    const files = Array.isArray(obj.files) ? (obj.files as Record<string, unknown>[]) : []
+    orderFiles.value = files.map((f) => ({ ...f }))
     form.totalPrice = obj.totalPrice != null ? String(obj.totalPrice) : ''
     form.shipUser = String(obj.shipUser || '')
     form.shipPhone = String(obj.shipPhone || '')
@@ -633,6 +657,41 @@ async function onSave() {
 onMounted(async () => {
   await Promise.all([loadOptions(), load()])
 })
+
+async function onUploadOrderFile(options: { file: File }) {
+  if (!orderId) return
+  uploading.value = true
+  try {
+    const fd = new FormData()
+    fd.append('orderdata', options.file)
+    fd.append('id', orderId)
+    fd.append('type', '3')
+    const res = await uploadExpOrderFile(fd)
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '上传失败'))
+      return
+    }
+    ElMessage.success(String(res.resMsg || '上传成功'))
+    await load()
+  } finally {
+    uploading.value = false
+  }
+}
+
+async function removeOrderFile(idx: number) {
+  const f = orderFiles.value[idx]
+  if (!f) return
+  const aid = f.id
+  if (aid != null && String(aid) !== '') {
+    const res = await deleteExpOrderFile(aid as string | number)
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '删除失败'))
+      return
+    }
+  }
+  orderFiles.value.splice(idx, 1)
+  ElMessage.success('已删除')
+}
 </script>
 
 <style scoped>
@@ -668,6 +727,20 @@ onMounted(async () => {
   border-radius: 8px;
   padding: 20px 20px 8px;
   max-width: 1200px;
+}
+.file-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.file-tag {
+  max-width: 220px;
 }
 .lines-block {
   margin: 8px 0 20px;

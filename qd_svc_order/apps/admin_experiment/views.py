@@ -1553,7 +1553,10 @@ def order_upload_sub_invoice(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_upload_file(request: Request, user=None):
-    """对齐 Java uploadChildData：订单资料 type=3；测试数据 type=4（可挂 child_of_id）。"""
+    """对齐 Java uploadChildData：订单资料 type=3；测试数据 type=4（可挂 child_of_id）。
+
+    type=6 主单写 exp_of_id；type=9/10 子单写 child_of_id（对齐 ExperimentSubOrderController）。
+    """
     del user
     from apps.orders.services import accessory_upload as accessory_upload_svc
 
@@ -1565,13 +1568,22 @@ def order_upload_file(request: Request, user=None):
     child_id = to_int(data.get("childId") or data.get("child_of_id") or data.get("ofcId"))
     type_raw = str(data.get("type") or request.POST.get("type") or "3")
     acc_type = int(type_raw) if type_raw.isdigit() else 3
+    exp_of_id = oid or None
+    child_of_id = child_id
+    if oid:
+        of = order_repo.get_order(oid)
+        ot = str((of or {}).get("orderType") or "")
+        if ot in ("9", "10"):
+            # Java 子单上传：accessory.child_of_id = 子订单 id
+            child_of_id = oid
+            exp_of_id = None
     ok_flag, msg, obj = accessory_upload_svc.save_order_attachment(
         data=uploaded.read(),
         orig_name=uploaded.name or "upload",
         content_type=uploaded.content_type or "application/octet-stream",
         acc_type=acc_type,
-        exp_of_id=oid or None,
-        child_of_id=child_id,
+        exp_of_id=exp_of_id,
+        child_of_id=child_of_id,
     )
     return ok(obj, res_msg=msg) if ok_flag else fail(msg)
 

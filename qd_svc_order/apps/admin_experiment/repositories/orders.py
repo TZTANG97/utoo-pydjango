@@ -2296,10 +2296,27 @@ def _enrich_accessory_urls(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-def list_order_files(order_id: int) -> list[dict[str, Any]]:
-    """对齐 Java getByExpOfId：订单资料（排除 type=5 发票资料）。"""
+def list_order_files(order_id: int, *, order_type: str | int | None = None) -> list[dict[str, Any]]:
+    """对齐 Java：type=6 用 exp_of_id；type=9/10 用 child_of_id（兼查 exp_of_id 兼容旧数据）。"""
     from apps.orders.repositories import accessory_list as acc_repo
 
+    ot = str(order_type or "")
+    if ot in ("9", "10"):
+        by_child = acc_repo.load_accessories(child_of_id=order_id, exclude_types=(5,))
+        by_exp = acc_repo.load_accessories(exp_of_id=order_id, exclude_types=(5,))
+        seen: set[int] = set()
+        merged: list[dict[str, Any]] = []
+        for r in (by_child or []) + (by_exp or []):
+            try:
+                rid = int(r.get("id") or 0)
+            except (TypeError, ValueError):
+                rid = 0
+            if rid and rid in seen:
+                continue
+            if rid:
+                seen.add(rid)
+            merged.append(r)
+        return _enrich_accessory_urls(merged)
     rows = acc_repo.load_accessories(exp_of_id=order_id, exclude_types=(5,))
     return _enrich_accessory_urls(rows)
 
@@ -2339,13 +2356,13 @@ def delete_order_file(*, accessory_id: int) -> tuple[bool, str]:
 
 
 def _is_audit_admin(user_id: str | int | None) -> bool:
-    """对齐 Java detail：syUser.userName == 'admin' 可审。"""
+    """对齐 Java isshqx：is_czqx==1；另保留 admin / 系统管理员。"""
     uid = str(user_id or "").strip()
     if not uid:
         return False
     row = fetch_one(
         """
-        SELECT user_name AS userName, utoo_type AS utooType
+        SELECT user_name AS userName, utoo_type AS utooType, is_czqx AS isCzqx
         FROM sy_users WHERE CAST(id AS CHAR) = CAST(%(id)s AS CHAR) LIMIT 1
         """,
         {"id": uid},
@@ -2354,11 +2371,15 @@ def _is_audit_admin(user_id: str | int | None) -> bool:
         return False
     name = str(row.get("userName") or "").strip().lower()
     utoo = str(row.get("utooType") or "").strip()
-    return name == "admin" or utoo in ("系统管理员", "公共账号")
+    try:
+        czqx = int(row.get("isCzqx") or 0)
+    except (TypeError, ValueError):
+        czqx = 0
+    return name == "admin" or czqx == 1 or utoo in ("系统管理员",)
 
 
 def apply_audit_permission(row: dict[str, Any], viewer_user_id: str | int | None) -> None:
-    """对齐 Java：status==20 且 (当前用户==sale_manager 或 admin) 才显示审核按钮。"""
+    """对齐 Java：status==20 且 (当前用户==sale_manager 或 isCzqx/admin) 才显示审核按钮。"""
     try:
         st = int(row.get("orderStatus")) if row.get("orderStatus") is not None else -1
     except (TypeError, ValueError):
@@ -2462,7 +2483,7 @@ def get_order_detail_bundle(
     elif ot == "8":
         linked = list_linked_child_orders(order_id, child_order_type="9")
     related = list_related_orders(row.get("relatedOrderNum"))
-    files = list_order_files(order_id)
+    files = list_order_files(order_id, order_type=ot)
     invoice_files = list_invoice_files(order_id)
     yyd_files = [f for f in files if str(f.get("type") or "") == "6"]
     can_view_share = _viewer_can_see_share(viewer_user_id)
@@ -3630,13 +3651,18 @@ def update_order_basic(
         except (TypeError, ValueError):
             params["is_video"] = 1 if str(is_video).strip().upper() in ("1", "ON", "TRUE") else 0
         sets.append("is_video = %(is_video)s")
-    # 对齐 Java update：status==10→5；status==66→67；status>=30→20（可再次审核）
+    # 对齐 Java：type=6 editSave status==10→5 / 66→67 / >=30→20；
+    # type=9/10 updateOrder 一律回退到 5（待提交审核），并重置样品子行状态以便重走流程
     try:
         st = int(row.get("orderStatus") or 0)
     except (TypeError, ValueError):
         st = 0
+    ot = str(row.get("orderType") or "")
     next_st = None
-    if st == 10:
+    if ot in ("9", "10"):
+        if st not in (0, 5):
+            next_st = 5
+    elif st == 10:
         next_st = 5
     elif st == 66:
         next_st = 67
@@ -3657,6 +3683,38 @@ def update_order_basic(
             f"UPDATE experiment_order SET {', '.join(uniq)} WHERE id = %(id)s",
             params,
         )
+    # type=9/10 重新进入审核：子行回到待样品到货(2)，避免沿用旧样品流程按钮
+    if ot in ("9", "10") and next_st == 5:
+        try:
+            execute(
+                """
+                UPDATE experiment_order_child c
+                JOIN exp_qd_purchase_order_child poc ON poc.order_child_id = c.id
+                SET c.order_status = 2,
+                    c.is_confirm = 0,
+                    c.is_meeting = 0,
+                    c.meeting_num = NULL
+                WHERE poc.purchase_order_id = %(oid)s
+                  AND IFNULL(c.delete_status, 2) <> 1
+                  AND IFNULL(c.order_status, 0) > 0
+                """,
+                {"oid": order_id},
+            )
+        except Exception:
+            pass
+        try:
+            execute(
+                """
+                UPDATE experiment_order_child
+                SET order_status = 2, is_confirm = 0, is_meeting = 0, meeting_num = NULL
+                WHERE order_form_id = %(oid)s
+                  AND IFNULL(delete_status, 2) <> 1
+                  AND IFNULL(order_status, 0) > 0
+                """,
+                {"oid": order_id},
+            )
+        except Exception:
+            pass
     # 同步已有产品行数量/单价（对齐 Java editSave 更新 child）
     if children:
         for ch in children:
