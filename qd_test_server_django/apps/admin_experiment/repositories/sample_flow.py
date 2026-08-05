@@ -1580,7 +1580,9 @@ def confirm_children(
 
 
 @transaction.atomic
-def retest_apply(*, order_id: int, child_ids: Any) -> tuple[bool, str]:
+def retest_apply(
+    *, order_id: int, child_ids: Any, staff_user_id: str | int | None = None
+) -> tuple[bool, str]:
     """
     对齐 Java agreeretestapplication：
     - 样品归还(41) → 样品到货(36)，下一步样品领用
@@ -1619,7 +1621,12 @@ def retest_apply(*, order_id: int, child_ids: Any) -> tuple[bool, str]:
             {"st": to_st, "id": cid},
         )
         if n:
-            _write_log(order_id, f"{child.get('childOrderId') or cid}{label}")
+            # 对齐 Java：同意子订单{orderId}复测申请 + log_user
+            _write_log(
+                order_id,
+                f"同意子订单{child.get('childOrderId') or cid}复测申请（{label}）",
+                user_id=staff_user_id,
+            )
             ok_n += 1
             # 主单状态回落到复测后应有的节点
             execute(

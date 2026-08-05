@@ -445,18 +445,21 @@
           <el-descriptions-item label="制单员">{{ detail.addUser || '-' }}</el-descriptions-item>
           <el-descriptions-item label="下单时间">{{ detail.orderTime || '-' }}</el-descriptions-item>
           <el-descriptions-item label="预计收货时间">{{ detail.deliveryTime || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="客户账号">{{ detail.customMobile || detail.mobile || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="客户账号">{{ detail.customMobile || '-' }}</el-descriptions-item>
           <el-descriptions-item label="仓库管理员">{{ detail.warehouseUser || detail.stockUser || '-' }}</el-descriptions-item>
           <el-descriptions-item label="联系电话">
-            {{ detail.contactPhone || detail.mobile || detail.shipPhone || '-' }}
+            {{ detail.contactPhone || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="样品是否回收">{{ detail.reversoLabel || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="寄回地址" :span="2">{{ detail.shipAddress || '-' }}</el-descriptions-item>
+          <el-descriptions-item
+            v-if="detail.showShipAddress"
+            label="样品寄回地址"
+            :span="2"
+          >
+            {{ detail.shipAddress || '-' }}
+          </el-descriptions-item>
           <el-descriptions-item label="是否云视频">{{ detail.isVideoLabel || '-' }}</el-descriptions-item>
           <el-descriptions-item label="是否确认">{{ detail.confirmLabel || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="备注" :span="3">
-            <span class="mark-text">{{ detail.mark || detail.msg || '-' }}</span>
-          </el-descriptions-item>
         </el-descriptions>
         <el-descriptions v-else :column="3" border class="soft-desc">
           <el-descriptions-item label="订单编号">
@@ -676,7 +679,7 @@
           <el-table-column prop="goodsBrand" label="品牌" min-width="90" show-overflow-tooltip />
           <el-table-column prop="goodsCount" label="数量" width="70" align="center" />
           <el-table-column prop="projectName" label="测试项目" min-width="120" show-overflow-tooltip />
-          <el-table-column prop="className" label="分类" min-width="100" show-overflow-tooltip />
+          <el-table-column prop="className" label="实验测试分类" min-width="110" show-overflow-tooltip />
           <el-table-column
             v-if="!isChildKind"
             prop="price"
@@ -721,6 +724,20 @@
           />
           <el-table-column v-if="orderType === '10'" prop="deviceName" label="设备名称" min-width="100" show-overflow-tooltip />
           <el-table-column v-if="orderType === '10'" prop="platformName" label="实验平台" min-width="100" show-overflow-tooltip />
+          <el-table-column v-if="orderType === '10'" prop="storePosition" label="仓库位置" min-width="120" show-overflow-tooltip />
+          <el-table-column v-if="orderType === '10'" label="样品管理单" min-width="110" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{
+                row.sampleShow
+                  ? [row.sampleInfo?.sampleName, row.sampleInfo?.sampleNum].filter(Boolean).join(' / ') || '有'
+                  : '-'
+              }}
+            </template>
+          </el-table-column>
+          <el-table-column v-if="orderType === '10'" prop="retestOrderNo" label="关联复测编号" min-width="120" show-overflow-tooltip />
+          <el-table-column v-if="orderType === '10'" prop="settingTime" label="预约云视频时间" width="160" show-overflow-tooltip />
+          <el-table-column v-if="orderType === '10'" prop="meetingNum" label="腾讯会议号" width="110" show-overflow-tooltip />
+          <el-table-column v-if="orderType === '10'" prop="jtTime" label="具体完成时间" width="160" show-overflow-tooltip />
           <el-table-column v-if="orderType === '9'" prop="costPrice" label="分包单价" width="90" align="right" />
           <el-table-column v-if="isChildKind" prop="confirmLabel" label="确认" width="80" align="center" />
           <el-table-column v-if="isChildKind && orderType === '10'" label="预计完成时间" width="170">
@@ -733,7 +750,7 @@
                 placeholder="预计完成时间"
                 style="width: 158px"
               />
-              <span v-else>{{ row.finishTime || '-' }}</span>
+              <span v-else>{{ row.finishTime || row.expectFinishTime || '-' }}</span>
             </template>
           </el-table-column>
           <el-table-column

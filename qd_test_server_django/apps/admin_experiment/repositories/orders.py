@@ -1110,6 +1110,26 @@ def _is_child_order_type(order_type: Any) -> bool:
     return str(order_type or "") in ("9", "10")
 
 
+def _truthy_flag(val: Any, *, yes_values: tuple[str, ...] = ("1", "ON", "TRUE", "YES")) -> bool:
+    """兼容 Java int(1/0/2) 与历史 ON/OFF 字符串。"""
+    if val is None:
+        return False
+    s = str(val).strip().upper()
+    if not s or s in ("0", "2", "OFF", "FALSE", "NO", "NONE"):
+        return False
+    return s in yes_values
+
+
+def _reverso_is_yes(val: Any) -> bool:
+    """样品回收：Java reverso_context 1=回收，2=不回收；亦兼容 ON。"""
+    return _truthy_flag(val, yes_values=("1", "ON", "TRUE", "YES"))
+
+
+def _video_is_yes(val: Any) -> bool:
+    """是否云视频：Java is_video 1=是，0=否。"""
+    return _truthy_flag(val, yes_values=("1", "ON", "TRUE", "YES"))
+
+
 def get_order(order_id: int) -> dict[str, Any] | None:
     """对齐 Java orderdetail.htm 主单头字段（admin 侧精简版）。"""
     row = fetch_one(
@@ -1171,8 +1191,8 @@ def get_order(order_id: int) -> dict[str, Any] | None:
         LEFT JOIN experiment_order p ON t.parent_id = p.id
         LEFT JOIN qd_user_company q ON t.customer_name = q.id
         LEFT JOIN `user` u ON t.supplier_name = u.id
-        LEFT JOIN `user` cu ON t.custom_user_id = cu.id
-        LEFT JOIN `user` pcu ON p.custom_user_id = pcu.id
+        LEFT JOIN `user` cu ON CAST(t.custom_user_id AS CHAR) = CAST(cu.id AS CHAR)
+        LEFT JOIN `user` pcu ON CAST(p.custom_user_id AS CHAR) = CAST(pcu.id AS CHAR)
         LEFT JOIN sy_users sm ON t.sale_manager = sm.id
         LEFT JOIN sy_users su ON t.sale_user = su.id
         LEFT JOIN sy_users au ON t.add_user_id = au.id
@@ -1359,40 +1379,102 @@ def get_order(order_id: int) -> dict[str, Any] | None:
             row[key] = ""
     if not row.get("orderTime"):
         row["orderTime"] = (row.get("addTime") or "")[:10]
-    row["isVideoLabel"] = "是" if str(row.get("isVideo") or "") in ("1", "true") else "否"
-    # type=9/10：样品回收/电话等可回退父单（对齐 Java orderParent / 抢单详情）
+    row["isVideoLabel"] = "是" if _video_is_yes(row.get("isVideo")) else "否"
+    row["showShipAddress"] = False
+    # type=9/10：样品回收/电话/云视频/寄回地址对齐 Java —— 以父主单为准
     if ot in ("9", "10"):
-        rev = row.get("reversoContext")
-        if rev is None or str(rev).strip() == "":
+        # type=10 Java 直接取父单 reverso / mobile / is_video / send_address
+        if ot == "10":
             rev = row.get("parentReversoContext")
-        row["reversoLabel"] = "是" if str(rev or "") == "1" else "否"
-        phone = (
-            str(row.get("mobile") or "").strip()
-            or str(row.get("parentMobile") or "").strip()
-            or str(row.get("shipPhone") or "").strip()
-        )
+            if rev is None or str(rev).strip() == "":
+                rev = row.get("reversoContext")
+            pv = row.get("parentIsVideo")
+            if pv is None or str(pv).strip() == "":
+                pv = row.get("isVideo")
+            phone = (
+                str(row.get("parentMobile") or "").strip()
+                or str(row.get("mobile") or "").strip()
+                or str(row.get("shipPhone") or "").strip()
+            )
+        else:
+            rev = row.get("reversoContext")
+            if rev is None or str(rev).strip() == "":
+                rev = row.get("parentReversoContext")
+            pv = row.get("parentIsVideo")
+            if pv is None or str(pv).strip() == "":
+                pv = row.get("isVideo")
+            phone = (
+                str(row.get("mobile") or "").strip()
+                or str(row.get("parentMobile") or "").strip()
+                or str(row.get("shipPhone") or "").strip()
+            )
+        rev_yes = _reverso_is_yes(rev)
+        row["reversoLabel"] = "是" if rev_yes else "否"
+        row["reversoYes"] = rev_yes
+        row["isVideoLabel"] = "是" if _video_is_yes(pv) else "否"
         row["contactPhone"] = phone or "-"
         if not str(row.get("mobile") or "").strip() and phone:
             row["mobile"] = phone
-        if ot == "9":
-            if not str(row.get("shipAddress") or "").strip():
-                row["shipAddress"] = str(row.get("parentSendAddress") or "").strip()
-            pv = row.get("parentIsVideo")
-            if pv is not None and str(pv).strip() != "":
-                row["isVideoLabel"] = "是" if str(pv) in ("1", "true") else "否"
+        # 仅回收=是时展示父单寄回地址（Java #if($!send_address)）
+        if rev_yes:
+            addr = (
+                str(row.get("parentSendAddress") or "").strip()
+                or str(row.get("shipAddress") or "").strip()
+            )
+            row["shipAddress"] = addr
+            row["showShipAddress"] = bool(addr)
+        else:
+            row["shipAddress"] = ""
+            row["showShipAddress"] = False
+        # 子单客户公司名可回退父单
+        if ot == "10" and (not row.get("customerName") or row.get("customerName") in ("", "-")):
+            parent_pk = row.get("parentPkId")
+            if parent_pk not in (None, "", 0, "0"):
+                try:
+                    pc = fetch_one(
+                        """
+                        SELECT
+                            q.name AS companyName,
+                            cu.mobile AS customMobile,
+                            p.mobile AS parentMobile,
+                            p.custom_user_id AS customUserId,
+                            p.customer_name AS customerId
+                        FROM experiment_order p
+                        LEFT JOIN qd_user_company q ON p.customer_name = q.id
+                        LEFT JOIN `user` cu ON p.custom_user_id = cu.id
+                        WHERE p.id = %(id)s
+                        LIMIT 1
+                        """,
+                        {"id": parent_pk},
+                    )
+                    if pc:
+                        pname = str(pc.get("companyName") or "").strip()
+                        if pname:
+                            row["customerName"] = pname
+                            if row.get("companyName") in (None, "", "-"):
+                                row["companyName"] = pname
+                        if not str(row.get("customUserMobile") or "").strip():
+                            row["customUserMobile"] = str(pc.get("customMobile") or "").strip()
+                        if not str(row.get("parentCustomUserMobile") or "").strip():
+                            row["parentCustomUserMobile"] = str(pc.get("customMobile") or "").strip()
+                        if not phone and pc.get("parentMobile"):
+                            phone = str(pc.get("parentMobile") or "").strip()
+                            row["contactPhone"] = phone or "-"
+                            row["parentMobile"] = phone
+                except Exception:
+                    pass
     else:
         rev = row.get("reversoContext")
-        row["reversoLabel"] = "是" if str(rev or "") == "1" else "否"
+        row["reversoLabel"] = "是" if _reverso_is_yes(rev) else "否"
+        row["reversoYes"] = _reverso_is_yes(rev)
         row["contactPhone"] = str(row.get("mobile") or row.get("shipPhone") or "").strip() or "-"
-    # 客户账号：优先 custom_user.mobile，其次订单/父单 mobile（对齐 Java customUser.mobile）
-    row["customMobile"] = (
+        row["showShipAddress"] = True
+    # 客户账号：子单 customUser.mobile，空则父单（对齐 Java；勿用联系电话冒充）
+    cm = (
         str(row.get("customUserMobile") or "").strip()
-        or str(row.get("mobile") or "").strip()
         or str(row.get("parentCustomUserMobile") or "").strip()
-        or str(row.get("parentMobile") or "").strip()
-        or str(row.get("contactPhone") or "").strip()
-        or "-"
     )
+    row["customMobile"] = cm or "-"
     # mark 为标志位(bigint)，备注文本只用 msg
     row["msg"] = str(row.get("msg") or "").strip()
     # 预计付款时间/金额（对齐 Java collectionTimes）
@@ -1712,7 +1794,7 @@ _CHILD_LINE_SELECT = """
             c.experiment_project_name AS projectName,
             c.experiment_class_id AS classId,
             c.experiment_class_name AS className,
-            c.experiment_class_name AS deviceName,
+            c.experiment_project_name AS deviceName,
             c.goods_price AS price,
             c.reference_price AS referencePrice,
             c.cost_price AS costPrice,
@@ -1792,7 +1874,7 @@ def _fetch_children_fallback(order_id: int) -> list[dict[str, Any]]:
             c.goods_brand_name AS goodsBrand, c.goods_nums AS goodsCount,
             c.experiment_project_name AS projectName,
             c.experiment_class_name AS className,
-            c.experiment_class_name AS deviceName,
+            c.experiment_project_name AS deviceName,
             c.goods_price AS price,
             c.reference_price AS referencePrice,
             c.cost_price AS costPrice,
@@ -1827,7 +1909,7 @@ def _fetch_children_fallback(order_id: int) -> list[dict[str, Any]]:
             c.goods_brand_name AS goodsBrand, c.goods_nums AS goodsCount,
             c.experiment_project_name AS projectName,
             c.experiment_class_name AS className,
-            c.experiment_class_name AS deviceName,
+            c.experiment_project_name AS deviceName,
             c.goods_price AS price,
             c.reference_price AS referencePrice,
             c.cost_price AS costPrice,
@@ -3513,8 +3595,9 @@ def update_order_basic(
         params["invoice_type"] = 1 if inv in ("1", "ON", "TRUE", "YES") else 0
         sets.append("invoiceType = %(invoice_type)s")
     if reverso_context not in (None, ""):
+        # 对齐 Java：1=回收 2=不回收（勿再写 ON/OFF 字符串）
         rev = str(reverso_context).strip().upper()
-        params["reverso_context"] = "ON" if rev in ("1", "ON", "TRUE", "YES") else "OFF"
+        params["reverso_context"] = 1 if rev in ("1", "ON", "TRUE", "YES") else 2
         sets.append("reverso_context = %(reverso_context)s")
     if taxes not in (None, ""):
         try:

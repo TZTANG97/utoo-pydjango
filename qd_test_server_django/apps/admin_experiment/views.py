@@ -1234,12 +1234,15 @@ def order_confirm_done(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def order_retest(request: Request, user=None):
-    del user
     data = merge_payload(request)
     oid = _order_id_from(data)
     if not oid:
         return fail("参数错误")
-    ok_flag, msg = sample_flow_repo.retest_apply(order_id=oid, child_ids=_child_ids_from(data))
+    ok_flag, msg = sample_flow_repo.retest_apply(
+        order_id=oid,
+        child_ids=_child_ids_from(data),
+        staff_user_id=_staff_id(user),
+    )
     return ok(res_msg=msg) if ok_flag else fail(msg)
 
 
