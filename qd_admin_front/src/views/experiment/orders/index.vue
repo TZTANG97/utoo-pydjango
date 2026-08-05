@@ -6,17 +6,24 @@
         <el-button type="warning" :loading="exporting" @click="handleExport">导出EXCEL</el-button>
       </div>
 
-      <el-form :inline="true" class="filter-form" @submit.prevent>
+      <el-form :inline="true" class="filter-form" @submit.prevent="reload">
         <el-form-item>
           <el-input
             v-model="filters.customerName"
             clearable
             placeholder="客户企业名称"
             style="width: 150px"
+            @keyup.enter="reload"
           />
         </el-form-item>
         <el-form-item>
-          <el-input v-model="filters.orderId" clearable placeholder="订单编号" style="width: 150px" />
+          <el-input
+            v-model="filters.orderId"
+            clearable
+            placeholder="订单编号"
+            style="width: 150px"
+            @keyup.enter="reload"
+          />
         </el-form-item>
         <el-form-item>
           <el-input
@@ -24,6 +31,7 @@
             clearable
             placeholder="型号/产品名称"
             style="width: 150px"
+            @keyup.enter="reload"
           />
         </el-form-item>
         <el-form-item>
@@ -122,8 +130,8 @@
           </el-select>
         </el-form-item>
         <el-form-item class="filter-actions">
-          <el-button type="primary" @click="reload">查询</el-button>
-          <el-button type="danger" class="btn-reset" @click="resetFilters">重置</el-button>
+          <el-button type="primary" native-type="submit">查询</el-button>
+          <el-button type="danger" class="btn-reset" native-type="button" @click="resetFilters">重置</el-button>
         </el-form-item>
       </el-form>
     </section>
@@ -417,11 +425,14 @@ function openDetail(row: Record<string, unknown>) {
 }
 
 function onCreate() {
-  ElMessage.info('创建实验订单功能将在后续批次完善')
+  router.push({ name: 'ExperimentOrderCreate' })
 }
 
-function onCopy(_row: Record<string, unknown>) {
-  ElMessage.info('复制订单功能将在后续批次完善')
+function onCopy(row: Record<string, unknown>) {
+  router.push({
+    name: 'ExperimentOrderCreate',
+    query: { copyFrom: String(row.id) },
+  })
 }
 
 function downloadCsv(filename: string, dataRows: Record<string, unknown>[]) {
