@@ -76,9 +76,16 @@ def forward_request(
                 # 否则 headers 里残留的 form Content-Type 会导致上游解析不到参数。
                 if "application/json" in ct:
                     fwd = {k: v for k, v in headers.items() if k.lower() != "content-type"}
+                    # submitExpOrder 等接口 body 为 JSON 数组；_plain_form_dict 只认 dict，
+                    # list 会被当成 {} 转发，上游报「订单没有数据」。
+                    raw = request.data
+                    if isinstance(raw, list):
+                        json_payload = raw
+                    else:
+                        json_payload = _plain_form_dict(raw)
                     upstream = client.post(
                         url,
-                        json=_plain_form_dict(request.data),
+                        json=json_payload,
                         params=params,
                         headers={**fwd, "Content-Type": "application/json"},
                     )

@@ -537,7 +537,7 @@ export const constantRoutes: RouteRecordRaw[] = [
         path: 'experiment/order-create',
         name: 'ExperimentOrderCreate',
         component: () => import('@admin/views/experiment/order-create/index.vue'),
-        meta: { title: '实验订单', hidden: true },
+        meta: { title: '新增实验订单', hidden: true },
       },
       {
         path: 'experiment/sub-order-create',
