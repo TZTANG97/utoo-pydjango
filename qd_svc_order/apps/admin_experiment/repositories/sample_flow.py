@@ -458,6 +458,131 @@ def _set_children_status(
     return True, "操作成功"
 
 
+def _write_outin_log(
+    *,
+    of_id: int,
+    info: str,
+    staff_user_id: str | int | None = None,
+    store_id: int | None = None,
+    store_position_id: int | None = None,
+) -> None:
+    uid = str(staff_user_id).strip() if staff_user_id not in (None, "") else None
+    try:
+        execute(
+            """
+            INSERT INTO exp_outin_depot_log
+                (addTime, deleteStatus, of_id, log_info, log_user_id, store_id, store_position_id)
+            VALUES
+                (NOW(), 0, %(of_id)s, %(info)s, %(uid)s, %(store_id)s, %(pos_id)s)
+            """,
+            {
+                "of_id": of_id,
+                "info": (info or "")[:500],
+                "uid": uid,
+                "store_id": store_id,
+                "pos_id": store_position_id,
+            },
+        )
+    except Exception:
+        try:
+            execute(
+                """
+                INSERT INTO exp_outin_depot_log
+                    (addTime, deleteStatus, of_id, log_info, store_id, store_position_id)
+                VALUES
+                    (NOW(), 0, %(of_id)s, %(info)s, %(store_id)s, %(pos_id)s)
+                """,
+                {
+                    "of_id": of_id,
+                    "info": (info or "")[:500],
+                    "store_id": store_id,
+                    "pos_id": store_position_id,
+                },
+            )
+        except Exception:
+            logger.exception("write outin log failed of_id=%s", of_id)
+
+
+def _insert_sample_treasury(
+    *,
+    order_id: int,
+    children: list[dict[str, Any]],
+    store_id: int | None,
+    store_position_id: int | None,
+    staff_user_id: str | int | None,
+    arrive_log_info: str,
+) -> int | None:
+    """
+    对齐 Java GoodsOutTreasuryServiceImpl.saveOutInForm：
+    写样品管理单 + 子表 +「创建样品管理单」+「样品到货…」日志。
+    """
+    if not children:
+        return None
+    out_num = f"YP{datetime.now().strftime('%Y%m%d%H%M%S')}{children[0].get('id') or 0}"
+    uid = str(staff_user_id).strip() if staff_user_id not in (None, "") else None
+    try:
+        out_id = execute_insert(
+            """
+            INSERT INTO exp_goods_out_treasury
+                (addTime, deleteStatus, out_num, order_id, store_id, status,
+                 in_out_type, ftype, inTreasury_user, add_user_id, sj_out_time, in_status)
+            VALUES
+                (NOW(), 0, %(out_num)s, %(oid)s, %(store_id)s, 1,
+                 1, 1, %(uid)s, %(uid)s, NOW(), 0)
+            """,
+            {"out_num": out_num, "oid": order_id, "store_id": store_id, "uid": uid},
+        )
+    except Exception:
+        out_id = execute_insert(
+            """
+            INSERT INTO exp_goods_out_treasury
+                (addTime, deleteStatus, out_num, order_id, store_id, status,
+                 in_out_type, ftype, inTreasury_user, sj_out_time)
+            VALUES
+                (NOW(), 0, %(out_num)s, %(oid)s, %(store_id)s, 1,
+                 1, 1, %(uid)s, NOW())
+            """,
+            {"out_num": out_num, "oid": order_id, "store_id": store_id, "uid": uid},
+        )
+    for ch in children:
+        execute_insert(
+            """
+            INSERT INTO exp_goods_out_treasury_child
+                (addTime, deleteStatus, out_id, order_child_id, goods_id, goods_name,
+                 goods_brand_id, goods_brand_name, goods_spec, store_id,
+                 store_position_id, got_status, out_num)
+            VALUES
+                (NOW(), 0, %(out_id)s, %(cid)s, %(goods_id)s, %(goods_name)s,
+                 %(brand_id)s, %(brand_name)s, %(spec)s, %(store_id)s,
+                 %(pos_id)s, 1, 1)
+            """,
+            {
+                "out_id": out_id,
+                "cid": ch.get("id"),
+                "goods_id": ch.get("goodsId") or 0,
+                "goods_name": str(ch.get("goodsName") or "")[:200],
+                "brand_id": ch.get("goodsBrandId") or 0,
+                "brand_name": str(ch.get("goodsBrandName") or "")[:100],
+                "spec": str(ch.get("goodsSpec") or "")[:200],
+                "store_id": store_id,
+                "pos_id": store_position_id,
+            },
+        )
+    _write_outin_log(
+        of_id=int(out_id),
+        info="创建样品管理单",
+        staff_user_id=staff_user_id,
+    )
+    _write_outin_log(
+        of_id=int(out_id),
+        info=arrive_log_info[:500],
+        staff_user_id=staff_user_id,
+        store_id=store_id,
+        store_position_id=store_position_id,
+    )
+    return int(out_id)
+
+
 @transaction.atomic
 def sample_arrive(
     *,
@@ -469,9 +594,8 @@ def sample_arrive(
 ) -> tuple[bool, str]:
     """
     对齐 Java inTreasury/saveInTreasury type=1：
-    - 不选仓库/仓位：仅推进子行状态到样品到货
-    - 同时选仓库+仓位：写入样品管理单，并把样品信息落到对应仓位
-    - 仅传仓位 id：反查 sample_store_id
+    - 选仓库+仓位：占用仓位并生成样品管理单
+    - 不选仓位：仍生成样品管理单（无仓位），仅推进状态
     """
     ids = _parse_ids(child_ids)
     if not ids:
@@ -496,9 +620,30 @@ def sample_arrive(
             sid = str(pos_row.get("storeId"))
     if (sid and not spos) or (spos and not sid):
         return False, "请同时选择仓库名称和仓库位置，或不选"
+
+    children_rows: list[dict[str, Any]] = []
+    for cid in ids:
+        child = fetch_one(
+            """
+            SELECT
+                id, order_id AS childOrderId, order_status AS orderStatus,
+                goods_id AS goodsId, goods_name AS goodsName,
+                goods_brand_id AS goodsBrandId, goods_brand_name AS goodsBrandName,
+                goods_spec AS goodsSpec
+            FROM experiment_order_child
+            WHERE id = %(id)s AND IFNULL(delete_status, 2) <> 1
+            LIMIT 1
+            """,
+            {"id": cid},
+        )
+        if child:
+            children_rows.append(child)
+    if not children_rows:
+        return False, "子单行不存在"
+
     log_suffix = "样品到货"
-    extra = ""
-    extra_params: dict[str, Any] = {}
+    store_i: int | None = None
+    pos_i: int | None = None
 
     if sid and spos:
         if len(ids) != 1:
@@ -541,26 +686,10 @@ def sample_arrive(
             occupied = 0
         if occupied:
             return False, "请确认样本仓库位置为空闲!"
-        child = fetch_one(
-            """
-            SELECT
-                id, order_id AS childOrderId, order_status AS orderStatus,
-                goods_id AS goodsId, goods_name AS goodsName,
-                goods_brand_id AS goodsBrandId, goods_brand_name AS goodsBrandName,
-                goods_spec AS goodsSpec
-            FROM experiment_order_child
-            WHERE id = %(id)s AND IFNULL(delete_status, 2) <> 1
-            LIMIT 1
-            """,
-            {"id": ids[0]},
-        )
-        if not child:
-            return False, "子单行不存在"
+        child = children_rows[0]
         slot = f"{pos.get('blockName') or ''}-{pos.get('number') or ''}".strip("-")
         store_name = str(store.get("storeName") or "")
         log_suffix = f"样品到货,仓库位置{store_name}; {slot}"
-        extra = ", in_status = 1"
-        # 占用仓位
         execute(
             """
             UPDATE sample_goods_store_position
@@ -581,62 +710,20 @@ def sample_arrive(
                 "sample_name": str(child.get("goodsName") or "")[:200],
             },
         )
-        # 样品管理单
-        out_num = f"YP{datetime.now().strftime('%Y%m%d%H%M%S')}{ids[0]}"
-        out_id = execute_insert(
-            """
-            INSERT INTO exp_goods_out_treasury
-                (addTime, deleteStatus, out_num, order_id, store_id, status,
-                 in_out_type, ftype, inTreasury_user, sj_out_time)
-            VALUES
-                (NOW(), 0, %(out_num)s, %(oid)s, %(store_id)s, 1,
-                 1, 1, NULL, NOW())
-            """,
-            {"out_num": out_num, "oid": order_id, "store_id": store_i},
-        )
-        execute_insert(
-            """
-            INSERT INTO exp_goods_out_treasury_child
-                (addTime, deleteStatus, out_id, order_child_id, goods_id, goods_name,
-                 goods_brand_id, goods_brand_name, goods_spec, store_id,
-                 store_position_id, got_status)
-            VALUES
-                (NOW(), 0, %(out_id)s, %(cid)s, %(goods_id)s, %(goods_name)s,
-                 %(brand_id)s, %(brand_name)s, %(spec)s, %(store_id)s,
-                 %(pos_id)s, 1)
-            """,
-            {
-                "out_id": out_id,
-                "cid": ids[0],
-                "goods_id": child.get("goodsId") or 0,
-                "goods_name": str(child.get("goodsName") or "")[:200],
-                "brand_id": child.get("goodsBrandId") or 0,
-                "brand_name": str(child.get("goodsBrandName") or "")[:100],
-                "spec": str(child.get("goodsSpec") or "")[:200],
-                "store_id": store_i,
-                "pos_id": pos_i,
-            },
-        )
-        try:
-            execute(
-                """
-                INSERT INTO exp_outin_depot_log
-                    (addTime, deleteStatus, of_id, log_info, store_id, store_position_id)
-                VALUES
-                    (NOW(), 0, %(of_id)s, %(info)s, %(store_id)s, %(pos_id)s)
-                """,
-                {
-                    "of_id": out_id,
-                    "info": log_suffix[:500],
-                    "store_id": store_i,
-                    "pos_id": pos_i,
-                },
-            )
-        except Exception:
-            pass
     else:
-        # 无仓位：对齐 Java isPosition=0，标记 in_status
-        extra = ", in_status = 1"
+        # 对齐 Java isPosition=0：仍生成样品管理单，日志为「样品到货,仓库位置; 」
+        log_suffix = "样品到货,仓库位置; "
+
+    out_id = _insert_sample_treasury(
+        order_id=order_id,
+        children=children_rows,
+        store_id=store_i,
+        store_position_id=pos_i,
+        staff_user_id=staff_user_id,
+        arrive_log_info=log_suffix,
+    )
+    if not out_id:
+        return False, "生成样品管理单失败"
 
     ok, msg = _set_children_status(
         order_id=order_id,
@@ -644,8 +731,8 @@ def sample_arrive(
         expect_from={0, 1, ST_PROCESSED},
         to_status=ST_ARRIVE,
         log_suffix=log_suffix,
-        extra_sql=extra,
-        extra_params=extra_params or None,
+        extra_sql=", in_status = 1",
+        extra_params=None,
         staff_user_id=staff_user_id,
     )
     if ok:
@@ -657,8 +744,8 @@ def sample_arrive(
             notify_sample_arrive(order_id=order_id, staff_user_id=staff_user_id)
         except Exception:
             logger.exception("wx notify sample_arrive failed order=%s", order_id)
-    if ok and sid and spos:
-        return True, "样品入库成功！"
+    if ok:
+        return True, "样品入库成功！" if store_i and pos_i else "样品到货成功"
     return ok, msg
 
 

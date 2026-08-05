@@ -243,16 +243,17 @@ def list_sample_export_rows(
         where += " AND t.store_id = %(store_id)s"
         params["store_id"] = store_id
     if start_time:
+        # 对齐 Java：按入库单 sj_out_time 筛选；列值仍取日志 addTime
         where += " AND t.sj_out_time >= %(start_time)s"
         params["start_time"] = start_time
     if end_time:
         where += " AND t.sj_out_time <= %(end_time)s"
         params["end_time"] = end_time
-    return fetch_all(
+    rows = fetch_all(
         f"""
         SELECT
-            log.addTime AS operateTime,
-            u.user_name AS operateUser,
+            DATE_FORMAT(log.addTime, '%%Y-%%m-%%d %%H:%%i:%%s') AS operateTime,
+            COALESCE(NULLIF(u.true_name, ''), u.user_name, '') AS operateUser,
             log.log_info AS operateInfo,
             eoc.order_id AS orderChildId,
             c.goods_brand_name AS goodsBrandName,
@@ -262,7 +263,7 @@ def list_sample_export_rows(
             gs.sample_store_name AS storeName
         FROM exp_goods_out_treasury t
         LEFT JOIN exp_outin_depot_log log ON t.id = log.of_id
-        LEFT JOIN sy_users u ON log.log_user_id = u.id
+        LEFT JOIN sy_users u ON CAST(log.log_user_id AS CHAR) = CAST(u.id AS CHAR)
         LEFT JOIN exp_goods_out_treasury_child c ON t.id = c.out_id
         LEFT JOIN experiment_order_child eoc ON c.order_child_id = eoc.id
         LEFT JOIN sample_goods_storehouse gs ON log.store_id = gs.id
@@ -274,6 +275,18 @@ def list_sample_export_rows(
         """,
         params,
     )
+    for r in rows or []:
+        ot = r.get("operateTime")
+        r["operateTime"] = str(ot).replace("T", " ")[:19] if ot else ""
+        r["operateUser"] = str(r.get("operateUser") or "").strip()
+        r["operateInfo"] = str(r.get("operateInfo") or "")
+        r["orderChildId"] = str(r.get("orderChildId") or "")
+        r["goodsBrandName"] = str(r.get("goodsBrandName") or "")
+        r["goodsName"] = str(r.get("goodsName") or "")
+        r["goodsSpec"] = str(r.get("goodsSpec") or "")
+        r["storeSlot"] = str(r.get("storeSlot") or "").strip("-")
+        r["storeName"] = str(r.get("storeName") or "")
+    return rows or []
 
 
 def list_sample_order_logs(out_id: int) -> list[dict[str, Any]]:

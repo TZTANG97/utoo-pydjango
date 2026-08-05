@@ -4,9 +4,15 @@
       <el-button type="warning" @click="exportVisible = true">导出样品出入库</el-button>
     </template>
 
-    <el-form :inline="true" class="filter-form" @submit.prevent>
+    <el-form :inline="true" class="filter-form" @submit.prevent="reload">
       <el-form-item label="入库编号">
-        <el-input v-model="filters.outNum" clearable placeholder="入库编号" style="width: 160px" />
+        <el-input
+          v-model="filters.outNum"
+          clearable
+          placeholder="入库编号"
+          style="width: 160px"
+          @keyup.enter="reload"
+        />
       </el-form-item>
       <el-form-item label="实际入库时间">
         <el-date-picker
@@ -19,7 +25,13 @@
         />
       </el-form-item>
       <el-form-item label="关联单号">
-        <el-input v-model="filters.orderId" clearable placeholder="关联单号" style="width: 180px" />
+        <el-input
+          v-model="filters.orderId"
+          clearable
+          placeholder="关联单号"
+          style="width: 180px"
+          @keyup.enter="reload"
+        />
       </el-form-item>
       <el-form-item label="仓库">
         <el-select v-model="filters.storeId" clearable filterable placeholder="全部仓库" style="width: 160px">
@@ -32,7 +44,7 @@
         </el-select>
       </el-form-item>
       <el-form-item>
-        <el-button type="primary" @click="reload">查询</el-button>
+        <el-button type="primary" native-type="submit" @click="reload">查询</el-button>
       </el-form-item>
     </el-form>
 
