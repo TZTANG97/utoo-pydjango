@@ -8,15 +8,33 @@
         <el-button type="warning" :loading="exporting" @click="handleExport">导出EXCEL</el-button>
       </div>
 
-      <el-form :inline="true" class="filter-form" @submit.prevent>
+      <el-form :inline="true" class="filter-form" @submit.prevent="reload">
         <el-form-item>
-          <el-input v-model="filters.customerName" clearable placeholder="客户名称" style="width: 150px" />
+          <el-input
+            v-model="filters.customerName"
+            clearable
+            placeholder="客户名称"
+            style="width: 150px"
+            @keyup.enter="reload"
+          />
         </el-form-item>
         <el-form-item>
-          <el-input v-model="filters.parentOrderId" clearable placeholder="来源订单" style="width: 150px" />
+          <el-input
+            v-model="filters.parentOrderId"
+            clearable
+            placeholder="来源订单"
+            style="width: 150px"
+            @keyup.enter="reload"
+          />
         </el-form-item>
         <el-form-item>
-          <el-input v-model="filters.orderId" clearable placeholder="订单编号" style="width: 150px" />
+          <el-input
+            v-model="filters.orderId"
+            clearable
+            placeholder="订单编号"
+            style="width: 150px"
+            @keyup.enter="reload"
+          />
         </el-form-item>
         <el-form-item>
           <div class="date-range">
