@@ -12,32 +12,77 @@ from apps.core.db_utils import fetch_all, scalar
 def _resolve_welcome_user_type(utoo_type: str | None) -> int:
     """对齐 Java IndexViewController.indexHtml（welcome.htm）的 userType。
 
-    Java UserTypes：TEST_MANAGER.roleName=销售主管，欢迎页与销售主管同待审/运营入口。
+    Java 用 compareRole 比「一级权限 roleName」，不是精确 type 名：
+    - 制单员 / 公司基金 / 仓库管理 / 外部投资 / 销售人员… 的 roleName 均为「A类销售人员」
+      → 在 A_SALESPERSON 分支命中 → userType=4（后续 5/6/7 分支实际不可达）
+    - 仅「公司账号」→ 2（公司基金不是公司账号）
+    - 公共账号 / 外部合作公司 / 外部公司 → 0（空白欢迎页，无图表）
     """
     role = (utoo_type or "").strip()
     if not role:
         return 0
     upper = role.upper()
-    if "系统管理员" in role or upper == "ADMIN" or role == "admin":
+
+    # 1 系统管理员
+    if role == "系统管理员" or "系统管理员" in role or upper == "ADMIN" or role == "admin":
         return 1
-    if "公司基金" in role or "公司账号" in role or role == "公司":
+
+    # 2 仅公司账号（不可把「公司基金」算进来）
+    if role == "公司账号" or role == "公司" or upper == "COMPANY":
         return 2
-    # 销售主管 / 测试主管（枚举 TEST_MANAGER）
-    if "销售主管" in role or "测试主管" in role or upper in ("SALE_MANAGER", "TEST_MANAGER"):
+
+    # 3 销售主管 / 测试主管（TEST_MANAGER.roleName=销售主管）
+    if (
+        role in ("销售主管", "测试主管")
+        or "销售主管" in role
+        or "测试主管" in role
+        or upper in ("SALE_MANAGER", "TEST_MANAGER")
+    ):
         return 3
-    if role == "测试人员" or "测试人员" in role or upper == "TEST_USER":
+
+    # 4 A类销售人员族 + C/R 类 + 测试人员
+    # 含：销售人员、制单员、公司基金、仓库管理、外部投资、原厂、内勤、C类、R类…
+    a_sale_exact = {
+        "销售人员",
+        "制单员",
+        "公司基金",
+        "仓库管理",
+        "外部投资",
+        "原厂销售人员",
+        "内勤主管",
+        "A类销售人员",
+        "测试人员",
+    }
+    if role in a_sale_exact:
         return 4
-    if "制单" in role:
-        return 5
-    if "外部投资" in role or role == "投资":
-        return 6
-    if "仓库" in role:
-        return 7
+    if any(
+        key in role
+        for key in (
+            "制单",
+            "公司基金",
+            "仓库",
+            "外部投资",
+            "原厂",
+            "内勤",
+            "C类",
+            "R类",
+            "A类销售",
+        )
+    ):
+        return 4
+    if role == "测试人员" or (
+        "测试人员" in role and "测试主管" not in role
+    ) or upper == "TEST_USER":
+        return 4
+    # 泛匹配「销售人员」类（已排除销售主管）
+    if "销售" in role and "销售主管" not in role:
+        return 4
+
+    # 14 H类用户
     if "H类" in role or role.startswith("H类") or upper.startswith("H_"):
         return 14
-    # 销售人员族：销售 / 原厂 / C·R 类 / 内勤
-    if "销售" in role or "原厂" in role or "C类" in role or "R类" in role or "内勤" in role:
-        return 4
+
+    # 0 公共账号 / 外部合作公司 / 外部公司 等
     return 0
 
 
@@ -45,7 +90,7 @@ def _resolve_welcome_user_type2(utoo_type: str | None, user_type: int) -> int:
     """对齐 Java IndexViewController userType2（精确名称判断）。
 
     1=管理员交易图；3=测试人员测试数量；4=销售人员测试年/月图；5=测试主管测试数量。
-    C类/原厂/R类等 → 0（无额外图表，仅资产+运营卡）。
+    C类/原厂/R类/制单员/公司基金等 → 0（无额外图表，仅资产+运营卡）。
     """
     role = (utoo_type or "").strip()
     upper = role.upper()
@@ -56,7 +101,7 @@ def _resolve_welcome_user_type2(utoo_type: str | None, user_type: int) -> int:
     ) or upper == "TEST_USER":
         return 3
     # Java：仅 utoo_type 精确等于「销售人员」
-    if role == "销售人员" or upper in ("A_SALESPERSON", "A_SALE_USER"):
+    if role == "销售人员" or upper in ("A_SALESPERSON",):
         return 4
     if user_type == 1:
         return 1
@@ -680,7 +725,9 @@ def build_welcome_payload(user: dict[str, Any], *, chart_year: int | None = None
     )
 
     account_rmb, account_us = _user_available_balances(user_id)
-    show_assets = user_type in (0, 2, 3, 4, 6, 7, 14)
+    # Java welcome.html：资产饼图 DOM 在 userType 2/3/4/7/14（及不可达的 6）；
+    # userType=0（公共账号/外部合作）为空白页，不得展示图表。
+    show_assets = user_type in (2, 3, 4, 6, 7, 14)
     show_logs = user_type == 1
 
     pending = (

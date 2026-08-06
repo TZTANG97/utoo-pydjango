@@ -270,7 +270,8 @@ const logs = computed<WelcomeLogItem[]>(() => welcome.value?.newlogs || [])
 const showLogs = computed(() => welcomeUserType.value === 1)
 const showAssets = computed(() => {
   if (welcome.value?.showAssets != null) return Boolean(welcome.value.showAssets)
-  return [0, 2, 3, 4, 6, 7, 14].includes(welcomeUserType.value)
+  // 对齐 Java welcome.htm：2/3/4/6/7/14；不含 0（公共账号/外部合作空白页）
+  return [2, 3, 4, 6, 7, 14].includes(welcomeUserType.value)
 })
 /** Java userType3==2（仅销售主管/销售人员）；C类等强制关闭 */
 const showSaleChart = computed(() => {
@@ -468,6 +469,7 @@ const todayLabel = computed(() => {
 })
 const bannerHint = computed(() => {
   const t = welcomeUserType.value
+  if (t === 0) return '当前账号类型在欢迎页无图表与快捷入口，请从左侧菜单进入业务模块'
   if (t === 1) return '查看近期交易与系统动态，或从下方快捷入口进入常用模块'
   // 测试主管(ut2=5) / 测试人员(ut2=3)
   if (t === 3 && welcomeUserType2.value === 5) {
