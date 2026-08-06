@@ -99,6 +99,77 @@ def list_sale_plan_depts(viewer: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
+def can_manage_test_plan(staff: dict[str, Any] | None) -> bool:
+    """对齐 Java testUserPerformance/queryUsers：管理员 / 销售主管 / 测试主管。"""
+    role = staff_role_name(staff)
+    return is_lab_sale_admin(role) or is_lab_sale_manager(role) or is_lab_test_manager(role)
+
+
+def test_plan_utoo_types(viewer: dict[str, Any] | None) -> list[str] | None:
+    """对齐 Java queryUsers 的 utoo_types。
+
+    - 销售主管：测试人员 + 测试主管
+    - 测试主管：仅测试人员
+    - 系统管理员：不过滤类型（None）
+    """
+    role = staff_role_name(viewer)
+    if is_lab_sale_manager(role):
+        return ["测试人员", "测试主管"]
+    if is_lab_test_manager(role):
+        return ["测试人员"]
+    return None
+
+
+def resolve_test_plan_dept_id(viewer: dict[str, Any], requested_dept_id: str = "") -> str | None:
+    """解析实验室产出计划查询部门（逻辑同销售计划，权限角色含测试主管）。"""
+    if not viewer or not can_manage_test_plan(viewer):
+        return None
+    role = staff_role_name(viewer)
+    req = str(requested_dept_id or "").strip()
+    if is_lab_sale_admin(role):
+        return "" if req in ("", "0") else req
+    own = str(viewer.get("deptId") or "").strip()
+    allowed = set(child_dept_ids(own)) if own else set()
+    if req in ("", "0"):
+        return own
+    if req in allowed:
+        return req
+    return None
+
+
+def list_test_plan_depts(viewer: dict[str, Any] | None) -> dict[str, Any]:
+    """对齐 Java testUserPerformance/load + loadDpet。"""
+    if not viewer or not can_manage_test_plan(viewer):
+        return {
+            "depts": [],
+            "deptId": "",
+            "deptName": "",
+            "canQuery": False,
+        }
+    role = staff_role_name(viewer)
+    if is_lab_sale_admin(role):
+        return {
+            "depts": list_depts_flat(),
+            "deptId": "0",
+            "deptName": "全部部门",
+            "canQuery": True,
+        }
+    own = str(viewer.get("deptId") or "").strip()
+    allowed_ids = child_dept_ids(own) if own else []
+    depts = list_depts_by_ids(allowed_ids)
+    dept_name = ""
+    for d in depts:
+        if str(d.get("id") or "") == own:
+            dept_name = str(d.get("deptName") or "")
+            break
+    return {
+        "depts": depts,
+        "deptId": own or "0",
+        "deptName": dept_name or "本部门",
+        "canQuery": True,
+    }
+
+
 def list_staff_users(
     *,
     dept_id: str = "",

@@ -1,6 +1,6 @@
 <template>
   <admin-page-card :title="pageTitle">
-    <el-form :inline="true" class="filter-form" @submit.prevent>
+    <el-form :inline="true" class="filter-form" @submit.prevent="handleSearch">
       <el-form-item label="部门">
         <el-tree-select
           v-model="filters.deptId"
@@ -10,18 +10,18 @@
           check-strictly
           default-expand-all
           :render-after-expand="false"
-          placeholder="全部"
+          :placeholder="defaultDeptName || '全部'"
           style="width: 260px"
           :props="deptTreeProps"
         />
       </el-form-item>
       <el-form-item label="账号">
-        <el-input v-model="filters.userName" clearable />
+        <el-input v-model="filters.userName" clearable @keyup.enter="handleSearch" />
       </el-form-item>
       <el-form-item label="姓名">
-        <el-input v-model="filters.trueName" clearable />
+        <el-input v-model="filters.trueName" clearable @keyup.enter="handleSearch" />
       </el-form-item>
-      <el-form-item v-if="mode === 'test'" label="性别">
+      <el-form-item v-if="mode === 'test' || mode === 'sale'" label="性别">
         <el-select v-model="filters.userSex" clearable placeholder="全部" style="width: 100px">
           <el-option label="全部" value="" />
           <el-option label="男" value="1" />
@@ -29,10 +29,23 @@
         </el-select>
       </el-form-item>
       <el-form-item>
-        <el-button type="primary" @click="handleSearch">查询</el-button>
+        <el-button type="primary" native-type="submit">查询</el-button>
         <el-button @click="handleClear">清空</el-button>
       </el-form-item>
     </el-form>
+
+    <el-alert
+      v-if="!canQuery"
+      type="warning"
+      :closable="false"
+      show-icon
+      :title="
+        mode === 'sale'
+          ? '当前账号无销售产出计划查询权限（仅系统管理员 / 销售主管）'
+          : '当前账号无实验室产出计划查询权限（仅系统管理员 / 销售主管 / 测试主管）'
+      "
+      style="margin-bottom: 12px"
+    />
 
     <el-table v-loading="loading" :data="rows" border stripe>
       <el-table-column type="index" label="#" width="55" />
@@ -40,7 +53,7 @@
       <el-table-column prop="deptName" label="部门" min-width="160" show-overflow-tooltip />
       <el-table-column prop="userName" label="账号" min-width="120" show-overflow-tooltip />
       <el-table-column prop="utooType" label="用户类型" width="120" show-overflow-tooltip />
-      <template v-if="mode === 'test'">
+      <template v-if="mode === 'test' || mode === 'sale'">
         <el-table-column prop="userSexLabel" label="性别" width="70" align="center" />
         <el-table-column prop="userStatusLabel" label="状态" width="70" align="center" />
         <el-table-column prop="helperName" label="协助者" width="100" show-overflow-tooltip />
@@ -49,8 +62,12 @@
       </template>
       <el-table-column label="操作" width="140" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openSet(row)">设定</el-button>
-          <el-button link type="primary" @click="openShow(row)">查看</el-button>
+          <el-button link type="primary" :disabled="!canQuery" @click="openSet(row)">
+            设定
+          </el-button>
+          <el-button link type="primary" :disabled="!canQuery" @click="openShow(row)">
+            查看
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -114,8 +131,9 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AdminPageCard from '@admin/components/AdminPageCard.vue'
 import {
-  fetchDigitalDepts,
+  fetchSalePlanDepts,
   fetchSalePlanUsers,
+  fetchTestPlanDepts,
   fetchTestPlanUsers,
   getSaleTarget,
   getTestTarget,
@@ -124,7 +142,6 @@ import {
   showSaleTargets,
   showTestTargets,
 } from '@admin/api/digital'
-import { fetchDeptTree } from '@admin/api/system'
 import { useDataTable } from '@admin/composables/useDataTable'
 import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
@@ -136,19 +153,24 @@ const pageTitle = computed(() =>
 
 const filters = reactive({ deptId: '', userName: '', trueName: '', userSex: '' as string })
 const deptTree = ref<Record<string, unknown>[]>([])
+const defaultDeptName = ref('')
+const canQuery = ref(true)
 const deptTreeProps = {
   label: 'deptName',
   value: 'id',
   children: 'children',
 }
 const loader = (params: Record<string, unknown>) => {
+  if (!canQuery.value) {
+    return Promise.resolve({ data: [], recordsTotal: 0, recordsFiltered: 0 })
+  }
   const q: Record<string, unknown> = {
     ...params,
     deptId: filters.deptId,
     userName: filters.userName,
     trueName: filters.trueName,
   }
-  if (mode.value === 'test' && filters.userSex !== '') {
+  if (filters.userSex !== '') {
     q.userSex = filters.userSex
   }
   return mode.value === 'sale' ? fetchSalePlanUsers(q) : fetchTestPlanUsers(q)
@@ -231,10 +253,15 @@ function handleSearch() {
 }
 
 function handleClear() {
-  filters.deptId = ''
   filters.userName = ''
   filters.trueName = ''
   filters.userSex = ''
+  // 清空后回到权限默认部门（对齐 Java deptId2）
+  if (defaultDeptId.value && defaultDeptId.value !== '0') {
+    filters.deptId = defaultDeptId.value
+  } else {
+    filters.deptId = ''
+  }
   pagination.page = 1
   return reload()
 }
@@ -244,15 +271,36 @@ function handlePageSizeChange() {
   return reload()
 }
 
-async function loadDepts() {
-  // 优先用数字化接口扁平部门组装树（与资产服务同链路，避免 sys 服务未启动时无数据）
-  const flatRes = await fetchDigitalDepts()
-  if (isAjaxOk(flatRes) && Array.isArray(flatRes.obj) && flatRes.obj.length) {
-    deptTree.value = buildDeptTreeFromFlat(flatRes.obj as Record<string, unknown>[])
+const defaultDeptId = ref('')
+
+async function applyPlanDepts(res: { res?: boolean; obj?: unknown }) {
+  if (!isAjaxOk(res) || !res.obj || typeof res.obj !== 'object') {
+    canQuery.value = false
+    deptTree.value = []
+    defaultDeptId.value = ''
+    defaultDeptName.value = ''
+    filters.deptId = ''
     return
   }
-  const tree = await fetchDeptTree()
-  deptTree.value = normalizeDeptTree(tree as Record<string, unknown>[])
+  const obj = res.obj as Record<string, unknown>
+  canQuery.value = Boolean(obj.canQuery)
+  defaultDeptId.value = String(obj.deptId || '')
+  defaultDeptName.value = String(obj.deptName || '')
+  const depts = Array.isArray(obj.depts) ? (obj.depts as Record<string, unknown>[]) : []
+  deptTree.value = buildDeptTreeFromFlat(depts)
+  if (defaultDeptId.value && defaultDeptId.value !== '0') {
+    filters.deptId = defaultDeptId.value
+  } else {
+    filters.deptId = ''
+  }
+}
+
+async function loadDepts() {
+  if (mode.value === 'sale') {
+    await applyPlanDepts(await fetchSalePlanDepts())
+    return
+  }
+  await applyPlanDepts(await fetchTestPlanDepts())
 }
 
 async function openSet(row: Record<string, unknown>) {
@@ -335,9 +383,7 @@ watch(mode, async () => {
   filters.userSex = ''
   pagination.page = 1
   pagination.pageSize = mode.value === 'test' ? 20 : 10
-  if (!deptTree.value.length) {
-    await loadDepts()
-  }
+  await loadDepts()
   reload()
 })
 

@@ -74,11 +74,13 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AdminPageCard from '@admin/components/AdminPageCard.vue'
 import { fetchLabSalePerf, fetchLabSaleUsers } from '@admin/api/digital'
+import { useUserStore } from '@admin/stores/user'
 import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
 const MONTH_CN = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月']
 
 const router = useRouter()
+const userStore = useUserStore()
 const loading = ref(false)
 const year = ref(String(new Date().getFullYear()))
 const userId = ref('')
@@ -87,6 +89,11 @@ const displayName = ref('')
 const orderRows = ref<Record<string, unknown>[]>([])
 const invoiceRows = ref<Record<string, unknown>[]>([])
 const receiptRows = ref<Record<string, unknown>[]>([])
+
+function currentAccountId() {
+  const profile = (userStore.profile || {}) as Record<string, unknown>
+  return String(profile.id || profile.userId || profile.user_id || '').trim()
+}
 
 function userLabel(item: Record<string, unknown>) {
   const name = String(item.userName || '')
@@ -128,12 +135,20 @@ function openOrders(row: Record<string, unknown>, type: 1 | 2 | 3) {
 }
 
 async function loadUsers() {
+  await userStore.ensureProfile().catch(() => undefined)
   const res = await fetchLabSaleUsers()
   if (isAjaxOk(res) && Array.isArray(res.obj)) {
     users.value = res.obj as Record<string, unknown>[]
-    if (!userId.value && users.value.length) {
-      userId.value = String(users.value[0].id)
-      displayName.value = String(users.value[0].trueName || users.value[0].userName || '')
+    if (userId.value) return
+    const selfId = currentAccountId()
+    const self = selfId
+      ? users.value.find((u) => String(u.id) === selfId)
+      : undefined
+    // 对齐 Java：进页默认当前登录账号（getSyUserSelect4 的 value=$!user_id）
+    const pick = self || users.value[0]
+    if (pick) {
+      userId.value = String(pick.id)
+      displayName.value = String(pick.trueName || pick.userName || '')
     }
   }
 }

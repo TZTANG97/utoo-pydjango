@@ -45,23 +45,46 @@ def dept_options(request: Request, user=None):
 @authentication_classes([])
 @permission_classes([AllowAny])
 @admin_ajax_view()
+def test_plan_depts(request: Request, user=None):
+    """对齐 Java testUserPerformance/loadDpet + load 默认部门。"""
+    del request
+    viewer = _viewer_staff(user)
+    return Response(ajax_ok(obj=user_repo.list_test_plan_depts(viewer)))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
 def test_user_list(request: Request, user=None):
-    del user
+    """对齐 Java StatisticTestuserPerformanceController#queryUsers。
+
+    仅系统管理员 / 销售主管 / 测试主管可查；
+    销售主管看测试人员+测试主管；测试主管仅看测试人员；管理员不过滤类型。
+    """
+    viewer = _viewer_staff(user)
     data = merge_payload(request)
     draw, page, page_size = parse_datatable_params(request)
-    # 对齐 Java StatisticTestuserPerformanceController#queryUsers + getuserinfoMapSTP：
-    # 管理员 utoo_types 为空（不过滤类型）；pt_type like '%2%'；含协助者字段
+    if not viewer or not user_repo.can_manage_test_plan(viewer):
+        return Response(datatable_payload(draw=draw, total=0, rows=[]))
+    requested = str(
+        data.get("deptId") or data.get("dept_id") or data.get("deptId2") or ""
+    ).strip()
+    dept_id = user_repo.resolve_test_plan_dept_id(viewer, requested)
+    if dept_id is None:
+        return Response(datatable_payload(draw=draw, total=0, rows=[]))
     sex_raw = data.get("userSex")
     if sex_raw in (None, ""):
         sex_raw = data.get("user_sex")
     rows, total = user_repo.list_staff_users(
-        dept_id=str(data.get("deptId") or data.get("dept_id") or ""),
+        dept_id=dept_id,
         user_name=(data.get("userName") or data.get("user_name") or "").strip(),
         true_name=(data.get("trueName") or data.get("true_name") or "").strip(),
         user_sex=sex_raw,
-        utoo_types=None,
+        utoo_types=user_repo.test_plan_utoo_types(viewer),
         require_pt_type_staff=True,
         include_helpers=True,
+        exact_dept=True,
         page=page,
         page_size=page_size,
     )
@@ -122,7 +145,9 @@ def sale_user_list(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def test_target_get(request: Request, user=None):
-    del user
+    viewer = _viewer_staff(user)
+    if not viewer or not user_repo.can_manage_test_plan(viewer):
+        return Response(ajax_fail("无权限"))
     data = merge_payload(request)
     uid = str(data.get("test_user_id") or data.get("testUserId") or "")
     year = str(data.get("year") or "")
@@ -137,7 +162,9 @@ def test_target_get(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def test_target_show(request: Request, user=None):
-    del user
+    viewer = _viewer_staff(user)
+    if not viewer or not user_repo.can_manage_test_plan(viewer):
+        return Response(ajax_fail("无权限"))
     data = merge_payload(request)
     uid = str(data.get("test_user_id") or data.get("testUserId") or "")
     if not uid:
@@ -160,7 +187,9 @@ def test_target_show(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def test_target_save(request: Request, user=None):
-    del user
+    viewer = _viewer_staff(user)
+    if not viewer or not user_repo.can_manage_test_plan(viewer):
+        return Response(ajax_fail("无权限"))
     data = merge_payload(request)
     uid = str(data.get("test_user_id") or data.get("testUserId") or "")
     year = str(data.get("year") or "")
@@ -370,8 +399,12 @@ def stats_date_overview(request: Request, user=None):
     data = merge_payload(request)
     now = datetime.now()
     year = str(data.get("year") or now.year)
-    month = str(data.get("month") or now.month).zfill(2)
     period_type = str(data.get("type") or "2")
+    month_raw = data.get("month")
+    if month_raw in (None, ""):
+        month = str(now.month).zfill(2) if period_type == "2" else ""
+    else:
+        month = str(month_raw).zfill(2)
     test_lab = str(data.get("test_lab") or data.get("deptId") or data.get("dept_id") or "")
     user_id = str(data.get("userId") or data.get("user_id") or "")
     week = str(data.get("week") or "")
@@ -418,8 +451,12 @@ def stats_order_manage(request: Request, user=None):
     data = merge_payload(request)
     now = datetime.now()
     year = str(data.get("year") or now.year)
-    month = str(data.get("month") or now.month).zfill(2)
     period_type = str(data.get("type") or "2")
+    month_raw = data.get("month")
+    if month_raw in (None, ""):
+        month = str(now.month).zfill(2) if period_type == "2" else ""
+    else:
+        month = str(month_raw).zfill(2)
     test_lab = str(data.get("test_lab") or data.get("deptId") or data.get("dept_id") or "")
     user_id = str(data.get("userId") or data.get("user_id") or "")
     week = str(data.get("week") or "")
@@ -459,8 +496,18 @@ def stats_board(request: Request, user=None):
 @authentication_classes([])
 @permission_classes([AllowAny])
 @admin_ajax_view()
+def stats_test_depts(request: Request, user=None):
+    """对齐 Java testUserStats/queryAllDept.ajax：仅有完成数据的部门。"""
+    del user, request
+    return Response(ajax_ok(obj=stats_repo.list_test_stats_depts()))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
 def stats_users_by_dept(request: Request, user=None):
-    """筛选栏：按部门拉测试人员。"""
+    """筛选栏：按部门拉测试人员（对齐 queryUsersTest3）。"""
     del user
     data = merge_payload(request)
     dept_id = str(data.get("deptId") or data.get("dept_id") or "")

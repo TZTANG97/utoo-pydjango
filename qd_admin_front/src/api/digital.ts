@@ -44,6 +44,11 @@ export function fetchDigitalDepts() {
   return postAjax('/digital/deptOptions.ajax')
 }
 
+/** 对齐 Java queryAllDept：仅有统计数据的部门 */
+export function fetchStatsDepts() {
+  return postAjax('/testUserStats/queryAllDept.ajax')
+}
+
 export function fetchStatsOverview(params: Record<string, unknown>) {
   return postAjax('/testUserStats/overview.ajax', params)
 }
@@ -72,6 +77,10 @@ export function fetchStatsUsersByDept(deptId: string | number = '') {
   return postAjax('/testUserStats/queryUsersByDeptId.ajax', { deptId: String(deptId || '') })
 }
 
+export function fetchTestPlanDepts() {
+  return postAjax('/testUserPerformance/loadDpet.ajax')
+}
+
 export function fetchTestPlanUsers(params: Record<string, unknown>) {
   return fetchDatatable('/testUserPerformance/queryUsers.ajax', params)
 }
@@ -86,6 +95,10 @@ export function saveTestTarget(data: Record<string, unknown>) {
 
 export function showTestTargets(test_user_id: string | number) {
   return postAjax('/testUserPerformance/showByUserId.ajax', { test_user_id })
+}
+
+export function fetchSalePlanDepts() {
+  return postAjax('/saleUserPerformance/loadDpet.ajax')
 }
 
 export function fetchSalePlanUsers(params: Record<string, unknown>) {

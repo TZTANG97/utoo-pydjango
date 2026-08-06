@@ -418,10 +418,10 @@ import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import type { ECharts } from 'echarts'
 import {
-  fetchDigitalDepts,
   fetchStatsBoard1,
   fetchStatsBoardAnnual,
   fetchStatsDashboard,
+  fetchStatsDepts,
   fetchStatsOrderManage,
   fetchStatsUsersByDept,
 } from '@admin/api/digital'
@@ -570,13 +570,15 @@ async function switchTab(tab: 'overview' | 'orders') {
 }
 
 async function loadDepts() {
-  const res = await fetchDigitalDepts()
+  const res = await fetchStatsDepts()
   if (isAjaxOk(res) && Array.isArray(res.obj)) {
     depts.value = res.obj as Row[]
+  } else {
+    depts.value = []
   }
 }
 
-/** 首次进入：用当前登录账号部门预填筛选（如 admin → 总经理） */
+/** 首次进入：用当前登录账号部门预填（须在有数据部门列表内） */
 function applyDefaultDeptFromLoginUser() {
   if (deptId.value) return
   const profile = (userStore.profile || {}) as Row

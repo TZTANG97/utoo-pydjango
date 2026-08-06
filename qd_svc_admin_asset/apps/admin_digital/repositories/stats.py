@@ -29,8 +29,8 @@ def _period_clause(
 ) -> str:
     """对齐 Java selListByStatus / selOrderNum 的时间维度。
 
-    order_status: 0/-1 → expect_finishtime；2 → end_time；其余默认 end_time。
-    type: 1=周 2=月 3=季 5=自定义(跳过 year)。
+    order_status: 0/-1 → expect_finishtime；2 → end_time；None → order_time。
+    type: 1=周 2=月 3=季 4/0=年 5=自定义。
     """
     if not period_type and not year and not start_date:
         return ""
@@ -45,8 +45,10 @@ def _period_clause(
     else:
         col = "t.end_time"
 
-    # Java 前端年数据 type=4，MyBatis 无专门分支，等价于仅按 year 过滤
-    if period_type in ("4", "0", "year"):
+    raw_type = str(period_type or "").strip()
+    # Java 前端年数据 type=4（或 0）；MyBatis 无 type==4 分支，仅按 year 过滤，绝不能再套 month
+    year_only = raw_type in ("4", "0", "year")
+    if year_only:
         period_type = ""
 
     clauses: list[str] = []
@@ -60,14 +62,13 @@ def _period_clause(
             clauses.append(f"AND DATE_FORMAT({col}, '%%Y') = %(year)s")
             params["year"] = year
     elif period_type == "2" and month:
-        # month 可为 "07" 或 "7"
+        # 对齐 Java：DATE_FORMAT('%m') + 另加 year，不用 YYYY-MM 混绑
         mon = str(month).zfill(2)
+        clauses.append(f"AND DATE_FORMAT({col}, '%%m') = %(month)s")
+        params["month"] = mon
         if year:
-            params["ym"] = f"{year}-{mon}"
-            clauses.append(f"AND DATE_FORMAT({col}, '%%Y-%%m') = %(ym)s")
-        else:
-            params["month"] = int(mon)
-            clauses.append(f"AND MONTH({col}) = %(month)s")
+            clauses.append(f"AND DATE_FORMAT({col}, '%%Y') = %(year)s")
+            params["year"] = year
     elif period_type == "3" and quarter:
         if order_status == 2:
             clauses.append("AND t.quarter = %(quarter)s")
@@ -85,14 +86,10 @@ def _period_clause(
             clauses.append(f"AND {col} <= %(end_date)s")
             params["end_date"] = end_date if " " in end_date else f"{end_date} 23:59:59"
     else:
-        # 仅年，或 type 为空但有 year
-        if year and period_type != "5":
+        # 仅年（含 type=4/0）
+        if year:
             clauses.append(f"AND DATE_FORMAT({col}, '%%Y') = %(year)s")
             params["year"] = year
-            if month and not period_type:
-                mon = str(month).zfill(2)
-                params["ym"] = f"{year}-{mon}"
-                clauses.append(f"AND DATE_FORMAT({col}, '%%Y-%%m') = %(ym)s")
 
     return "\n".join(clauses)
 
@@ -374,21 +371,49 @@ def count_test_users(*, dept_id: str = "") -> int:
     )
 
 
+def list_test_stats_depts() -> list[dict[str, Any]]:
+    """对齐 Java selectTestUserDept：只返回 statistic_experiment_finish 中出现过的部门。"""
+    return fetch_all(
+        """
+        SELECT DISTINCT sef.test_lab AS id, sd.dept_name AS deptName
+        FROM statistic_experiment_finish sef
+        LEFT JOIN sy_dept sd ON sef.test_lab = sd.id
+        WHERE sef.test_lab IS NOT NULL AND sef.test_lab <> ''
+        ORDER BY sd.dept_name ASC
+        """
+    )
+
+
 def list_users_by_dept(*, dept_id: str = "") -> list[dict[str, Any]]:
-    """筛选下拉：部门下测试平台人员。"""
-    where = "WHERE t.pt_type LIKE '%%2%%' AND t.user_status = 1"
-    params: dict[str, Any] = {}
+    """对齐 Java queryUsersTest3：部门内测试平台人员（测试人员/测试主管/系统管理员）。"""
+    params: dict[str, Any] = {
+        "ut0": "测试人员",
+        "ut1": "测试主管",
+        "ut2": "系统管理员",
+    }
+    dept_sql = ""
     if dept_id and dept_id not in ("0", ""):
-        where += " AND t.dept_id = %(dept_id)s"
+        dept_sql = "AND u.dept_id = %(dept_id)s"
         params["dept_id"] = dept_id
     return fetch_all(
         f"""
-        SELECT t.id, t.user_name AS userName, t.true_name AS trueName
-        FROM sy_users t
-        LEFT JOIN sy_user_type sut ON t.utoo_type = sut.type_name
-        {where}
-          AND (sut.type = 2 OR sut.type IS NULL)
-        ORDER BY t.true_name ASC, t.user_name ASC
+        SELECT u.id, u.user_name AS userName, u.true_name AS trueName,
+               u.dept_id AS deptId, u.utoo_type AS utooType
+        FROM sy_users u
+        LEFT JOIN sy_dept sd ON u.dept_id = sd.id
+        WHERE u.id IN (
+            SELECT DISTINCT t.id
+            FROM sy_users t
+            LEFT JOIN sy_user_expmanage sue ON t.id = sue.user_id
+            WHERE t.pt_type LIKE '%%2%%'
+              AND t.user_status = 1
+              AND (
+                    t.utoo_type IN (%(ut0)s, %(ut1)s, %(ut2)s)
+                    OR sue.exp_manage_id IS NOT NULL
+              )
+        )
+        {dept_sql}
+        ORDER BY u.register_time DESC, u.true_name ASC
         """,
         params,
     )
@@ -626,8 +651,11 @@ def order_count_ontime(
     start_date: str = "",
     end_date: str = "",
 ) -> int:
-    """准时完成数：order_status=2 且 end_time <= expect_finishtime。"""
-    where = "WHERE t.deleteStatus = 0 AND t.order_status = 2 AND t.end_time <= t.expect_finishtime"
+    """准时完成数：对齐 selOrderNumZsl(order_status=2, is_timeout=0) + end_time<=expect。"""
+    where = (
+        "WHERE t.deleteStatus = 0 AND t.order_status = 2 "
+        "AND t.is_timeout = 0 AND t.end_time <= t.expect_finishtime"
+    )
     params: dict[str, Any] = {}
     if user_id:
         where += " AND t.test_user_id = %(user_id)s"
@@ -645,7 +673,18 @@ def order_count_ontime(
         end_date=end_date,
         params=params,
     )
-    return int(scalar(f"SELECT COUNT(t.id) FROM statistic_experiment_finish t {where}", params) or 0)
+    return int(
+        scalar(
+            f"""
+            SELECT COUNT(t.id)
+            FROM statistic_experiment_finish t
+            LEFT JOIN experiment_order eo ON t.order_id = eo.id
+            {where}
+            """,
+            params,
+        )
+        or 0
+    )
 
 
 def sum_test_minutes(
