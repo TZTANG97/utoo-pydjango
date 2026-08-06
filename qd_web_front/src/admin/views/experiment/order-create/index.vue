@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div v-loading="loading" class="create-page">
     <header class="page-head">
       <button type="button" class="back-link" @click="goBack">← 返回列表</button>
@@ -166,6 +166,7 @@
               clearable
               placeholder="请选择"
               style="width: 100%"
+              @change="onPayWayChange"
             >
               <el-option
                 v-for="o in payWayOpts"
@@ -238,37 +239,12 @@
           </el-form-item>
         </el-col>
         <el-col :span="12">
-          <el-form-item label="是否云视频">
-            <el-switch
-              v-model="form.isVideo"
-              inline-prompt
-              active-text="ON"
-              inactive-text="OFF"
-            />
-          </el-form-item>
-        </el-col>
-        <el-col :span="12">
-          <el-form-item label="实验测试地址">
-            <el-select v-model="form.testAddressId" filterable clearable placeholder="请选择" style="width: 100%">
-              <el-option
-                v-for="o in addressOpts"
-                :key="String(o.value)"
-                :label="o.label"
-                :value="o.value"
-              />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :span="12">
-          <el-form-item label="公司汇款账户">
-            <el-select v-model="form.companyAccountId" filterable clearable placeholder="请选择" style="width: 100%">
-              <el-option
-                v-for="o in companyAccountOpts"
-                :key="String(o.value)"
-                :label="o.label"
-                :value="o.value"
-              />
-            </el-select>
+          <el-form-item label="分成比例" required>
+            <div class="inline-ops">
+              <el-button type="primary" @click="openShareDialog">添加分成比例</el-button>
+              <span v-if="shareSummary" class="share-summary">{{ shareSummary }}</span>
+              <span v-else class="share-hint">毛利合计须为 100%</span>
+            </div>
           </el-form-item>
         </el-col>
         <el-col v-if="form.reversoOn" :span="12">
@@ -286,6 +262,27 @@
           <el-col :span="12">
             <el-form-item label="收件人电话">
               <el-input v-model="form.addresseeMobile" clearable />
+            </el-form-item>
+          </el-col>
+        </template>
+
+        <template v-if="collectionTimes.length">
+          <el-col
+            v-for="(ct, idx) in collectionTimes"
+            :key="`ct-${idx}`"
+            :span="12"
+          >
+            <el-form-item
+              :label="`预计收款时间${collectionTimes.length > 1 ? idx + 1 : ''}`"
+              required
+            >
+              <el-date-picker
+                v-model="collectionTimes[idx]"
+                type="date"
+                value-format="YYYY-MM-DD"
+                placeholder="yyyy-mm-dd"
+                style="width: 100%"
+              />
             </el-form-item>
           </el-col>
         </template>
@@ -447,7 +444,72 @@
         <el-table-column prop="projectName" label="项目名称" min-width="160" />
         <el-table-column prop="className" label="分类" min-width="120" />
         <el-table-column prop="secName" label="二级" min-width="100" />
+        <el-table-column label="测试金额" width="110" align="right">
+          <template #default="{ row }">
+            {{ formatPrice(row.testPrice ?? row.test_price) }}
+          </template>
+        </el-table-column>
       </el-table>
+    </el-dialog>
+
+    <!-- 分成比例 -->
+    <el-dialog v-model="shareDlg.visible" title="添加分成比例" width="720px" destroy-on-close>
+      <div class="share-block">
+        <div class="share-block-head">
+          <strong>毛利分成</strong>
+          <span class="share-hint">比例合计须为 100%</span>
+          <el-button link type="primary" @click="addShareRow(profitRows)">添加一行</el-button>
+        </div>
+        <div v-for="(row, idx) in profitRows" :key="`p-${idx}`" class="share-row">
+          <el-select
+            v-model="row.userId"
+            filterable
+            clearable
+            placeholder="分成人员"
+            style="width: 220px"
+          >
+            <el-option
+              v-for="u in shareUsers"
+              :key="String(u.id)"
+              :label="shareUserLabel(u)"
+              :value="String(u.id)"
+            />
+          </el-select>
+          <el-input v-model="row.value" placeholder="比例" style="width: 120px">
+            <template #append>%</template>
+          </el-input>
+          <el-button link type="danger" @click="profitRows.splice(idx, 1)">删除</el-button>
+        </div>
+      </div>
+      <div class="share-block" style="margin-top: 16px">
+        <div class="share-block-head">
+          <strong>成本分成</strong>
+          <span class="share-hint">按固定金额</span>
+          <el-button link type="primary" @click="addShareRow(costRows)">添加一行</el-button>
+        </div>
+        <div v-for="(row, idx) in costRows" :key="`c-${idx}`" class="share-row">
+          <el-select
+            v-model="row.userId"
+            filterable
+            clearable
+            placeholder="分成人员"
+            style="width: 220px"
+          >
+            <el-option
+              v-for="u in shareUsers"
+              :key="String(u.id)"
+              :label="shareUserLabel(u)"
+              :value="String(u.id)"
+            />
+          </el-select>
+          <el-input v-model="row.value" placeholder="金额" style="width: 140px" />
+          <el-button link type="danger" @click="costRows.splice(idx, 1)">删除</el-button>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="shareDlg.visible = false">取消</el-button>
+        <el-button type="primary" @click="confirmShare">确定</el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -466,16 +528,12 @@ import {
 } from '@admin/api/experiment'
 import { fetchCustomerAccounts, fetchCustomerNamesExp } from '@admin/api/member'
 import { fetchBillTypeAll, fetchPaytypeAll, fetchTaxAll } from '@admin/api/order-settings'
-import {
-  fetchCompanyAccountList,
-  fetchSupplierAll,
-  fetchTestAddressList,
-  fetchUserList,
-} from '@admin/api/system'
+import { fetchSupplierAll, fetchUserList } from '@admin/api/system'
 import { useTagsViewStore } from '@admin/stores/tags-view'
 import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
-type Opt = { value: string | number; label: string }
+type Opt = { value: string | number; label: string; nums?: number; scaleVal?: string }
+type ShareRow = { userId: string; value: string }
 
 type LineRow = {
   key: number
@@ -535,13 +593,12 @@ const form = reactive({
   outBillTypeId: '' as string | number | '',
   taxes: '' as string | number | '',
   reversoOn: true,
-  isVideo: false,
-  testAddressId: '' as string | number | '',
-  companyAccountId: '' as string | number | '',
   sendAddress: '',
   addresseeName: '',
   addresseeMobile: '',
   msg: '',
+  userScaleInfo: '',
+  salecbUserScaleInfo: '',
 })
 
 const supplierOpts = ref<Opt[]>([])
@@ -553,9 +610,13 @@ const outBillOpts = ref<Opt[]>([])
 const taxOpts = ref<Opt[]>([])
 const customerOpts = ref<Opt[]>([])
 const accountOpts = ref<Opt[]>([])
-const addressOpts = ref<Opt[]>([])
-const companyAccountOpts = ref<Opt[]>([])
 const orderFiles = ref<Record<string, unknown>[]>([])
+const collectionTimes = ref<string[]>([])
+const shareUsers = ref<Record<string, unknown>[]>([])
+const profitRows = ref<ShareRow[]>([{ userId: '', value: '' }])
+const costRows = ref<ShareRow[]>([{ userId: '', value: '' }])
+const shareDlg = reactive({ visible: false })
+const shareSummary = ref('')
 
 function emptyLine(): LineRow {
   return {
@@ -705,6 +766,17 @@ async function fillFromCopy(sourceId: string) {
   form.addresseeName = String(obj.shipUser || '')
   form.addresseeMobile = String(obj.shipPhone || '')
   form.msg = String(obj.msg || '')
+  form.userScaleInfo = String(obj.userScaleInfo || obj.scaleInfo || '')
+  form.salecbUserScaleInfo = String(obj.salecbUserScaleInfo || '')
+  if (form.userScaleInfo) {
+    shareSummary.value = `毛利：${form.userScaleInfo}`
+  }
+  onPayWayChange(form.payWay)
+  const coll = String(obj.collectionTime || '').trim()
+  if (coll && collectionTimes.value.length) {
+    const parts = coll.split(',').map((s) => s.trim()).filter(Boolean)
+    collectionTimes.value = collectionTimes.value.map((_, i) => parts[i] || '')
+  }
 
   ensureOpt(classOpts.value, form.classId, String(obj.testClassName || ''))
   ensureOpt(managerOpts.value, form.saleManager, String(obj.saleManager || ''))
@@ -807,6 +879,8 @@ async function loadOptions() {
               return {
                 value: (row.id ?? '') as string | number,
                 label: String(row.name || row.payName || row.id || ''),
+                nums: Number(row.nums || 0) || 0,
+                scaleVal: String(row.scaleVal || row.scale_val || ''),
               }
             })
             .filter((o) => o.value !== '' && o.value != null)
@@ -857,51 +931,10 @@ async function loadOptions() {
       })(),
       (async () => {
         try {
-          const addr = await fetchTestAddressList({ start: 0, length: 500, draw: 1 })
-          addressOpts.value = (Array.isArray(addr.data) ? addr.data : [])
-            .map((a) => {
-              const row = a as Record<string, unknown>
-              return {
-                value: (row.id ?? '') as string | number,
-                label: String(
-                  row.name ||
-                    [row.trueName || row.true_name, row.mobile, row.address]
-                      .filter(Boolean)
-                      .join(' ') ||
-                    row.id ||
-                    ''
-                ),
-              }
-            })
-            .filter((o) => o.value !== '' && o.value != null)
+          const share = await fetchUserList({ start: 0, length: 500, type: -1, draw: 1 }, silent)
+          shareUsers.value = Array.isArray(share.data) ? share.data : []
         } catch {
-          addressOpts.value = []
-        }
-      })(),
-      (async () => {
-        try {
-          const acc = await fetchCompanyAccountList({ start: 0, length: 500, draw: 1 })
-          companyAccountOpts.value = (Array.isArray(acc.data) ? acc.data : [])
-            .map((a) => {
-              const row = a as Record<string, unknown>
-              return {
-                value: (row.id ?? '') as string | number,
-                label: String(
-                  [
-                    row.companyName || row.company_name,
-                    row.bankCardNum || row.bank_card_num,
-                    row.bank,
-                  ]
-                    .filter(Boolean)
-                    .join(' ') ||
-                    row.id ||
-                    ''
-                ),
-              }
-            })
-            .filter((o) => o.value !== '' && o.value != null)
-        } catch {
-          companyAccountOpts.value = []
+          shareUsers.value = []
         }
       })(),
     ])
@@ -914,6 +947,99 @@ async function loadOptions() {
   }
 }
 
+function onPayWayChange(id: string | number) {
+  const pt = payWayOpts.value.find((p) => String(p.value) === String(id))
+  const nums = Math.max(0, Number(pt?.nums || 0))
+  collectionTimes.value = Array.from({ length: nums }, () => '')
+}
+
+function shareUserLabel(u: Record<string, unknown>) {
+  return String(u.trueName || u.true_name || u.userName || u.user_name || u.id || '')
+}
+
+function addShareRow(list: ShareRow[]) {
+  list.push({ userId: '', value: '' })
+}
+
+function buildScaleInfo(rows: ShareRow[]) {
+  return rows
+    .filter((r) => r.userId && String(r.value).trim() !== '')
+    .map((r) => `${r.userId}_${String(r.value).trim()}`)
+    .join(',')
+}
+
+function parseScalePairs(raw: unknown): ShareRow[] {
+  const s = String(raw || '').trim()
+  if (!s) return [{ userId: '', value: '' }]
+  const rows = s
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => {
+      const idx = p.indexOf('_')
+      if (idx < 0) return { userId: p, value: '' }
+      return { userId: p.slice(0, idx), value: p.slice(idx + 1) }
+    })
+  return rows.length ? rows : [{ userId: '', value: '' }]
+}
+
+async function openShareDialog() {
+  if (!shareUsers.value.length) {
+    try {
+      const share = await fetchUserList({ start: 0, length: 500, type: -1, draw: 1 })
+      shareUsers.value = Array.isArray(share.data) ? share.data : []
+    } catch {
+      shareUsers.value = []
+    }
+  }
+  profitRows.value = parseScalePairs(form.userScaleInfo)
+  costRows.value = parseScalePairs(form.salecbUserScaleInfo)
+  shareDlg.visible = true
+}
+
+function confirmShare() {
+  let total = 0
+  for (const r of profitRows.value) {
+    if (!r.userId && !String(r.value).trim()) continue
+    if (!r.userId) {
+      ElMessage.warning('请选择毛利分成人员!')
+      return
+    }
+    const n = Number(r.value)
+    if (Number.isNaN(n) || n <= 0) {
+      ElMessage.warning('请填写正确的分成比例!')
+      return
+    }
+    total += n
+  }
+  if (Number(total.toFixed(2)) !== 100) {
+    ElMessage.warning('总的分成比例不是100，请重新输入')
+    return
+  }
+  form.userScaleInfo = buildScaleInfo(profitRows.value)
+  form.salecbUserScaleInfo = buildScaleInfo(costRows.value)
+  const profitText = profitRows.value
+    .filter((r) => r.userId)
+    .map((r) => `${shareUserLabel(shareUsers.value.find((u) => String(u.id) === r.userId) || { id: r.userId })} ${r.value}%`)
+    .join('，')
+  shareSummary.value = profitText ? `毛利：${profitText}` : ''
+  shareDlg.visible = false
+}
+
+function formatPrice(v: unknown) {
+  if (v == null || v === '') return '-'
+  const n = Number(v)
+  return Number.isNaN(n) ? String(v) : n.toFixed(2)
+}
+
+function applyProjectPrice(target: LineRow, row: Record<string, unknown>) {
+  const price = row.testPrice ?? row.test_price ?? row.price
+  if (price == null || price === '') return
+  const n = Number(price)
+  if (Number.isNaN(n)) return
+  target.goodsPrice = String(n)
+  target.referencePrice = String(n)
+}
 function addLine() {
   lines.value.push(emptyLine())
 }
@@ -1022,11 +1148,7 @@ function onPickProject(row: Record<string, unknown>) {
   target.projectName = String(row.projectName || '')
   target.classId = String(row.classId || '')
   target.className = String(row.className || '')
-  const price = row.testPrice ?? row.test_price
-  if (price != null && price !== '') {
-    target.goodsPrice = String(price)
-    target.referencePrice = String(price)
-  }
+  applyProjectPrice(target, row)
   projectDlg.visible = false
   syncTotalPrice()
 }
@@ -1061,8 +1183,12 @@ function validate(): string | null {
   if (!form.supplierName) return '请选择所属公司'
   if (!form.deliveryTime) return '请选择预计收货时间'
   if (!form.customerName && !form.customUserId) return '客户名称和客户账号不能同时为空'
+  if (!form.userScaleInfo) return '请填写分成比例!'
   if (form.invoiceOn && !form.outBillTypeId) return '请选择出项开票类型'
   if (form.invoiceOn && !form.taxes) return '请选择税率'
+  if (collectionTimes.value.length && collectionTimes.value.some((t) => !t)) {
+    return '请填写预计收款时间'
+  }
   if (!lines.value.length) return '实验订单至少选择一个产品才可提交'
   for (const [i, row] of lines.value.entries()) {
     if (!row.goodsId && !row.goodsName) return `第 ${i + 1} 行请选择产品`
@@ -1090,18 +1216,18 @@ async function onSave() {
     currency_type: form.currencyType,
     delivery_time: form.deliveryTime,
     pay_way: form.payWay || null,
+    collection_time: collectionTimes.value.filter(Boolean).join(','),
     totalPrice: form.totalPrice || totalAmount.value,
     invoiceType: form.invoiceOn ? 1 : 2,
     outBillTypeId: form.invoiceOn ? form.outBillTypeId : null,
     taxes: form.invoiceOn ? form.taxes : null,
     reverso_context: form.reversoOn ? 1 : 2,
-    is_video: form.isVideo ? 1 : 0,
-    test_address_id: form.testAddressId || null,
-    company_account_id: form.companyAccountId || null,
     send_address: form.reversoOn ? form.sendAddress : '',
     addressee_name: form.reversoOn ? form.addresseeName : '',
     addressee_mobile: form.reversoOn ? form.addresseeMobile : '',
     msg: form.msg,
+    user_scale_info: form.userScaleInfo,
+    salecb_user_scale_info: form.salecbUserScaleInfo,
     accessoryId: orderFiles.value
       .map((f) => f.id)
       .filter((id) => id != null && String(id) !== ''),
@@ -1216,6 +1342,26 @@ onMounted(() => {
   text-align: center;
 }
 .dlg-filter {
+  margin-bottom: 8px;
+}
+.share-summary {
+  color: #606266;
+  font-size: 13px;
+}
+.share-hint {
+  color: #909399;
+  font-size: 12px;
+}
+.share-block-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.share-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 8px;
 }
 </style>

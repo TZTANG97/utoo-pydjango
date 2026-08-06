@@ -77,6 +77,8 @@ urlpatterns = [
     path("adminExperiment/order/uploadSubPay.ajax", views.order_upload_sub_pay),
     path("adminExperiment/order/uploadSubInvoice.ajax", views.order_upload_sub_invoice),
     path("adminExperiment/order/uploadFile.ajax", views.order_upload_file),
+    path("experimentOrder/uploadData.ajax", views.order_upload_file),
+    path("experimentOrder/uploadFile.ajax", views.order_upload_file),
     path("adminExperiment/order/deleteFile.ajax", views.order_delete_file),
     path("adminExperiment/order/updateMsg.ajax", views.order_update_msg),
     path("adminExperiment/grab/list.ajax", views.grab_list),

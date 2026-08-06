@@ -1172,8 +1172,10 @@ def get_order(order_id: int) -> dict[str, Any] | None:
             t.related_order_num AS relatedOrderNum,
             q.name AS companyName,
             u.company_name AS supplierName,
-            cu.mobile AS customUserMobile,
-            pcu.mobile AS parentCustomUserMobile,
+            COALESCE(cu.mobile, cu2.mobile) AS customUserMobile,
+            COALESCE(cu.userName, cu2.userName, cu.trueName, cu2.trueName) AS customUserName,
+            COALESCE(pcu.mobile, pcu2.mobile) AS parentCustomUserMobile,
+            COALESCE(pcu.userName, pcu2.userName, pcu.trueName, pcu2.trueName) AS parentCustomUserName,
             sm.user_name AS saleManagerName, sm.true_name AS saleManagerTrueName,
             su.user_name AS saleUserName, su.true_name AS saleUserTrueName,
             au.user_name AS addUserName, au.true_name AS addUserTrueName,
@@ -1191,8 +1193,10 @@ def get_order(order_id: int) -> dict[str, Any] | None:
         LEFT JOIN experiment_order p ON t.parent_id = p.id
         LEFT JOIN qd_user_company q ON t.customer_name = q.id
         LEFT JOIN `user` u ON t.supplier_name = u.id
-        LEFT JOIN `user` cu ON CAST(t.custom_user_id AS CHAR) = CAST(cu.id AS CHAR)
-        LEFT JOIN `user` pcu ON CAST(p.custom_user_id AS CHAR) = CAST(pcu.id AS CHAR)
+        LEFT JOIN exp_user cu ON CAST(t.custom_user_id AS CHAR) = CAST(cu.id AS CHAR)
+        LEFT JOIN `user` cu2 ON CAST(t.custom_user_id AS CHAR) = CAST(cu2.id AS CHAR)
+        LEFT JOIN exp_user pcu ON CAST(p.custom_user_id AS CHAR) = CAST(pcu.id AS CHAR)
+        LEFT JOIN `user` pcu2 ON CAST(p.custom_user_id AS CHAR) = CAST(pcu2.id AS CHAR)
         LEFT JOIN sy_users sm ON t.sale_manager = sm.id
         LEFT JOIN sy_users su ON t.sale_user = su.id
         LEFT JOIN sy_users au ON t.add_user_id = au.id
@@ -1435,13 +1439,15 @@ def get_order(order_id: int) -> dict[str, Any] | None:
                         """
                         SELECT
                             q.name AS companyName,
-                            cu.mobile AS customMobile,
+                            COALESCE(cu.mobile, cu2.mobile) AS customMobile,
+                            COALESCE(cu.userName, cu2.userName, cu.trueName, cu2.trueName) AS customUserName,
                             p.mobile AS parentMobile,
                             p.custom_user_id AS customUserId,
                             p.customer_name AS customerId
                         FROM experiment_order p
                         LEFT JOIN qd_user_company q ON p.customer_name = q.id
-                        LEFT JOIN `user` cu ON p.custom_user_id = cu.id
+                        LEFT JOIN exp_user cu ON CAST(p.custom_user_id AS CHAR) = CAST(cu.id AS CHAR)
+                        LEFT JOIN `user` cu2 ON CAST(p.custom_user_id AS CHAR) = CAST(cu2.id AS CHAR)
                         WHERE p.id = %(id)s
                         LIMIT 1
                         """,
@@ -1453,10 +1459,14 @@ def get_order(order_id: int) -> dict[str, Any] | None:
                             row["customerName"] = pname
                             if row.get("companyName") in (None, "", "-"):
                                 row["companyName"] = pname
+                        pcm = (
+                            str(pc.get("customMobile") or "").strip()
+                            or str(pc.get("customUserName") or "").strip()
+                        )
                         if not str(row.get("customUserMobile") or "").strip():
-                            row["customUserMobile"] = str(pc.get("customMobile") or "").strip()
+                            row["customUserMobile"] = pcm
                         if not str(row.get("parentCustomUserMobile") or "").strip():
-                            row["parentCustomUserMobile"] = str(pc.get("customMobile") or "").strip()
+                            row["parentCustomUserMobile"] = pcm
                         if not phone and pc.get("parentMobile"):
                             phone = str(pc.get("parentMobile") or "").strip()
                             row["contactPhone"] = phone or "-"
@@ -1469,12 +1479,16 @@ def get_order(order_id: int) -> dict[str, Any] | None:
         row["reversoYes"] = _reverso_is_yes(rev)
         row["contactPhone"] = str(row.get("mobile") or row.get("shipPhone") or "").strip() or "-"
         row["showShipAddress"] = True
-    # 客户账号：子单 customUser.mobile，空则父单（对齐 Java；勿用联系电话冒充）
+    # 客户账号：exp_user.mobile（对齐 Java customUser）；空则用户名/父单，勿用联系电话冒充
     cm = (
         str(row.get("customUserMobile") or "").strip()
+        or str(row.get("customUserName") or "").strip()
         or str(row.get("parentCustomUserMobile") or "").strip()
+        or str(row.get("parentCustomUserName") or "").strip()
     )
     row["customMobile"] = cm or "-"
+    if row.get("customUserName") in (None, ""):
+        row["customUserName"] = cm or ""
     # mark 为标志位(bigint)，备注文本只用 msg
     row["msg"] = str(row.get("msg") or "").strip()
     # 预计付款时间/金额（对齐 Java collectionTimes）
@@ -2125,7 +2139,10 @@ def list_order_children(
     try:
         rows = _fetch_children_basic(order_id)
     except Exception:
-        rows = _fetch_children_fallback(order_id)
+        try:
+            rows = _fetch_children_fallback(order_id)
+        except Exception:
+            rows = []
     grab_ctx = _load_grab_perm_ctx(viewer_user_id)
     for r in rows:
         r["orderStatusLabel"] = _child_line_status_label(r.get("orderStatus"))
@@ -4553,6 +4570,18 @@ def create_exp_order(
     addressee_mobile = str(
         _pick(header, "addressee_mobile", "addresseeMobile", "shipPhone", default="")
     ).strip()
+    # 预计收款时间：前端多期数组或逗号串（对齐 Java collection_time）
+    coll_raw = _pick(header, "collection_time", "collectionTime", default="")
+    if isinstance(coll_raw, (list, tuple)):
+        collection_time = ",".join(str(x).strip() for x in coll_raw if str(x).strip())
+    else:
+        collection_time = str(coll_raw or "").strip()
+    user_scale_info = str(
+        _pick(header, "user_scale_info", "userScaleInfo", default="")
+    ).strip()
+    salecb_user_scale_info = str(
+        _pick(header, "salecb_user_scale_info", "salecbUserScaleInfo", default="")
+    ).strip()
 
     inv_raw = _pick(header, "invoiceType", "invoice_type", default=None)
     if inv_raw in (True, "true", "on", "ON", "1", 1):
@@ -4611,9 +4640,16 @@ def create_exp_order(
             mobile = str(crow["contractPhone"])
     if custom_user_id and str(custom_user_id).isdigit():
         urow = fetch_one(
-            "SELECT mobile FROM `user` WHERE id = %(id)s LIMIT 1",
+            """
+            SELECT mobile FROM exp_user WHERE id = %(id)s LIMIT 1
+            """,
             {"id": int(custom_user_id)},
         )
+        if not urow or not urow.get("mobile"):
+            urow = fetch_one(
+                "SELECT mobile FROM `user` WHERE id = %(id)s LIMIT 1",
+                {"id": int(custom_user_id)},
+            )
         if urow and urow.get("mobile"):
             mobile = str(urow["mobile"])
 
@@ -4644,6 +4680,9 @@ def create_exp_order(
         "obt": out_bill_type_id if str(out_bill_type_id).isdigit() else None,
         "add_uid": add_uid or None,
         "exp_type": exp_type_id,
+        "ctm": collection_time[:500] if collection_time else None,
+        "usi": user_scale_info[:2000] if user_scale_info else None,
+        "scsi": salecb_user_scale_info[:2000] if salecb_user_scale_info else None,
     }
 
     order_pk = None
@@ -4657,7 +4696,8 @@ def create_exp_order(
                  order_time, sale_manager, sale_user, custom_user_id, customer_name,
                  supplier_name, currency_type, pay_way, goods_amount,
                  delivery_time, taxes, totalPrice, class_id, out_bill_type_id,
-                 add_user_id, exp_type_id)
+                 add_user_id, exp_type_id, collection_time,
+                 user_scale_info, scale_info, salecb_user_scale_info)
             VALUES
                 (NOW(), 0, %(ono)s, %(ot)s, %(st)s,
                  %(mobile)s, %(rev)s, %(addr)s, %(an)s, %(am)s,
@@ -4665,24 +4705,28 @@ def create_exp_order(
                  %(otm)s, %(sm)s, %(su)s, %(cuid)s, %(cust)s,
                  %(sup)s, %(ct)s, %(pw)s, %(ga)s,
                  %(delv)s, %(tx)s, %(tp)s, %(class_id)s, %(obt)s,
-                 %(add_uid)s, %(exp_type)s)
+                 %(add_uid)s, %(exp_type)s, %(ctm)s,
+                 %(usi)s, %(usi)s, %(scsi)s)
             """,
             params,
         )
     except Exception:
-        order_pk = execute_insert(
-            """
-            INSERT INTO experiment_order
-                (addTime, deleteStatus, order_id, order_type, order_status,
-                 totalPrice, sale_manager, sale_user, customer_name, supplier_name,
-                 currency_type, invoiceType, class_id, msg, mark)
-            VALUES
-                (NOW(), 0, %(ono)s, %(ot)s, %(st)s,
-                 %(tp)s, %(sm)s, %(su)s, %(cust)s, %(sup)s,
-                 %(ct)s, %(inv)s, %(class_id)s, %(msg)s, %(msg)s)
-            """,
-            params,
-        )
+        try:
+            order_pk = execute_insert(
+                """
+                INSERT INTO experiment_order
+                    (addTime, deleteStatus, order_id, order_type, order_status,
+                     totalPrice, sale_manager, sale_user, customer_name, supplier_name,
+                     currency_type, invoiceType, class_id, msg, mark)
+                VALUES
+                    (NOW(), 0, %(ono)s, %(ot)s, %(st)s,
+                     %(tp)s, %(sm)s, %(su)s, %(cust)s, %(sup)s,
+                     %(ct)s, %(inv)s, %(class_id)s, %(msg)s, %(msg)s)
+                """,
+                params,
+            )
+        except Exception as exc:
+            return False, f"订单提交失败：{exc}", None
         if order_pk:
             for sql, p in (
                 (
@@ -4693,7 +4737,10 @@ def create_exp_order(
                         send_address=%(addr)s, addressee_name=%(an)s, addressee_mobile=%(am)s,
                         goods_amount=%(ga)s, in_status=0, relation_type=0,
                         out_bill_type_id=%(obt)s, exp_type_id=%(exp_type)s,
-                        add_user_id=%(add_uid)s, mobile=%(mobile)s
+                        add_user_id=%(add_uid)s, mobile=%(mobile)s,
+                        collection_time=%(ctm)s,
+                        user_scale_info=%(usi)s, scale_info=%(usi)s,
+                        salecb_user_scale_info=%(scsi)s
                     WHERE id=%(id)s
                     """,
                     {**params, "id": order_pk},
@@ -4774,20 +4821,23 @@ def create_exp_order(
             "ecid": int(class_cid) if str(class_cid).isdigit() else None,
             "ecn": class_cname[:200],
             "ct": int(currency_type) if str(currency_type).isdigit() else 1,
+            "uid": int(add_uid) if str(add_uid).isdigit() else None,
         }
+        # experiment_order_child 列名为 snake_case（add_time/delete_status），
+        # delete_status：1=删除 2=正常（对齐 Java Mapper）
         child_pk = None
         try:
             child_pk = execute_insert(
                 """
                 INSERT INTO experiment_order_child
-                    (addTime, deleteStatus, order_form_id, order_id,
+                    (add_time, delete_status, order_form_id, order_id, add_user,
                      goods_id, goods_name, goods_spec, goods_brand_id, goods_brand_name,
                      goods_nums, goods_price, reference_price,
                      experiment_project_id, experiment_project_name,
                      experiment_class_id, experiment_class_name,
                      order_status, in_status, op_status, fcsq, is_meeting, currency_type)
                 VALUES
-                    (NOW(), 0, %(oid)s, %(cno)s,
+                    (NOW(), 2, %(oid)s, %(cno)s, %(uid)s,
                      %(gid)s, %(gn)s, %(gs)s, %(gbid)s, %(gb)s,
                      %(nums)s, %(price)s, %(ref)s,
                      %(epid)s, %(epn)s, %(ecid)s, %(ecn)s,
@@ -4800,13 +4850,13 @@ def create_exp_order(
                 child_pk = execute_insert(
                     """
                     INSERT INTO experiment_order_child
-                        (addTime, deleteStatus, order_form_id, order_id,
+                        (add_time, delete_status, order_form_id, order_id,
                          goods_id, goods_name, goods_spec, goods_brand_name, goods_nums,
-                         price, reference_price, experiment_project_id, experiment_project_name,
+                         goods_price, reference_price, experiment_project_id, experiment_project_name,
                          experiment_class_id, experiment_class_name,
                          order_status, op_status, currency_type)
                     VALUES
-                        (NOW(), 0, %(oid)s, %(cno)s,
+                        (NOW(), 2, %(oid)s, %(cno)s,
                          %(gid)s, %(gn)s, %(gs)s, %(gb)s, %(nums)s,
                          %(price)s, %(ref)s, %(epid)s, %(epn)s,
                          %(ecid)s, %(ecn)s,
@@ -4814,18 +4864,8 @@ def create_exp_order(
                     """,
                     child_params,
                 )
-            except Exception:
-                child_pk = execute_insert(
-                    """
-                    INSERT INTO experiment_order_child
-                        (addTime, deleteStatus, order_form_id, order_id,
-                         goods_name, goods_nums, price, order_status, op_status)
-                    VALUES
-                        (NOW(), 0, %(oid)s, %(cno)s,
-                         %(gn)s, %(nums)s, %(price)s, 1, 1)
-                    """,
-                    child_params,
-                )
+            except Exception as exc:
+                return False, f"产品明细保存失败：{exc}", None
         if child_pk:
             try:
                 execute(
