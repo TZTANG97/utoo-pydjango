@@ -283,6 +283,10 @@ export function deleteAlbum(id: string | number) {
 export function fetchAlbumImages(params: Record<string, unknown>) {
   return fetchDatatable('/album/images.ajax', params)
 }
+/** 对齐 Java seller/goods_img_album：轮播等「从相册选择」列表（path=goods） */
+export function fetchGoodsAlbumImages(params: Record<string, unknown>) {
+  return fetchDatatable('/album/goods_images.ajax', params)
+}
 export function deleteAlbumImage(id: string | number) {
   return postAjax('/album/image_del.ajax', { id })
 }

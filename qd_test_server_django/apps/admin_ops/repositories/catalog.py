@@ -500,6 +500,30 @@ def list_album_images(album_id: int, *, page: int, page_size: int) -> tuple[list
     return normalize_rows(rows), total
 
 
+def list_goods_album_images(*, page: int, page_size: int) -> tuple[list[dict[str, Any]], int]:
+    """对齐 Java AccessoryMapper.listPage：轮播/商品「从相册选择」用 path='goods' 图片。"""
+    where = """
+        WHERE IFNULL(deleteStatus, 0) = 0
+          AND path = 'goods'
+          AND UPPER(IFNULL(ext, '')) IN (
+              'JPG', 'PNG', 'JPEG', 'GIF', 'BMP', 'TIFF', 'PSD', 'SVG', 'EMF', 'PPM'
+          )
+    """
+    total = int(scalar(f"SELECT COUNT(*) FROM accessory {where}") or 0)
+    clause, page_params = page_clause(page, page_size)
+    rows = fetch_all(
+        f"""
+        SELECT id, addTime, name, path, ext, width, height, size
+        FROM accessory
+        {where}
+        ORDER BY addTime DESC, id DESC
+        {clause}
+        """,
+        page_params,
+    )
+    return normalize_rows(rows), total
+
+
 def delete_album_image(image_id: int) -> None:
     execute("UPDATE accessory SET deleteStatus=1 WHERE id=%(id)s", {"id": image_id})
 

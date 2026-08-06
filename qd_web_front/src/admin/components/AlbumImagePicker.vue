@@ -6,25 +6,6 @@
     destroy-on-close
     @open="onOpen"
   >
-    <el-form :inline="true" class="picker-filter" @submit.prevent>
-      <el-form-item label="相册">
-        <el-select
-          v-model="albumId"
-          placeholder="选择相册"
-          filterable
-          style="width: 220px"
-          @change="onAlbumChange"
-        >
-          <el-option
-            v-for="item in albums"
-            :key="String(item.id)"
-            :label="String(item.albumName || item.album_name || item.id)"
-            :value="Number(item.id)"
-          />
-        </el-select>
-      </el-form-item>
-    </el-form>
-
     <div v-loading="loading" class="image-grid">
       <button
         v-for="img in images"
@@ -51,7 +32,7 @@
 
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" :disabled="!selectedPick" @click="confirm">插入图片</el-button>
+      <el-button type="primary" :disabled="!selectedPick" @click="confirm">确认选择</el-button>
     </template>
   </el-dialog>
 </template>
@@ -59,7 +40,7 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { fetchAlbumImages, fetchAlbumList } from '@admin/api/ops'
+import { fetchGoodsAlbumImages } from '@admin/api/ops'
 
 const OSS_BASE = 'https://qgongye.oss-cn-shanghai.aliyuncs.com/'
 
@@ -69,14 +50,11 @@ const visible = defineModel<boolean>({ default: false })
 const emit = defineEmits<{ select: [pick: AlbumImagePick] }>()
 const selectedPick = ref<AlbumImagePick | null>(null)
 
-const albums = ref<Record<string, unknown>[]>([])
 const images = ref<Record<string, unknown>[]>([])
-const albumId = ref<number | undefined>()
 const loading = ref(false)
 const total = ref(0)
 const selectedId = ref<number | null>(null)
-const selectedUrl = ref('')
-const pagination = reactive({ page: 1, pageSize: 12 })
+const pagination = reactive({ page: 1, pageSize: 16 })
 
 function mediaUrl(path: unknown, name: unknown) {
   const p = String(path || '')
@@ -94,48 +72,27 @@ function imageUrl(row: Record<string, unknown>) {
 
 async function onOpen() {
   selectedId.value = null
-  selectedUrl.value = ''
   selectedPick.value = null
   pagination.page = 1
-  await loadAlbums()
-}
-
-async function loadAlbums() {
-  const res = await fetchAlbumList({ draw: 1, start: 0, length: 200 })
-  albums.value = (Array.isArray(res?.data) ? res.data : []) as Record<string, unknown>[]
-  if (!albums.value.length) {
-    albumId.value = undefined
-    images.value = []
-    total.value = 0
-    return
-  }
-  const preferred =
-    albums.value.find((a) => Number(a.albumDefault) === 1) || albums.value[0]
-  albumId.value = Number(preferred.id)
   await loadImages()
 }
 
-function onAlbumChange() {
-  pagination.page = 1
-  selectedId.value = null
-  selectedUrl.value = ''
-  selectedPick.value = null
-  return loadImages()
-}
-
 async function loadImages() {
-  if (!albumId.value) return
   loading.value = true
   try {
     const start = (pagination.page - 1) * pagination.pageSize
-    const res = await fetchAlbumImages({
-      id: albumId.value,
+    // 对齐 Java goods_img_album：列出 path=goods 的图片，不按相册 id 过滤
+    const res = await fetchGoodsAlbumImages({
       draw: pagination.page,
       start,
       length: pagination.pageSize,
     })
     images.value = (Array.isArray(res?.data) ? res.data : []) as Record<string, unknown>[]
     total.value = Number(res?.recordsTotal || 0)
+  } catch {
+    images.value = []
+    total.value = 0
+    ElMessage.error('图片列表加载失败')
   } finally {
     loading.value = false
   }
@@ -145,7 +102,6 @@ function selectImage(img: Record<string, unknown>) {
   const id = Number(img.id)
   const url = imageUrl(img)
   selectedId.value = id
-  selectedUrl.value = url
   selectedPick.value = Number.isFinite(id) && id > 0 && url ? { id, url } : null
 }
 
@@ -160,10 +116,6 @@ function confirm() {
 </script>
 
 <style scoped lang="scss">
-.picker-filter {
-  margin-bottom: 8px;
-}
-
 .image-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
