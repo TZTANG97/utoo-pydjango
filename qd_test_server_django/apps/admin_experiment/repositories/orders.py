@@ -898,6 +898,176 @@ def list_sub_orders(
     return rows, total
 
 
+def list_welcome_timeout_orders(
+    *,
+    user: dict[str, Any] | None,
+    order_status_out: str = "",
+    is_timeout: str = "",
+    order_id: str = "",
+    parent_order_id: str = "",
+    customer_name: str = "",
+    sale_manager: str = "",
+    sale_user: str = "",
+    order_status: str = "",
+    test_user_id: str = "",
+    finish_start: str = "",
+    finish_end: str = "",
+    page: int,
+    page_size: int,
+) -> tuple[list[dict[str, Any]], int]:
+    """对齐 Java experimentChildOrder/list_dpt_welcome.ajax（listPagesdpthyy）。
+
+    以 statistic_experiment_timeout 为主表，限定子单 order_type=10。
+    """
+    uid = str((user or {}).get("user_id") or (user or {}).get("id") or "").strip()
+    utoo = str((user or {}).get("utoo_type") or "").strip()
+    if not utoo and uid:
+        urow = fetch_one(
+            "SELECT utoo_type AS utooType FROM sy_users WHERE CAST(id AS CHAR) = CAST(%(id)s AS CHAR) LIMIT 1",
+            {"id": uid},
+        )
+        utoo = str((urow or {}).get("utooType") or "").strip()
+    role = _resolve_utoo_role_name(utoo)
+
+    where = """
+        WHERE IFNULL(seto.deleteStatus, 0) = 0
+          AND IFNULL(t.deleteStatus, 0) = 0
+          AND t.order_status > 0
+          AND CAST(t.order_type AS CHAR) = '10'
+    """
+    params: dict[str, Any] = {}
+    if order_status_out not in ("", "null", "None"):
+        where += " AND seto.order_status = %(order_status_out)s"
+        params["order_status_out"] = int(order_status_out)
+    if is_timeout not in ("", "null", "None"):
+        where += " AND seto.is_timeout = %(is_timeout)s"
+        params["is_timeout"] = int(is_timeout)
+    if order_id:
+        where += " AND t.order_id LIKE %(order_id)s"
+        params["order_id"] = f"%{order_id}%"
+    if parent_order_id:
+        where += " AND p.order_id LIKE %(parent_order_id)s"
+        params["parent_order_id"] = f"%{parent_order_id}%"
+    if customer_name:
+        where += " AND q.name LIKE %(customer_name)s"
+        params["customer_name"] = f"%{customer_name}%"
+    if sale_manager:
+        where += " AND t.sale_manager = %(sale_manager)s"
+        params["sale_manager"] = sale_manager
+    if sale_user:
+        where += " AND t.sale_user = %(sale_user)s"
+        params["sale_user"] = sale_user
+    if order_status:
+        where += " AND t.order_status = %(order_status)s"
+        params["order_status"] = order_status
+    if test_user_id:
+        where += """
+          AND EXISTS (
+            SELECT 1 FROM exp_qd_purchase_order_child poc
+            JOIN experiment_order_child ocf ON poc.order_child_id = ocf.id
+            WHERE poc.purchase_order_id = t.id AND ocf.test_user_id = %(test_user_id)s
+          )
+        """
+        params["test_user_id"] = test_user_id
+    if finish_start:
+        where += """
+          AND EXISTS (
+            SELECT 1 FROM experiment_order_log log
+            WHERE log.of_id = t.id AND log.log_info LIKE %(finish_kw)s
+              AND IFNULL(log.deleteStatus, 0) = 0
+              AND log.addTime >= %(finish_start)s
+          )
+        """
+        params["finish_kw"] = "%测试完成%"
+        params["finish_start"] = finish_start
+    if finish_end:
+        where += """
+          AND EXISTS (
+            SELECT 1 FROM experiment_order_log log
+            WHERE log.of_id = t.id AND log.log_info LIKE %(finish_kw2)s
+              AND IFNULL(log.deleteStatus, 0) = 0
+              AND log.addTime <= %(finish_end)s
+          )
+        """
+        params["finish_kw2"] = "%测试完成%"
+        params["finish_end"] = f"{finish_end} 23:59:59"
+
+    # 对齐 Java：非管理员按角色收窄
+    if uid and role != "系统管理员":
+        if role == "销售主管" or utoo == "销售主管":
+            where += " AND CAST(p.sale_manager AS CHAR) = CAST(%(scope_uid)s AS CHAR)"
+            params["scope_uid"] = uid
+        else:
+            where += """
+              AND (
+                CAST(seto.test_user_id AS CHAR) = CAST(%(scope_uid)s AS CHAR)
+                OR CAST(seto.sale_user_id AS CHAR) = CAST(%(scope_uid)s AS CHAR)
+                OR CAST(seto.audit_manager_id AS CHAR) = CAST(%(scope_uid)s AS CHAR)
+                OR CAST(seto.lab_manager_id AS CHAR) = CAST(%(scope_uid)s AS CHAR)
+              )
+            """
+            params["scope_uid"] = uid
+
+    from_sql = """
+        FROM statistic_experiment_timeout seto
+        INNER JOIN experiment_order t ON seto.order_id = t.id
+        LEFT JOIN experiment_order p ON t.parent_id = p.id
+        LEFT JOIN qd_user_company q ON t.customer_name = q.id
+        LEFT JOIN qd_user_company qs ON t.stock_company_name = qs.id
+        LEFT JOIN sy_users sm ON t.sale_manager = sm.id
+        LEFT JOIN sy_users su ON t.sale_user = su.id
+        LEFT JOIN (
+            SELECT poc.purchase_order_id, MIN(ocf.test_user_id) AS test_user_id
+            FROM exp_qd_purchase_order_child poc
+            LEFT JOIN experiment_order_child ocf ON poc.order_child_id = ocf.id
+            GROUP BY poc.purchase_order_id
+        ) tab2 ON t.id = tab2.purchase_order_id
+        LEFT JOIN sy_users tu ON tab2.test_user_id = tu.id
+    """
+
+    total = int(
+        scalar(
+            f"SELECT COUNT(DISTINCT t.id) {from_sql} {where}",
+            params,
+        )
+        or 0
+    )
+    clause, page_params = page_clause(page, page_size)
+    rows = fetch_all(
+        f"""
+        SELECT
+            t.id, t.addTime, t.order_id AS orderId, t.order_status AS orderStatus,
+            t.order_time AS orderTime, t.purchase_type AS purchaseType,
+            t.pay_status AS payStatus, seto.is_timeout AS isTimeout,
+            seto.order_status AS timeoutOrderStatus,
+            q.name AS customerName,
+            p.order_id AS parentOrderId,
+            sm.user_name AS managerName, sm.true_name AS managerTrueName,
+            su.user_name AS saleUserName, su.true_name AS saleUserTrueName,
+            tu.user_name AS testName, tu.true_name AS testTrueName
+        {from_sql}
+        {where}
+        ORDER BY t.addTime DESC
+        {clause}
+        """,
+        {**params, **page_params},
+    )
+    for r in rows:
+        r["orderStatusLabel"] = _sub_status_label(r.get("orderStatus"))
+        r["customerName"] = r.get("customerName") or "-"
+        parent = r.get("parentOrderId")
+        if not parent:
+            pt = str(r.get("purchaseType") or "")
+            parent = "自主发起" if pt == "1" else ("自主发起配件采购" if pt == "2" else "")
+        r["parentOrderId"] = parent or ""
+        r["saleManager"] = str(r.get("managerName") or r.get("managerTrueName") or "").strip()
+        r["saleUser"] = str(r.get("saleUserName") or r.get("saleUserTrueName") or "").strip()
+        r["testName"] = str(r.get("testName") or r.get("testTrueName") or "").strip()
+        otm = r.get("orderTime") or r.get("addTime")
+        r["orderTime"] = str(otm)[:19] if otm else ""
+    return rows, total
+
+
 # Java 抢单池哨兵值：experiment_order_child.test_user_id = '22' 表示待抢
 GRAB_POOL_TEST_USER_ID = "22"
 

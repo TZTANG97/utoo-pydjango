@@ -155,14 +155,29 @@
       <el-card v-if="showSaleChart" class="panel-card" shadow="never">
         <template #header>
           <div class="panel-head">
-            <span class="panel-head__title">我的实际销售额</span>
-            <span class="panel-head__sub">{{ saleYear }} 年</span>
+            <span class="panel-head__title">我的实验销售额</span>
+            <div class="panel-head__tools">
+              <el-select v-model="saleOrderType" style="width: 120px" @change="reloadSaleChart">
+                <el-option label="全部" value="" />
+                <el-option label="实验" value="1" />
+                <el-option label="实验分包" value="2" />
+              </el-select>
+              <el-date-picker
+                v-model="saleYearPicked"
+                type="year"
+                placeholder="年份"
+                value-format="YYYY"
+                class="panel-head__year"
+                :clearable="false"
+                @change="reloadSaleChart"
+              />
+            </div>
           </div>
         </template>
         <div ref="saleChartRef" class="chart-box" />
         <p class="chart-foot">
           {{ saleYear }}全年销售总额：人民币 {{ qnxsrmb }} | 美元 {{ qnxsus }}
-          <template v-if="Number(grml) > 0">
+          <template v-if="Number(grml) !== 0">
             | 毛利总额:{{ grml }} | 毛利率:{{ grmlRate }} %
           </template>
           <br />
@@ -265,6 +280,18 @@ const isLiteSalesRole = computed(() => {
 const currentUser = computed(
   () => welcome.value?.currentUser || welcome.value?.loginName || userStore.loginName || '',
 )
+const currentUserId = computed(() => {
+  const fromWelcome = String(welcome.value?.currentUserId || '').trim()
+  if (fromWelcome) return fromWelcome
+  const profile = (userStore.profile || {}) as Record<string, unknown>
+  return String(profile.id || profile.userId || profile.user_id || '').trim()
+})
+
+function managerQuery(extra: Record<string, string> = {}): Record<string, string> {
+  const q = { ...extra }
+  if (currentUserId.value) q.saleManager = currentUserId.value
+  return q
+}
 
 const logs = computed<WelcomeLogItem[]>(() => welcome.value?.newlogs || [])
 const showLogs = computed(() => welcomeUserType.value === 1)
@@ -284,6 +311,8 @@ const showTestChart = computed(
 )
 const showAdminChart = computed(() => welcomeUserType2.value === 1)
 const testYearPicked = ref(String(new Date().getFullYear()))
+const saleYearPicked = ref(String(new Date().getFullYear()))
+const saleOrderType = ref('')
 const showMainPanels = computed(
   () => showAssets.value || showSaleChart.value || showTestChart.value || showAdminChart.value || showLogs.value,
 )
@@ -318,27 +347,33 @@ const pendingKpis = computed<Kpi[]>(() => {
       key: 'exp',
       label: '待审核实验订单',
       count: Number(pending.value.expOrder || 0),
-      onClick: () => goOrders({ orderType: '6', orderStatus: '20' }),
+      onClick: () => goOrders(managerQuery({ orderType: '6', orderStatus: '20' })),
     },
     {
       key: 'self',
       label: '待审核实验子订单',
       count: Number(pending.value.selfChildOrder || 0),
-      onClick: () => goOrders({ orderType: '10', orderStatus: '20' }),
+      onClick: () => goOrders(managerQuery({ orderType: '10', orderStatus: '20' })),
     },
     {
       key: 'sub',
       label: '待审核实验分包订单',
       count: Number(pending.value.subcontractOrder || 0),
       onClick: () =>
-        router.push({ name: 'ExperimentSubcontractOrders', query: { orderStatus: '20' } }),
+        router.push({
+          name: 'ExperimentSubcontractOrders',
+          query: managerQuery({ orderStatus: '20' }),
+        }),
     },
     {
       key: 'sub-child',
       label: '待审核实验分包子订单',
       count: Number(pending.value.subcontractSubOrder || 0),
       onClick: () =>
-        router.push({ name: 'ExperimentSubcontractSubOrders', query: { orderStatus: '20' } }),
+        router.push({
+          name: 'ExperimentSubcontractSubOrders',
+          query: managerQuery({ orderStatus: '20' }),
+        }),
     },
     {
       key: 'pay',
@@ -347,7 +382,7 @@ const pendingKpis = computed<Kpi[]>(() => {
       onClick: () =>
         router.push({
           name: 'ExperimentSubcontractSubOrders',
-          query: { payStatus: '32' },
+          query: managerQuery({ payStatus: '32' }),
         }),
     },
   ]
@@ -377,21 +412,27 @@ const opsKpis = computed<Kpi[]>(() => {
       label: '未开始测试订单',
       count: Number(ops.value.notStarted || 0),
       tone: 'kpi-card--warn',
-      onClick: () => router.push({ name: 'DigitalStats' }),
+      onClick: () =>
+        router.push({ name: 'ExperimentWelcomeOrders', query: { order_status_out: '0' } }),
     },
     {
       key: 'progress',
       label: '进行中测试订单',
       count: Number(ops.value.inProgress || 0),
       tone: 'kpi-card--info',
-      onClick: () => router.push({ name: 'DigitalStats' }),
+      onClick: () =>
+        router.push({ name: 'ExperimentWelcomeOrders', query: { order_status_out: '1' } }),
     },
     {
       key: 'timeout',
       label: '测试超时订单',
       count: Number(ops.value.timeout || 0),
       tone: 'kpi-card--danger',
-      onClick: () => router.push({ name: 'DigitalStats' }),
+      onClick: () =>
+        router.push({
+          name: 'ExperimentWelcomeOrders',
+          query: { order_status_out: 'null', is_timeout: '1' },
+        }),
     },
   ]
 })
@@ -544,6 +585,7 @@ function renderSaleBars() {
   const rmb = (welcome.value?.userSaleAryrmb || []).map((v) => Number(v) || 0)
   const usd = (welcome.value?.userSaleAryus || []).map((v) => Number(v) || 0)
   const name = currentUser.value || '我'
+  saleChart.off('click')
   saleChart.setOption({
     color: ['#e11d48', '#374151'],
     legend: {
@@ -572,6 +614,20 @@ function renderSaleBars() {
       },
     ],
   })
+  saleChart.on('click', (params: { name?: string; seriesIndex?: number }) => {
+    const m = String(params.name || '')
+    if (!m || m === '暂无') return
+    const currencyType = params.seriesIndex === 1 ? '2' : '1'
+    router.push({
+      name: 'DigitalExpAmountList',
+      query: {
+        month: m,
+        order_type: saleOrderType.value || '',
+        currency_type: currencyType,
+        userId: currentUserId.value || '',
+      },
+    })
+  })
 }
 
 function renderTestBars() {
@@ -579,6 +635,7 @@ function renderTestBars() {
   if (!testChart) testChart = echarts.init(testChartRef.value)
   const months = welcome.value?.expmonth || []
   const vals = (welcome.value?.expTestAry || []).map((v) => Number(v) || 0)
+  testChart.off('click')
   testChart.setOption({
     color: ['#ea580c'],
     tooltip: { trigger: 'axis' },
@@ -601,6 +658,14 @@ function renderTestBars() {
         data: vals.length ? vals : [0],
       },
     ],
+  })
+  testChart.on('click', (params: { name?: string }) => {
+    const m = String(params.name || '')
+    if (!m || m === '暂无') return
+    router.push({
+      name: 'DigitalMyTestOrders',
+      query: { userId: currentUserId.value || '', month: m },
+    })
   })
 }
 
@@ -632,6 +697,10 @@ function renderSaleTestYear() {
   if (!testYearChartInst) testYearChartInst = echarts.init(testYearChartRef.value)
   const months = testYearChart.value.months || []
   const vals = (testYearChart.value.values || []).map((v) => Number(v) || 0)
+  const saleUid = String(
+    (testYearChart.value as Record<string, unknown>).saleUserId || currentUserId.value || '',
+  )
+  testYearChartInst.off('click')
   testYearChartInst.setOption({
     color: ['#e11d48'],
     tooltip: { trigger: 'axis' },
@@ -654,6 +723,14 @@ function renderSaleTestYear() {
       },
     ],
   })
+  testYearChartInst.on('click', (params: { name?: string }) => {
+    const m = String(params.name || '')
+    if (!m || m === '暂无') return
+    router.push({
+      name: 'DigitalMyTestOrders',
+      query: { month: m, sale_user: saleUid, userId: '' },
+    })
+  })
 }
 
 function renderTesterMonth() {
@@ -661,6 +738,12 @@ function renderTesterMonth() {
   if (!testerMonthChartInst) testerMonthChartInst = echarts.init(testerMonthChartRef.value)
   const names = testerMonthChart.value.names || []
   const vals = (testerMonthChart.value.values || []).map((v) => Number(v) || 0)
+  const userIds = ((testerMonthChart.value as Record<string, unknown>).userIds || []) as string[]
+  const month = String(testerMonthChart.value.month || '')
+  const saleUid = String(
+    (testerMonthChart.value as Record<string, unknown>).saleUserId || currentUserId.value || '',
+  )
+  testerMonthChartInst.off('click')
   testerMonthChartInst.setOption({
     color: ['#374151'],
     tooltip: { trigger: 'axis' },
@@ -676,9 +759,27 @@ function renderTesterMonth() {
         name: '测试数量',
         type: 'bar',
         barMaxWidth: 36,
-        data: vals.length ? vals : [0],
+        data: vals.length
+          ? vals.map((v, i) => ({
+              value: v,
+              userId: userIds[i] || '',
+            }))
+          : [0],
       },
     ],
+  })
+  testerMonthChartInst.on('click', (params: { dataIndex?: number; data?: { userId?: string } }) => {
+    const idx = Number(params.dataIndex ?? -1)
+    const uid = String(params.data?.userId || userIds[idx] || '')
+    if (!uid && !month) return
+    router.push({
+      name: 'DigitalMyTestOrders',
+      query: {
+        userId: uid,
+        month,
+        sale_user: saleUid,
+      },
+    })
   })
 }
 
@@ -700,11 +801,12 @@ function onResize() {
   testerMonthChartInst?.resize()
 }
 
-async function ensureWelcomeData(year?: string) {
-  const y = year || testYearPicked.value || String(new Date().getFullYear())
+async function ensureWelcomeData(year?: string, orderType?: string) {
+  const y = year || saleYearPicked.value || testYearPicked.value || String(new Date().getFullYear())
+  const ot = orderType != null ? orderType : saleOrderType.value
   const res = await fetchAdminWelcome({
     silentError: true,
-    params: { year: y },
+    params: { year: y, order_type: ot || undefined },
   })
   if (isAjaxOk(res) && res.obj) {
     const obj = res.obj as Record<string, unknown>
@@ -712,7 +814,16 @@ async function ensureWelcomeData(year?: string) {
     if (obj.testChartYear) {
       testYearPicked.value = String(obj.testChartYear)
     }
+    if (obj.saleYear) {
+      saleYearPicked.value = String(obj.saleYear)
+    }
   }
+}
+
+async function reloadSaleChart() {
+  await ensureWelcomeData(saleYearPicked.value, saleOrderType.value)
+  await nextTick()
+  renderSaleBars()
 }
 
 async function onTestYearChange(val: string | null) {
@@ -1067,6 +1178,14 @@ onBeforeUnmount(() => {
 
 .panel-head__year {
   width: 120px;
+}
+
+.panel-head__tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .panel-head__year :deep(.el-input__wrapper) {

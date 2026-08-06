@@ -359,3 +359,190 @@ def list_exp_orders(
         page=page,
         page_size=page_size,
     )
+
+def _helper_ids(user_id: str) -> list[str]:
+    ids = [str(user_id)]
+    if not user_id:
+        return ids
+    rows = fetch_all(
+        "SELECT id FROM sy_users WHERE CAST(helper_id AS CHAR) = CAST(%(uid)s AS CHAR)",
+        {"uid": user_id},
+    )
+    for r in rows:
+        hid = str(r.get("id") or "")
+        if hid and hid not in ids:
+            ids.append(hid)
+    return ids
+
+
+def list_exp_amount_orders(
+    *,
+    user_id: str,
+    month: str = "",
+    order_type: str = "",
+    order_id: str = "",
+    page: int = 1,
+    page_size: int = 10,
+) -> tuple[list[dict[str, Any]], int]:
+    """对齐 Java digitalManage/expAmountList.ajax（简化：仅 experiment_order）。"""
+    uid = str(user_id or "").strip()
+    where = [
+        "IFNULL(t.deleteStatus, 0) = 0",
+        "t.order_status > 0",
+        "CAST(t.order_type AS CHAR) IN ('6', '8')",
+    ]
+    params: dict[str, Any] = {}
+    ot = str(order_type or "").strip()
+    if ot == "1":
+        where.append("CAST(t.order_type AS CHAR) = '6'")
+    elif ot == "2":
+        where.append("CAST(t.order_type AS CHAR) = '8'")
+    m = str(month or "").strip()
+    if m:
+        where.append("DATE_FORMAT(t.order_time, '%%Y-%%m') = %(month)s")
+        params["month"] = m
+    if order_id:
+        where.append("t.order_id LIKE %(order_id)s")
+        params["order_id"] = f"%{order_id}%"
+
+    if uid:
+        urow = fetch_all(
+            "SELECT utoo_type AS ut FROM sy_users WHERE CAST(id AS CHAR)=CAST(%(id)s AS CHAR) LIMIT 1",
+            {"id": uid},
+        )
+        utoo = str((urow[0].get("ut") if urow else "") or "")
+        if utoo == "销售主管":
+            where.append("CAST(t.sale_manager AS CHAR) = CAST(%(uid)s AS CHAR)")
+            params["uid"] = uid
+        elif utoo != "系统管理员":
+            helpers = _helper_ids(uid)
+            ph = ", ".join(f"%(su{i})s" for i in range(len(helpers)))
+            for i, h in enumerate(helpers):
+                params[f"su{i}"] = h
+            where.append(f"CAST(t.sale_user AS CHAR) IN ({ph})")
+
+    where_sql = " AND ".join(where)
+    total = int(
+        scalar(f"SELECT COUNT(*) FROM experiment_order t WHERE {where_sql}", params) or 0
+    )
+    offset = max(0, (max(1, page) - 1) * max(1, page_size))
+    params["limit"] = max(1, page_size)
+    params["offset"] = offset
+    rows = fetch_all(
+        f"""
+        SELECT
+            t.id, t.order_id AS orderId, t.order_type AS orderType,
+            t.totalPrice AS totalPrice, t.currency_type AS currencyType,
+            t.order_time AS orderTime, t.order_status AS orderStatus,
+            com.name AS customerName,
+            u.company_name AS supplierName,
+            sm.user_name AS saleManager, su.user_name AS saleUser
+        FROM experiment_order t
+        LEFT JOIN qd_user_company com ON t.customer_name = com.id
+        LEFT JOIN `user` u ON t.supplier_name = u.id
+        LEFT JOIN sy_users sm ON t.sale_manager = sm.id
+        LEFT JOIN sy_users su ON t.sale_user = su.id
+        WHERE {where_sql}
+        ORDER BY t.order_time DESC
+        LIMIT %(limit)s OFFSET %(offset)s
+        """,
+        params,
+    )
+    for r in rows:
+        r["orderStatusLabel"] = _status_label(r.get("orderStatus"))
+        try:
+            ct = int(r.get("currencyType") or 1)
+        except (TypeError, ValueError):
+            ct = 1
+        r["currencyLabel"] = "美元" if ct == 2 else "人民币"
+        otm = r.get("orderTime")
+        r["orderTime"] = str(otm)[:19] if otm else ""
+        try:
+            r["totalPrice"] = f"{float(r.get('totalPrice') or 0):.2f}"
+        except (TypeError, ValueError):
+            r["totalPrice"] = "0.00"
+    return rows, total
+
+
+def list_my_test_orders(
+    *,
+    test_user_id: str,
+    month: str = "",
+    sale_user: str = "",
+    order_id: str = "",
+    page: int = 1,
+    page_size: int = 10,
+) -> tuple[list[dict[str, Any]], int]:
+    """对齐 Java digitalManage/myTestOrderList.ajax（简化）。"""
+    tid = str(test_user_id or "").strip()
+    where = [
+        "IFNULL(ocf.delete_status, 2) = 2",
+        "ocf.order_status > 38",
+        "IFNULL(eo.deleteStatus, 0) = 0",
+        "eo.order_status > 0",
+        "CAST(eo.order_type AS CHAR) IN ('6', '8')",
+    ]
+    params: dict[str, Any] = {}
+    if tid:
+        where.append("CAST(ocf.test_user_id AS CHAR) = CAST(%(tid)s AS CHAR)")
+        params["tid"] = tid
+    m = str(month or "").strip()
+    if m:
+        where.append(
+            """
+            EXISTS (
+              SELECT 1 FROM experiment_log elog
+              WHERE elog.order_child_id = ocf.id
+                AND DATE_FORMAT(elog.end_time, '%%Y-%%m') = %(month)s
+            )
+            """
+        )
+        params["month"] = m
+    if sale_user:
+        where.append("CAST(eo.sale_user AS CHAR) = CAST(%(sale_user)s AS CHAR)")
+        params["sale_user"] = sale_user
+    if order_id:
+        where.append("eo.order_id LIKE %(order_id)s")
+        params["order_id"] = f"%{order_id}%"
+
+    where_sql = " AND ".join(where)
+    total = int(
+        scalar(
+            f"""
+            SELECT COUNT(*)
+            FROM experiment_order_child ocf
+            JOIN experiment_order eo ON ocf.order_form_id = eo.id
+            WHERE {where_sql}
+            """,
+            params,
+        )
+        or 0
+    )
+    offset = max(0, (max(1, page) - 1) * max(1, page_size))
+    params["limit"] = max(1, page_size)
+    params["offset"] = offset
+    rows = fetch_all(
+        f"""
+        SELECT
+            ocf.id, ocf.order_id AS orderId, ocf.goods_nums AS goodsNums,
+            ocf.experiment_class_name AS className,
+            eo.id AS ofId, eo.order_id AS parentOrderId, eo.order_type AS orderType,
+            tu.user_name AS testUser, su.user_name AS saleUser,
+            (
+              SELECT MAX(elog.end_time) FROM experiment_log elog
+              WHERE elog.order_child_id = ocf.id
+            ) AS finishTime
+        FROM experiment_order_child ocf
+        JOIN experiment_order eo ON ocf.order_form_id = eo.id
+        LEFT JOIN sy_users tu ON ocf.test_user_id = tu.id
+        LEFT JOIN sy_users su ON eo.sale_user = su.id
+        WHERE {where_sql}
+        ORDER BY finishTime DESC
+        LIMIT %(limit)s OFFSET %(offset)s
+        """,
+        params,
+    )
+    for r in rows:
+        ft = r.get("finishTime")
+        r["finishTime"] = str(ft)[:19] if ft else ""
+    return rows, total

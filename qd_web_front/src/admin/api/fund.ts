@@ -182,6 +182,14 @@ export const fetchDigitalCompanySaleList = (p: Record<string, unknown> = {}) =>
 export const fetchDigitalExpList = (p: Record<string, unknown> = {}) =>
   fetchDatatable('/digitalManage/expList.ajax', p)
 
+/** 我的实验销售额下钻（对齐 Java expAmountList.ajax） */
+export const fetchExpAmountList = (p: Record<string, unknown> = {}) =>
+  fetchDatatable('/digitalManage/expAmountList.ajax', p)
+
+/** 测试数量下钻（对齐 Java myTestOrderList.ajax） */
+export const fetchMyTestOrderList = (p: Record<string, unknown> = {}) =>
+  fetchDatatable('/digitalManage/myTestOrderList.ajax', p)
+
 /** 个人实验总额（公司基金等非管理员看板） */
 export const fetchUserAmountByYearSygr = (p: Record<string, unknown> = {}) =>
   postAjax('/digitalManage/selUserAmountByYearsygr.ajax', p)

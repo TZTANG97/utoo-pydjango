@@ -632,6 +632,53 @@ def order_list(request: Request, user=None):
 @authentication_classes([])
 @permission_classes([AllowAny])
 @admin_ajax_view()
+def order_list_welcome(request: Request, user=None):
+    """对齐 Java experimentChildOrder/list_dpt_welcome.ajax。"""
+    data = merge_payload(request)
+    draw, page, page_size = parse_datatable_params(request)
+    rows, total = order_repo.list_welcome_timeout_orders(
+        user=user,
+        order_status_out=str(
+            data.get("order_status_out")
+            if data.get("order_status_out") is not None
+            else data.get("orderStatusOut")
+            or ""
+        ).strip(),
+        is_timeout=str(
+            data.get("is_timeout") if data.get("is_timeout") is not None else data.get("isTimeout") or ""
+        ).strip(),
+        order_id=(data.get("orderId") or data.get("order_id") or "").strip(),
+        parent_order_id=(
+            data.get("parentOrderId") or data.get("parent_order_id") or ""
+        ).strip(),
+        customer_name=(
+            data.get("customerName")
+            or data.get("stockCompanyName")
+            or data.get("customer_name")
+            or ""
+        ).strip(),
+        sale_manager=(
+            data.get("saleManager") or data.get("sale_Manager") or data.get("sale_manager") or ""
+        ).strip(),
+        sale_user=(data.get("saleUser") or data.get("sale_user") or "").strip(),
+        order_status=str(data.get("orderStatus") or data.get("order_status") or "").strip(),
+        test_user_id=str(data.get("testUserId") or data.get("test_user_id") or "").strip(),
+        finish_start=(
+            data.get("finishStart") or data.get("order_startime") or data.get("orderStart") or ""
+        ).strip(),
+        finish_end=(
+            data.get("finishEnd") or data.get("order_endtime") or data.get("orderEnd") or ""
+        ).strip(),
+        page=page,
+        page_size=page_size,
+    )
+    return Response(datatable_payload(draw=draw, total=total, rows=rows))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
 def grab_list(request: Request, user=None):
     del user
     data = merge_payload(request)

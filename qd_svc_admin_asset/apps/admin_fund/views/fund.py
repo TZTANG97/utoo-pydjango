@@ -920,3 +920,56 @@ def digital_exp_list(request: Request, user=None):
         page_size=page_size,
     )
     return Response(datatable_payload(draw=draw, total=total, rows=rows))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def digital_exp_amount_list(request: Request, user=None):
+    """对齐 Java digitalManage/expAmountList.ajax。"""
+    data = merge_payload(request)
+    draw, page, page_size = parse_datatable_params(request)
+    uid = str(
+        data.get("userId")
+        or data.get("user_id")
+        or (user or {}).get("user_id")
+        or (user or {}).get("id")
+        or ""
+    ).strip()
+    rows, total = digital_orders_repo.list_exp_amount_orders(
+        user_id=uid,
+        month=str(data.get("month") or "").strip(),
+        order_type=str(data.get("order_type") or data.get("orderType") or "").strip(),
+        order_id=str(data.get("order_id") or data.get("orderId") or "").strip(),
+        page=page,
+        page_size=page_size,
+    )
+    return Response(datatable_payload(draw=draw, total=total, rows=rows))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def digital_my_test_order_list(request: Request, user=None):
+    """对齐 Java digitalManage/myTestOrderList.ajax。"""
+    data = merge_payload(request)
+    draw, page, page_size = parse_datatable_params(request)
+    tid = str(
+        data.get("userId")
+        or data.get("user_id")
+        or data.get("testUserId")
+        or (user or {}).get("user_id")
+        or (user or {}).get("id")
+        or ""
+    ).strip()
+    rows, total = digital_orders_repo.list_my_test_orders(
+        test_user_id=tid,
+        month=str(data.get("month") or "").strip(),
+        sale_user=str(data.get("sale_user") or data.get("saleUser") or "").strip(),
+        order_id=str(data.get("order_id") or data.get("orderId") or "").strip(),
+        page=page,
+        page_size=page_size,
+    )
+    return Response(datatable_payload(draw=draw, total=total, rows=rows))

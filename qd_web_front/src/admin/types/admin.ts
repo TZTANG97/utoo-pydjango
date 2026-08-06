@@ -51,18 +51,22 @@ export interface WelcomeTestYearChart {
   year?: string
   months?: string[]
   values?: number[]
+  saleUserId?: string
 }
 
 export interface WelcomeTesterMonthChart {
   month?: string
   names?: string[]
   values?: number[]
+  userIds?: string[]
+  saleUserId?: string
 }
 
 export interface WelcomeData {
   userName?: string
   loginName?: string
   currentUser?: string
+  currentUserId?: string
   userType?: number
   /** 对齐 Java：1管理员交易 3测试人员 4销售人员测试图 5测试主管 0无 */
   userType2?: number

@@ -16,7 +16,13 @@ export interface DataTableResult<T = Record<string, unknown>> {
 }
 
 async function postAjax(url: string, data?: Record<string, unknown>, config?: RequestConfig) {
-  return (await request.post(url, data, config)) as unknown as AjaxBody
+  return (await request.post(url, data, {
+    ...config,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(config?.headers || {}),
+    },
+  })) as unknown as AjaxBody
 }
 
 async function fetchDatatable<T>(
@@ -116,6 +122,8 @@ export const fetchSampleAttrOptions = (type: number, parentId?: string | number)
 // 订单
 export const fetchExpOrderList = (p: Record<string, unknown>) =>
   fetchDatatable(`${BASE}/order/list.ajax`, p)
+export const fetchExpWelcomeOrderList = (p: Record<string, unknown>) =>
+  fetchDatatable(`${BASE}/order/listWelcome.ajax`, p)
 export const getExpOrderDetail = (id: string | number) =>
   postAjax(`${BASE}/order/detail.ajax`, { id })
 export const auditExpOrder = (data: Record<string, unknown>) =>
@@ -138,6 +146,10 @@ export const delExpOrderRelated = (data: Record<string, unknown>) =>
   postAjax(`${BASE}/order/delRelated.ajax`, data)
 export const saveExpOrderFinish = (data: Record<string, unknown>) =>
   postAjax(`${BASE}/order/saveFinish.ajax`, data)
+export const saveExpChildReferencePrice = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/saveReferencePrice.ajax`, data)
+export const updateExpChildTimeType = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/updateTimeType.ajax`, data)
 export const fetchExpOrderMoreInfo = (id: string | number) =>
   postAjax(`${BASE}/order/moreInfo.ajax`, { id })
 export const fetchExpOrderStatusOptions = (p: Record<string, unknown> = {}) =>

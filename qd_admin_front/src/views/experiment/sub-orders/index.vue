@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="page-wrap">
     <section class="filter-panel">
       <div class="action-bar">
@@ -175,7 +175,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   exportExpOrders,
@@ -187,6 +187,7 @@ import { useDataTable } from '@/composables/useDataTable'
 import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
 
 const router = useRouter()
+const route = useRoute()
 
 const headerCellStyle = {
   background: '#f3f6fb',
@@ -401,6 +402,7 @@ async function handleExport() {
 async function handleExportFinished() {
   exportingFinished.value = true
   try {
+    // 对齐 Java bjexport.htm：仅导出产品子行状态=已完成(50)
     await doExport({ exportMode: 'finished' })
   } catch {
     ElMessage.error('导出失败')
@@ -410,9 +412,20 @@ async function handleExportFinished() {
 }
 
 onMounted(async () => {
+  applyRouteQuery()
   await loadOptions()
   reload()
 })
+
+function applyRouteQuery() {
+  const q = route.query
+  if (q.orderId) filters.orderId = String(q.orderId)
+  if (q.parentOrderId) filters.parentOrderId = String(q.parentOrderId)
+  if (q.saleManager) filters.saleManager = String(q.saleManager)
+  if (q.saleUser) filters.saleUser = String(q.saleUser)
+  if (q.orderStatus) filters.orderStatus = String(q.orderStatus)
+  if (q.testUserId) filters.testUserId = String(q.testUserId)
+}
 </script>
 
 <style scoped lang="scss">

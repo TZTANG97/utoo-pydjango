@@ -165,7 +165,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   exportExpOrders,
@@ -177,6 +177,7 @@ import { useDataTable } from '@admin/composables/useDataTable'
 import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
 const router = useRouter()
+const route = useRoute()
 
 const headerCellStyle = {
   background: '#f3f6fb',
@@ -437,9 +438,23 @@ async function handleExportFinished() {
 }
 
 onMounted(async () => {
+  applyRouteQuery()
   await loadOptions()
   reload()
 })
+
+function applyRouteQuery() {
+  const q = route.query
+  if (q.orderId) filters.orderId = String(q.orderId)
+  if (q.parentOrderId) filters.parentOrderId = String(q.parentOrderId)
+  if (q.saleManager) filters.saleManager = String(q.saleManager)
+  if (q.saleUser) filters.saleUser = String(q.saleUser)
+  if (q.orderStatus) filters.orderStatus = String(q.orderStatus)
+  if (q.payStatus != null && String(q.payStatus) !== '') {
+    filters.payStatus = String(q.payStatus)
+  }
+  if (q.testUserId) filters.testUserId = String(q.testUserId)
+}
 </script>
 
 <style scoped lang="scss">

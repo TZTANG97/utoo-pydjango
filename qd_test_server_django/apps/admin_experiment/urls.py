@@ -37,6 +37,8 @@ urlpatterns = [
     path("adminExperiment/sampleAttr/options.ajax", views.sample_attr_options),
     # 订单 / 抢单
     path("adminExperiment/order/list.ajax", views.order_list),
+    path("adminExperiment/order/listWelcome.ajax", views.order_list_welcome),
+    path("experimentChildOrder/list_dpt_welcome.ajax", views.order_list_welcome),
     path("adminExperiment/order/detail.ajax", views.order_detail),
     path("adminExperiment/order/audit.ajax", views.order_audit),
     path("adminExperiment/order/cancel.ajax", views.order_cancel),

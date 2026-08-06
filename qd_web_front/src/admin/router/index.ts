@@ -404,6 +404,18 @@ export const constantRoutes: RouteRecordRaw[] = [
         component: () => import('@admin/views/digital/lab-sale-perf/orders.vue'),
         meta: { title: '销售实际业绩订单明细', hidden: true },
       },
+      {
+        path: 'digital/exp-amount-list',
+        name: 'DigitalExpAmountList',
+        component: () => import('@admin/views/digital/exp-amount-list/index.vue'),
+        meta: { title: '我的实验销售额', hidden: true },
+      },
+      {
+        path: 'digital/my-test-orders',
+        name: 'DigitalMyTestOrders',
+        component: () => import('@admin/views/digital/my-test-orders/index.vue'),
+        meta: { title: '测试订单', hidden: true },
+      },
       // 库存管理
       {
         path: 'inventory/list',
@@ -507,6 +519,12 @@ export const constantRoutes: RouteRecordRaw[] = [
         name: 'ExperimentSubOrders',
         component: () => import('@admin/views/experiment/sub-orders/index.vue'),
         meta: { title: '实验子订单' },
+      },
+      {
+        path: 'experiment/welcome-orders',
+        name: 'ExperimentWelcomeOrders',
+        component: () => import('@admin/views/experiment/welcome-orders/index.vue'),
+        meta: { title: '测试订单', hidden: true },
       },
       {
         path: 'experiment/subcontract-orders',

@@ -112,12 +112,22 @@ def welcome(request: Request, user=None):
     chart_year = request.query_params.get("year") or (
         body.get("year") if isinstance(body, dict) else None
     )
+    order_type = request.query_params.get("order_type") or (
+        body.get("order_type") if isinstance(body, dict) else None
+    ) or (
+        body.get("orderType") if isinstance(body, dict) else None
+    )
     try:
         cy = int(chart_year) if chart_year not in (None, "") else None
     except (TypeError, ValueError):
         cy = None
     return ajax_response(
-        True, obj=welcome_service.build_welcome_payload(payload_user, chart_year=cy)
+        True,
+        obj=welcome_service.build_welcome_payload(
+            payload_user,
+            chart_year=cy,
+            order_type_filter=str(order_type or ""),
+        ),
     )
 
 

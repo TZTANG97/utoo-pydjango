@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="page-wrap">
     <section class="filter-panel">
       <div class="action-bar">
@@ -402,6 +402,9 @@ function applyRouteQuery() {
   }
   if (q.orderStart) filters.orderStart = String(q.orderStart)
   if (q.orderEnd) filters.orderEnd = String(q.orderEnd)
+  if (q.saleUser) filters.saleUser = String(q.saleUser)
+  if (q.saleManager) filters.saleManager = String(q.saleManager)
+  if (q.orderStatus) filters.orderStatus = String(q.orderStatus)
 }
 
 onMounted(async () => {

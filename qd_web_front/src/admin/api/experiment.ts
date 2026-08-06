@@ -122,6 +122,8 @@ export const fetchSampleAttrOptions = (type: number, parentId?: string | number)
 // 订单
 export const fetchExpOrderList = (p: Record<string, unknown>) =>
   fetchDatatable(`${BASE}/order/list.ajax`, p)
+export const fetchExpWelcomeOrderList = (p: Record<string, unknown>) =>
+  fetchDatatable(`${BASE}/order/listWelcome.ajax`, p)
 export const getExpOrderDetail = (id: string | number) =>
   postAjax(`${BASE}/order/detail.ajax`, { id })
 export const auditExpOrder = (data: Record<string, unknown>) =>

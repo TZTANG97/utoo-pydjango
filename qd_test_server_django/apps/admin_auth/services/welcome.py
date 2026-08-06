@@ -339,6 +339,7 @@ def _test_qty_year_chart(*, year: int, sale_user_id: str = "") -> dict[str, Any]
         "year": str(year),
         "months": months,
         "values": [by_m.get(m, 0) for m in months],
+        "saleUserId": str(sale_user_id or ""),
     }
 
 
@@ -355,6 +356,7 @@ def _tester_qty_month_chart(*, year: int, month: int, sale_user_id: str = "") ->
     rows = fetch_all(
         f"""
         SELECT
+            t.test_user_id AS userId,
             IFNULL(NULLIF(TRIM(u.true_name), ''), IFNULL(u.user_name, t.test_user_id)) AS name,
             COUNT(*) AS cnt
         FROM statistic_experiment_finish t
@@ -375,6 +377,8 @@ def _tester_qty_month_chart(*, year: int, month: int, sale_user_id: str = "") ->
         "month": ym,
         "names": [str(r.get("name") or "") for r in rows],
         "values": [int(r.get("cnt") or 0) for r in rows],
+        "userIds": [str(r.get("userId") or "") for r in rows],
+        "saleUserId": str(sale_user_id or ""),
     }
 
 
@@ -453,13 +457,165 @@ def _chart_user_test_count(months: list[str], user_id: str, *, year: int) -> lis
     return _fill_months(months, by_month, as_wan=False)
 
 
+def _helper_user_ids(user_id: str) -> list[str]:
+    """对齐 Java queryUsersByHelper：本人 + helper_id=本人。"""
+    ids = [str(user_id)]
+    if not user_id:
+        return ids
+    rows = fetch_all(
+        """
+        SELECT id FROM sy_users
+        WHERE CAST(helper_id AS CHAR) = CAST(%(uid)s AS CHAR)
+        """,
+        {"uid": user_id},
+    )
+    for r in rows:
+        hid = str(r.get("id") or "")
+        if hid and hid not in ids:
+            ids.append(hid)
+    return ids
+
+
+def _us_exchange_rate() -> Decimal:
+    try:
+        val = scalar("SELECT us_exchange_rate FROM account_setting LIMIT 1", {})
+        return Decimal(str(val or 1)) or Decimal("1")
+    except Exception:
+        return Decimal("1")
+
+
+def _user_has_company_account(user_id: str) -> bool:
+    if not user_id:
+        return False
+    try:
+        return bool(
+            scalar(
+                """
+                SELECT u.id FROM `user` u
+                WHERE CAST(u.syuser_id AS CHAR) = CAST(%(uid)s AS CHAR)
+                  AND IFNULL(u.deleteStatus, 0) = 0
+                LIMIT 1
+                """,
+                {"uid": user_id},
+            )
+        )
+    except Exception:
+        return False
+
+
+def _subcontract_gross_profit(*, user_id: str, year: int | None = None) -> tuple[str, str]:
+    """对齐 Java welcome：毛利 = 分包订单总额 − 分包子订单总额（美元按汇率折 RMB）。"""
+    if not user_id:
+        return "0.00", "0.00"
+    fx = _us_exchange_rate()
+    year_sql_t = ""
+    year_sql_t2 = ""
+    params: dict[str, Any] = {"uid": user_id}
+    if year:
+        year_sql_t = " AND DATE_FORMAT(t.order_time,'%%Y') = %(year)s"
+        year_sql_t2 = " AND DATE_FORMAT(t2.order_time,'%%Y') = %(year)s"
+        params["year"] = str(year)
+
+    if _user_has_company_account(user_id):
+        sale_filter = """
+          AND t.supplier_name IN (
+            SELECT id FROM `user` WHERE CAST(syuser_id AS CHAR) = CAST(%(uid)s AS CHAR)
+          )
+        """
+        parent_sale_filter = """
+          AND t2.supplier_name IN (
+            SELECT id FROM `user` WHERE CAST(syuser_id AS CHAR) = CAST(%(uid)s AS CHAR)
+          )
+        """
+    else:
+        sale_filter = """
+          AND (
+            CAST(t.sale_user AS CHAR) = CAST(%(uid)s AS CHAR)
+            OR t.sale_user IN (
+              SELECT id FROM sy_users WHERE CAST(helper_id AS CHAR) = CAST(%(uid)s AS CHAR)
+            )
+          )
+        """
+        parent_sale_filter = """
+          AND (
+            CAST(t2.sale_user AS CHAR) = CAST(%(uid)s AS CHAR)
+            OR t2.sale_user IN (
+              SELECT id FROM sy_users WHERE CAST(helper_id AS CHAR) = CAST(%(uid)s AS CHAR)
+            )
+          )
+        """
+
+    try:
+        parent_rows = fetch_all(
+            f"""
+            SELECT IFNULL(SUM(t.totalPrice), 0) AS amt, IFNULL(t.currency_type, 1) AS ct
+            FROM experiment_order t
+            WHERE t.order_status >= 30 AND CAST(t.order_type AS CHAR) = '8'
+              {year_sql_t}
+              {sale_filter}
+            GROUP BY IFNULL(t.currency_type, 1)
+            """,
+            params,
+        )
+        child_rows = fetch_all(
+            f"""
+            SELECT IFNULL(SUM(t.totalPrice), 0) AS amt, IFNULL(t.currency_type, 1) AS ct
+            FROM experiment_order t
+            WHERE t.order_status > 0 AND CAST(t.order_type AS CHAR) = '9'
+              AND t.parent_id IN (
+                SELECT t2.id FROM experiment_order t2
+                WHERE t2.order_status >= 30 AND CAST(t2.order_type AS CHAR) = '8'
+                  {year_sql_t2}
+                  {parent_sale_filter}
+              )
+            GROUP BY IFNULL(t.currency_type, 1)
+            """,
+            params,
+        )
+    except Exception:
+        return "0.00", "0.00"
+
+    def to_rmb(rows: list[dict[str, Any]]) -> Decimal:
+        total = Decimal("0")
+        for r in rows:
+            try:
+                amt = Decimal(str(r.get("amt") or 0))
+            except Exception:
+                amt = Decimal("0")
+            try:
+                ct = int(r.get("ct") or 1)
+            except Exception:
+                ct = 1
+            if ct == 2:
+                total += (amt * fx).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            else:
+                total += amt
+        return total
+
+    parent_rmb = to_rmb(parent_rows)
+    child_rmb = to_rmb(child_rows)
+    profit = parent_rmb - child_rmb
+    rate = Decimal("0")
+    if profit != 0 and parent_rmb != 0:
+        rate = (profit / parent_rmb * Decimal("100")).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+    return (
+        format(profit.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), "f"),
+        format(rate, "f"),
+    )
+
+
 def _user_sale_by_year(
     *,
     user_id: str,
     year: int,
     order_type_filter: str = "",
 ) -> dict[str, Any]:
-    """对齐 Java selUserSaleByYear / welcome 注入的双币种月柱图。"""
+    """对齐 Java selUserSaleByYear：读 statistic_user_sale_exp / _sm。
+
+    order_type_filter: ''=全部(1+2)，'1'=实验，'2'=实验分包（统计表 order_type）。
+    """
     months = _months_of_year(year)
     empty = {
         "year": str(year),
@@ -476,65 +632,99 @@ def _user_sale_by_year(
     if not user_id or not months:
         return empty
 
-    type_sql = "AND order_type IN (6, 8)"
-    if order_type_filter == "1":
-        type_sql = "AND CAST(order_type AS CHAR) = '6'"
-    elif order_type_filter == "2":
-        type_sql = "AND CAST(order_type AS CHAR) = '8'"
-
-    params: dict[str, Any] = {"user_id": user_id, "year": str(year)}
-    rows = fetch_all(
-        f"""
-        SELECT
-            DATE_FORMAT(order_time, '%%Y-%%m') AS xdate,
-            IFNULL(currency_type, 1) AS currencyType,
-            SUM(IFNULL(totalPrice, 0)) AS price,
-            COUNT(*) AS cnt
-        FROM experiment_order
-        WHERE CAST(sale_user AS CHAR) = CAST(%(user_id)s AS CHAR)
-          AND order_status >= 30
-          {type_sql}
-          AND DATE_FORMAT(order_time, '%%Y') = %(year)s
-        GROUP BY DATE_FORMAT(order_time, '%%Y-%%m'), IFNULL(currency_type, 1)
-        """,
-        params,
+    use_sm = False
+    urow = fetch_all(
+        "SELECT utoo_type AS ut FROM sy_users WHERE CAST(id AS CHAR)=CAST(%(id)s AS CHAR) LIMIT 1",
+        {"id": user_id},
     )
-    rmb_by: dict[str, Decimal] = {}
-    usd_by: dict[str, Decimal] = {}
+    utoo = str((urow[0].get("ut") if urow else "") or "")
+    use_sm = _is_sale_manager_exact(utoo)
+    table = "statistic_user_sale_exp_sm" if use_sm else "statistic_user_sale_exp"
+    try:
+        fetch_all(f"SELECT 1 AS ok FROM {table} LIMIT 1")
+    except Exception:
+        grml, grml_rate = _subcontract_gross_profit(user_id=user_id, year=year)
+        empty["grmlzhbigdecimal"] = grml
+        empty["grmlllbigdecimal"] = grml_rate
+        return empty
+
+    uids = [str(user_id)] if use_sm else _helper_user_ids(user_id)
+    placeholders = ", ".join(f"%(u{i})s" for i in range(len(uids)))
+    params: dict[str, Any] = {f"u{i}": u for i, u in enumerate(uids)}
+    params["year"] = str(year)
+
+    type_sql = ""
+    if order_type_filter == "1":
+        type_sql = "AND t.order_type = 1"
+    elif order_type_filter == "2":
+        type_sql = "AND t.order_type = 2"
+    else:
+        type_sql = "AND t.order_type IN (1, 2)"
+
+    try:
+        rows = fetch_all(
+            f"""
+            SELECT
+                SUM(IFNULL(t.sale_amount, 0)) AS sumtotal,
+                SUM(IFNULL(t.order_count, 0)) AS sumordercount,
+                t.account_type AS account_type,
+                t.`month` AS m
+            FROM {table} t
+            WHERE t.type = 0
+              AND CAST(t.user_id AS CHAR) IN ({placeholders})
+              AND LEFT(t.`month`, 4) = %(year)s
+              {type_sql}
+            GROUP BY t.account_type, t.`month`
+            ORDER BY t.`month`
+            """,
+            params,
+        )
+    except Exception:
+        rows = []
+
+    rmb_by: dict[str, Decimal] = {m: Decimal("0") for m in months}
+    usd_by: dict[str, Decimal] = {m: Decimal("0") for m in months}
     cnt_rmb = 0
     cnt_usd = 0
     for r in rows:
-        m = str(r.get("xdate") or "")
+        m = str(r.get("m") or "")
+        if m not in rmb_by:
+            rmb_by[m] = Decimal("0")
+            usd_by[m] = Decimal("0")
+            months.append(m)
         try:
-            ct = int(r.get("currencyType") or 1)
+            at = int(r.get("account_type") or 1)
         except Exception:
-            ct = 1
+            at = 1
         try:
-            price = Decimal(str(r.get("price") or 0))
+            price = Decimal(str(r.get("sumtotal") or 0))
         except Exception:
-            price = Decimal(0)
+            price = Decimal("0")
         try:
-            cnt = int(r.get("cnt") or 0)
+            cnt = int(r.get("sumordercount") or 0)
         except Exception:
             cnt = 0
-        if ct == 2:
-            usd_by[m] = usd_by.get(m, Decimal(0)) + price
+        if at == 2:
+            usd_by[m] = usd_by.get(m, Decimal("0")) + price
             cnt_usd += cnt
         else:
-            rmb_by[m] = rmb_by.get(m, Decimal(0)) + price
+            rmb_by[m] = rmb_by.get(m, Decimal("0")) + price
             cnt_rmb += cnt
+
+    months = sorted(set(months))
 
     def series(src: dict[str, Decimal]) -> list[str]:
         out: list[str] = []
         for m in months:
-            v = src.get(m, Decimal(0))
+            v = src.get(m, Decimal("0"))
             out.append(format(v.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), "f"))
         return out
 
     rmb_s = series(rmb_by)
     usd_s = series(usd_by)
-    sum_rmb = sum((Decimal(x) for x in rmb_s), Decimal(0))
-    sum_usd = sum((Decimal(x) for x in usd_s), Decimal(0))
+    sum_rmb = sum((Decimal(x) for x in rmb_s), Decimal("0"))
+    sum_usd = sum((Decimal(x) for x in usd_s), Decimal("0"))
+    grml, grml_rate = _subcontract_gross_profit(user_id=user_id, year=year)
     return {
         "year": str(year),
         "xmonths": months,
@@ -544,8 +734,8 @@ def _user_sale_by_year(
         "qnxsus": format(sum_usd.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), "f"),
         "ddslrmb": cnt_rmb,
         "ddslus": cnt_usd,
-        "grmlzhbigdecimal": "0.00",
-        "grmlllbigdecimal": "0.00",
+        "grmlzhbigdecimal": grml,
+        "grmlllbigdecimal": grml_rate,
     }
 
 
@@ -673,7 +863,12 @@ def list_sys_logs_page(
     return out, total
 
 
-def build_welcome_payload(user: dict[str, Any], *, chart_year: int | None = None) -> dict[str, Any]:
+def build_welcome_payload(
+    user: dict[str, Any],
+    *,
+    chart_year: int | None = None,
+    order_type_filter: str = "",
+) -> dict[str, Any]:
     user_id = str(user.get("user_id") or "")
     login_name = str(user.get("user_name") or "")
     utoo_type = user.get("utoo_type") or user.get("type")
@@ -693,6 +888,9 @@ def build_welcome_payload(user: dict[str, Any], *, chart_year: int | None = None
         cy = year
     if cy < 2000 or cy > year + 1:
         cy = year
+    ot_filter = str(order_type_filter or "").strip()
+    if ot_filter not in ("", "1", "2"):
+        ot_filter = ""
 
     # 管理员近 6 月交易
     ydata: list[str] = []
@@ -701,10 +899,10 @@ def build_welcome_payload(user: dict[str, Any], *, chart_year: int | None = None
 
     # 个人销售额：Java userType3==2（销售主管 / 销售人员；C类无此图）
     sale = (
-        _user_sale_by_year(user_id=user_id, year=year)
+        _user_sale_by_year(user_id=user_id, year=cy, order_type_filter=ot_filter)
         if user_type3 == 2
         else {
-            "year": str(year),
+            "year": str(cy),
             "xmonths": [],
             "userSaleAryrmb": [],
             "userSaleAryus": [],
@@ -774,6 +972,7 @@ def build_welcome_payload(user: dict[str, Any], *, chart_year: int | None = None
         "userName": user.get("true_name") or user.get("user_name") or "",
         "loginName": login_name,
         "currentUser": login_name,
+        "currentUserId": user_id,
         "userType": user_type,
         "userType2": user_type2,
         "userType3": user_type3,
