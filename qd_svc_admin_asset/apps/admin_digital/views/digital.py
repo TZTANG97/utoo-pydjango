@@ -27,6 +27,11 @@ def _to_int(value, default=None):
         return default
 
 
+def _viewer_staff(user) -> dict | None:
+    uid = str((user or {}).get("user_id") or (user or {}).get("id") or "").strip()
+    return user_repo.get_staff(uid) if uid else None
+
+
 @api_view(["GET", "POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
@@ -67,18 +72,45 @@ def test_user_list(request: Request, user=None):
 @authentication_classes([])
 @permission_classes([AllowAny])
 @admin_ajax_view()
+def sale_plan_depts(request: Request, user=None):
+    """对齐 Java saleUserPerformance/loadDpet + load 默认部门。"""
+    del request
+    viewer = _viewer_staff(user)
+    return Response(ajax_ok(obj=user_repo.list_sale_plan_depts(viewer)))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
 def sale_user_list(request: Request, user=None):
-    del user
+    """对齐 Java StatisticSaleuserPerformanceController#queryUsers。
+
+    仅系统管理员 / 销售主管可查；非管理员默认/限制本部门树；精确 dept_id（STP）。
+    """
+    viewer = _viewer_staff(user)
     data = merge_payload(request)
     draw, page, page_size = parse_datatable_params(request)
-    # 对齐 Java getuserinfoMapSTP：user_status=1 且 pt_type like '%2%'，不过滤 utoo_type
+    if not viewer or not user_repo.can_manage_sale_plan(viewer):
+        return Response(datatable_payload(draw=draw, total=0, rows=[]))
+    requested = str(
+        data.get("deptId") or data.get("dept_id") or data.get("deptId2") or ""
+    ).strip()
+    dept_id = user_repo.resolve_sale_plan_dept_id(viewer, requested)
+    if dept_id is None:
+        return Response(datatable_payload(draw=draw, total=0, rows=[]))
+    sex_raw = data.get("userSex")
+    if sex_raw in (None, ""):
+        sex_raw = data.get("user_sex")
     rows, total = user_repo.list_staff_users(
-        dept_id=str(data.get("deptId") or data.get("dept_id") or ""),
+        dept_id=dept_id,
         user_name=(data.get("userName") or data.get("user_name") or "").strip(),
         true_name=(data.get("trueName") or data.get("true_name") or "").strip(),
+        user_sex=sex_raw,
         utoo_types=None,
         require_pt_type_staff=True,
         include_helpers=True,
+        exact_dept=True,
         page=page,
         page_size=page_size,
     )
@@ -150,7 +182,9 @@ def test_target_save(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def sale_target_get(request: Request, user=None):
-    del user
+    viewer = _viewer_staff(user)
+    if not viewer or not user_repo.can_manage_sale_plan(viewer):
+        return Response(ajax_fail("无权限"))
     data = merge_payload(request)
     uid = str(data.get("sale_user_id") or data.get("saleUserId") or "")
     month = str(data.get("month") or "")
@@ -165,7 +199,9 @@ def sale_target_get(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def sale_target_show(request: Request, user=None):
-    del user
+    viewer = _viewer_staff(user)
+    if not viewer or not user_repo.can_manage_sale_plan(viewer):
+        return Response(ajax_fail("无权限"))
     data = merge_payload(request)
     uid = str(
         data.get("sale_user_id")
@@ -194,7 +230,9 @@ def sale_target_show(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def sale_target_save(request: Request, user=None):
-    del user
+    viewer = _viewer_staff(user)
+    if not viewer or not user_repo.can_manage_sale_plan(viewer):
+        return Response(ajax_fail("无权限"))
     data = merge_payload(request)
     uid = str(data.get("sale_user_id") or data.get("saleUserId") or "")
     month = str(data.get("month") or "")
@@ -216,10 +254,13 @@ def sale_target_save(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def lab_test_perf(request: Request, user=None):
-    del user
+    """实验室测试人员绩效：按登录人角色限制可见测试人员。"""
+    viewer = _viewer_staff(user)
     data = merge_payload(request)
     year = str(data.get("year") or datetime.now().year)
-    users = user_repo.list_staff_users_all(utoo_types=TEST_TYPES)
+    if not viewer:
+        return Response(ajax_ok(obj={"year": year, "resultList": []}))
+    users = user_repo.list_lab_test_visible_users(viewer)
     rows = perf_repo.build_lab_test_rows(users=users, year=year)
     return Response(ajax_ok(obj={"year": year, "resultList": rows}))
 
@@ -231,23 +272,10 @@ def lab_test_perf(request: Request, user=None):
 def lab_sale_users(request: Request, user=None):
     """对齐 Java LabPerformanceSaleuserController#selUsersByDeptId。"""
     del request
-    uid = str((user or {}).get("user_id") or (user or {}).get("id") or "").strip()
-    staff = user_repo.get_staff(uid) if uid else None
+    staff = _viewer_staff(user)
     if not staff:
         return Response(ajax_ok(obj=[]))
-    utoo = str(staff.get("utooType") or "").strip()
-    if utoo == "销售主管":
-        dept_ids = user_repo.child_dept_ids(str(staff.get("deptId") or ""))
-        rows = (
-            user_repo.list_staff_users_all(dept_ids=dept_ids, require_pt_type_staff=True)
-            if dept_ids
-            else [staff]
-        )
-    elif utoo in ("系统管理员", "超级管理员") or "管理员" in utoo:
-        rows = user_repo.list_staff_users_all(require_pt_type_staff=True)
-    else:
-        rows = [staff]
-    return Response(ajax_ok(obj=rows))
+    return Response(ajax_ok(obj=user_repo.list_lab_sale_selectable_users(staff)))
 
 
 @api_view(["GET", "POST"])
@@ -255,12 +283,17 @@ def lab_sale_users(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def lab_sale_perf(request: Request, user=None):
-    del user
+    """对齐 Java selByYear；补权限：仅可查可见人员。"""
+    viewer = _viewer_staff(user)
     data = merge_payload(request)
     year = str(data.get("year") or datetime.now().year)
-    user_id = str(data.get("user_id") or data.get("userId") or "")
+    user_id = str(data.get("user_id") or data.get("userId") or "").strip()
+    if not user_id:
+        user_id = str((viewer or {}).get("id") or "")
     if not user_id:
         return Response(ajax_fail("请选择销售人员"))
+    if not viewer or not user_repo.can_view_lab_sale_user(viewer, user_id):
+        return Response(ajax_fail("无权限查看该人员绩效"))
     staff = user_repo.get_staff(user_id) or {}
     payload = perf_repo.build_lab_sale_rows(user_id=user_id, year=year)
     payload["user_id"] = user_id
@@ -275,13 +308,15 @@ def lab_sale_perf(request: Request, user=None):
 @admin_ajax_view()
 def lab_sale_order_list(request: Request, user=None):
     """对齐 Java labPerformanceSaleuser/expOrderList.ajax。"""
-    del user
+    viewer = _viewer_staff(user)
     data = merge_payload(request)
     draw, page, page_size = parse_datatable_params(request)
     month = str(data.get("month") or "").strip()
     sale_user_id = str(data.get("sale_user_id") or data.get("saleUserId") or "").strip()
     type_ = _to_int(data.get("type"), 1) or 1
     if not month or not sale_user_id:
+        return Response(datatable_payload(draw=draw, total=0, rows=[]))
+    if not viewer or not user_repo.can_view_lab_sale_user(viewer, sale_user_id):
         return Response(datatable_payload(draw=draw, total=0, rows=[]))
     rows, total = perf_repo.list_lab_sale_perf_orders(
         sale_user_id=sale_user_id,
@@ -297,7 +332,6 @@ def lab_sale_order_list(request: Request, user=None):
         page_size=page_size,
     )
     return Response(datatable_payload(draw=draw, total=total, rows=rows))
-
 
 @api_view(["GET", "POST"])
 @authentication_classes([])
