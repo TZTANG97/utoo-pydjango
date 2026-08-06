@@ -95,37 +95,37 @@
       <button
         type="button"
         class="kpi-card kpi-card--cyan"
-        @mouseenter="openHoverDrawer('done')"
+        @click="openHoverDrawer('done')"
       >
         <div class="kpi-card__icon">✓</div>
         <div class="kpi-card__body">
           <span class="kpi-card__label">完成测试订单</span>
           <span class="kpi-card__value">{{ anim.ywc }}</span>
-          <span class="kpi-card__hint">悬停打开明细</span>
+          <span class="kpi-card__hint">点击打开明细</span>
         </div>
       </button>
       <button
         type="button"
         class="kpi-card kpi-card--amber"
-        @mouseenter="openHoverDrawer('nostart')"
+        @click="openHoverDrawer('nostart')"
       >
         <div class="kpi-card__icon">◌</div>
         <div class="kpi-card__body">
           <span class="kpi-card__label">未开始订单</span>
           <span class="kpi-card__value">{{ anim.nostart }}</span>
-          <span class="kpi-card__hint">悬停打开明细</span>
+          <span class="kpi-card__hint">点击打开明细</span>
         </div>
       </button>
       <button
         type="button"
         class="kpi-card kpi-card--teal"
-        @mouseenter="openHoverDrawer('staff')"
+        @click="openHoverDrawer('staff')"
       >
         <div class="kpi-card__icon">◎</div>
         <div class="kpi-card__body">
           <span class="kpi-card__label">测试人员总数</span>
           <span class="kpi-card__value">{{ anim.staff }}</span>
-          <span class="kpi-card__hint">{{ deptLabel }} · 悬停打开</span>
+          <span class="kpi-card__hint">{{ deptLabel }} · 点击打开</span>
         </div>
       </button>
       <div class="kpi-card kpi-card--gold kpi-card--best">
@@ -454,7 +454,7 @@ const isFullscreen = ref(false)
 type HoverDrawer = 'done' | 'nostart' | 'staff'
 const hoverDrawer = ref<HoverDrawer | null>(null)
 
-/** 悬停打开/切换明细；点关闭按钮或页面空白处关闭 */
+/** 点击打开/切换明细；点关闭按钮或页面空白处关闭 */
 function openHoverDrawer(kind: HoverDrawer) {
   hoverDrawer.value = kind
 }
@@ -471,7 +471,7 @@ function onPageClickCloseDrawer(e: MouseEvent) {
   if (!hoverDrawer.value || e.button !== 0) return
   const el = e.target as HTMLElement | null
   if (!el?.closest) return
-  // 点在抽屉内或三个可悬停 KPI 上：不关（KPI 用于切换明细）
+  // 点在抽屉内或三个 KPI 卡片上：不关（KPI 用于切换明细）
   if (el.closest('.el-drawer.ops-drawer')) return
   if (el.closest('.kpi-card--cyan, .kpi-card--amber, .kpi-card--teal')) return
   hoverDrawer.value = null
