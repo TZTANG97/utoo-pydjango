@@ -9,6 +9,7 @@ from apps.admin_core.admin_ajax import admin_ajax_view
 from apps.admin_core.datatable import datatable_payload, parse_datatable_params
 from apps.admin_fund.repositories import account as account_repo
 from apps.admin_fund.repositories import digital as digital_repo
+from apps.admin_fund.repositories import digital_orders as digital_orders_repo
 from apps.admin_fund.repositories import digital_personal as digital_personal_repo
 from apps.admin_fund.repositories import pay_detail as pay_repo
 from apps.admin_fund.repositories import settings as settings_repo
@@ -859,3 +860,63 @@ def digital_user_overdue_pies(request: Request, user=None):
     data = merge_payload(request)
     uid = _resolve_uid(data, user)
     return Response(ajax_ok(obj=digital_personal_repo.sel_user_overdue_pies(user_id=uid)))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def digital_company_sale_list(request: Request, user=None):
+    """公司金额下钻：/digitalManage/companySaleList.ajax"""
+    del user
+    data = merge_payload(request)
+    draw, page, page_size = parse_datatable_params(request)
+    rows, total = digital_orders_repo.list_company_sale_orders(
+        company_id=str(data.get("company_id") or data.get("supplier_name") or "").strip(),
+        year=str(data.get("year") or "").strip(),
+        type_code=str(data.get("type") or "1").strip() or "1",
+        order_type=str(data.get("order_type") or "3").strip() or "3",
+        account_type=str(data.get("account_type") or data.get("currency_type") or "1").strip(),
+        customer_name=str(data.get("customer_name") or "").strip(),
+        order_id=str(data.get("order_id") or "").strip(),
+        goods_name=str(data.get("goods_name") or "").strip(),
+        order_startime=str(data.get("order_startime") or "").strip(),
+        order_endtime=str(data.get("order_endtime") or "").strip(),
+        sale_user=str(data.get("sale_user") or "").strip(),
+        sale_manager=str(data.get("sale_Manager") or data.get("sale_manager") or "").strip(),
+        order_status=str(data.get("order_status") or "").strip(),
+        page=page,
+        page_size=page_size,
+    )
+    return Response(datatable_payload(draw=draw, total=total, rows=rows))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def digital_exp_list(request: Request, user=None):
+    """图表下钻订单：/digitalManage/expList.ajax"""
+    del user
+    data = merge_payload(request)
+    draw, page, page_size = parse_datatable_params(request)
+    rows, total = digital_orders_repo.list_exp_orders(
+        list_type=str(data.get("type") or "0").strip() or "0",
+        currency_type=str(data.get("currency_type") or "1").strip() or "1",
+        company_id=str(data.get("company_id") or "").strip(),
+        supplier_name=str(data.get("supplier_name") or "").strip(),
+        year=str(data.get("year") or "").strip(),
+        test_type=str(data.get("test_type") or "").strip(),
+        sale_user=str(data.get("sale_user") or "").strip(),
+        order_type=str(data.get("order_type") or "").strip(),
+        customer_name=str(data.get("customer_name") or "").strip(),
+        order_id=str(data.get("order_id") or "").strip(),
+        goods_name=str(data.get("goods_name") or "").strip(),
+        order_startime=str(data.get("order_startime") or "").strip(),
+        order_endtime=str(data.get("order_endtime") or "").strip(),
+        sale_manager=str(data.get("sale_Manager") or data.get("sale_manager") or "").strip(),
+        order_status=str(data.get("order_status") or "").strip(),
+        page=page,
+        page_size=page_size,
+    )
+    return Response(datatable_payload(draw=draw, total=total, rows=rows))

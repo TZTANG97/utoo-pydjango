@@ -583,6 +583,12 @@ export const constantRoutes: RouteRecordRaw[] = [
         meta: { title: '数字化管理运营中心' },
       },
       {
+        path: 'fund/digital-center/orders',
+        name: 'FundDigitalOrders',
+        component: () => import('@admin/views/fund/digital-center/orders.vue'),
+        meta: { title: '实验订单' },
+      },
+      {
         path: 'fund/company-pay',
         name: 'FundCompanyPay',
         component: () => import('@admin/views/fund/company-pay/index.vue'),

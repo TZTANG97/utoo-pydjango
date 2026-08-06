@@ -66,4 +66,6 @@ urlpatterns = [
     path("digitalManage/selUserAmountByYearsygr.ajax", views.digital_user_amount_sygr),
     path("digitalManage/selUserAmountByYearsyfbgr.ajax", views.digital_user_amount_syfbgr),
     path("digitalManage/selUserOverduePie.ajax", views.digital_user_overdue_pies),
+    path("digitalManage/companySaleList.ajax", views.digital_company_sale_list),
+    path("digitalManage/expList.ajax", views.digital_exp_list),
 ]

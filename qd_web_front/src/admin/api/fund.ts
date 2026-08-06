@@ -174,6 +174,14 @@ export const fetchExpSaleByYear = (p: Record<string, unknown> = {}) =>
 export const fetchExpReceivePie = (p: Record<string, unknown> = {}) =>
   postAjax('/digitalManage/selExpReceivePie.ajax', p)
 
+/** 公司金额下钻列表（对齐 Java companySaleList.ajax） */
+export const fetchDigitalCompanySaleList = (p: Record<string, unknown> = {}) =>
+  fetchDatatable('/digitalManage/companySaleList.ajax', p)
+
+/** 图表下钻订单列表（对齐 Java expList.ajax） */
+export const fetchDigitalExpList = (p: Record<string, unknown> = {}) =>
+  fetchDatatable('/digitalManage/expList.ajax', p)
+
 /** 个人实验总额（公司基金等非管理员看板） */
 export const fetchUserAmountByYearSygr = (p: Record<string, unknown> = {}) =>
   postAjax('/digitalManage/selUserAmountByYearsygr.ajax', p)

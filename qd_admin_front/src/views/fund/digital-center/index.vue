@@ -2,9 +2,15 @@
   <admin-page-card title="数字化管理运营中心">
     <el-form :inline="true" class="filter-form" @submit.prevent>
       <el-form-item label="年份选择">
-        <el-select v-model="year" clearable placeholder="全部" style="width: 140px">
+        <el-select v-model="year" clearable placeholder="全部" style="width: 140px" @change="reloadCompany">
           <el-option label="全部" value="" />
           <el-option v-for="y in yearOptions" :key="y" :label="`${y}年`" :value="String(y)" />
+        </el-select>
+      </el-form-item>
+      <el-form-item>
+        <el-select v-model="orderStatusType" style="width: 160px" @change="reloadCompany">
+          <el-option label="全部" value="1" />
+          <el-option label="订单未发起审核" value="2" />
         </el-select>
       </el-form-item>
       <el-form-item>
@@ -25,17 +31,18 @@
         >
           <el-table-column prop="index" label="#" width="56" />
           <el-table-column prop="company_name" label="公司名称" min-width="220" show-overflow-tooltip />
-          <el-table-column prop="rmb" label="销售(RMB)" width="130" align="right">
-            <template #default="{ row }">{{ formatMoney(row.rmb) }}</template>
-          </el-table-column>
-          <el-table-column prop="us" label="销售(US)" width="120" align="right">
-            <template #default="{ row }">{{ formatMoney(row.us) }}</template>
-          </el-table-column>
-          <el-table-column prop="syrmb" label="实验(RMB)" width="130" align="right">
-            <template #default="{ row }">{{ formatMoney(row.syrmb) }}</template>
-          </el-table-column>
-          <el-table-column prop="rentrmb" label="租赁(RMB)" width="130" align="right">
-            <template #default="{ row }">{{ formatMoney(row.rentrmb) }}</template>
+          <el-table-column prop="syrmb" label="实验(RMB)" width="160" align="right">
+            <template #default="{ row }">
+              <el-button
+                v-if="!row.isTotal && row.company_id"
+                link
+                type="primary"
+                @click="openCompanyOrders(row)"
+              >
+                {{ formatMoney(row.syrmb) }}
+              </el-button>
+              <span v-else>{{ formatMoney(row.syrmb) }}</span>
+            </template>
           </el-table-column>
         </el-table>
       </el-col>
@@ -118,6 +125,7 @@
 
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import type { ECharts } from 'echarts'
 import AdminPageCard from '@admin/components/AdminPageCard.vue'
@@ -131,15 +139,22 @@ import {
 type CompanyRow = {
   index?: number
   id?: number | string
+  company_id?: number | string
   company_name?: string
-  rmb?: number
-  us?: number
   syrmb?: number
-  rentrmb?: number
   isTotal?: boolean
 }
 
-type PieSlice = { name?: string; value?: number; company_name?: string; total?: number }
+type PieSlice = {
+  name?: string
+  value?: number
+  company_name?: string
+  company_id?: number | string
+  total?: number
+  url?: string
+}
+
+const router = useRouter()
 
 const tableLoading = ref(false)
 const chart6Loading = ref(false)
@@ -152,6 +167,7 @@ const nowYear = new Date().getFullYear()
 const yearOptions = Array.from({ length: nowYear - 2019 + 1 }, (_, i) => nowYear - i)
 
 const year = ref('')
+const orderStatusType = ref('1')
 const chartYear6 = ref('')
 const chartYear8 = ref('')
 const companyRows = ref<CompanyRow[]>([])
@@ -214,8 +230,77 @@ function toPieData(list: PieSlice[] | undefined) {
     .map((item) => ({
       name: String(item.name || item.company_name || ''),
       value: Number(item.value ?? item.total ?? 0),
+      company_id: item.company_id ?? '',
     }))
     .filter((item) => item.value !== 0)
+}
+
+function openCompanyOrders(row: CompanyRow) {
+  const companyId = row.company_id ?? row.id
+  if (companyId == null || companyId === '' || row.isTotal) return
+  router.push({
+    name: 'FundDigitalOrders',
+    query: {
+      mode: 'company',
+      title: '实验订单',
+      company_id: String(companyId),
+      type: orderStatusType.value,
+      year: year.value,
+      order_type: '3',
+      account_type: '1',
+    },
+  })
+}
+
+function openExpOrders(query: Record<string, string>, title: string) {
+  router.push({
+    name: 'FundDigitalOrders',
+    query: {
+      mode: 'exp',
+      title,
+      ...query,
+    },
+  })
+}
+
+function bindBarClick(kind: 6 | 8) {
+  const inst = kind === 6 ? chart6 : chart8
+  if (!inst) return
+  inst.off('click')
+  inst.on('click', (params: { name?: string }) => {
+    const axisName = String(params?.name || '')
+    openExpOrders(
+      {
+        type: '0',
+        currency_type: '1',
+        year: axisName,
+        test_type: '',
+        order_type: String(kind),
+      },
+      kind === 6 ? '实验订单' : '实验分包订单'
+    )
+  })
+}
+
+function bindPieClick(kind: 6 | 8) {
+  const inst = kind === 6 ? pie6Chart : pie8Chart
+  if (!inst) return
+  inst.off('click')
+  inst.on('click', (params: { data?: { company_id?: string | number }; seriesIndex?: number }) => {
+    const cid = params?.data?.company_id
+    if (cid == null || cid === '') return
+    // seriesIndex 0=已收(type=1) 1=应收(type=2)
+    const receiveType = params?.seriesIndex === 1 ? '2' : '1'
+    openExpOrders(
+      {
+        type: receiveType,
+        currency_type: '1',
+        company_id: String(cid),
+        order_type: String(kind),
+      },
+      kind === 6 ? '实验订单收款' : '实验分包订单收款'
+    )
+  })
 }
 
 function renderBar(kind: 6 | 8, months: string[], values: number[]) {
@@ -244,6 +329,7 @@ function renderBar(kind: 6 | 8, months: string[], values: number[]) {
       },
     ],
   })
+  bindBarClick(kind)
 }
 
 /** 对齐 Java option42：左右双饼（已收 / 应收） */
@@ -280,12 +366,13 @@ function renderDualPie(kind: 6 | 8, received: PieSlice[], receivable: PieSlice[]
       },
     ],
   })
+  bindPieClick(kind)
 }
 
 async function loadCompany() {
   tableLoading.value = true
   try {
-    const res = await fetchCompanySaleByYear({ year: year.value, type: '1' })
+    const res = await fetchCompanySaleByYear({ year: year.value, type: orderStatusType.value })
     if (!isAjaxOk(res)) {
       companyRows.value = []
       return

@@ -71,6 +71,9 @@ export function resolveRouteTitle(route: RouteLocationNormalized): string {
     const base = DETAIL_FROM_TITLE[from] || String(route.meta?.title || '订单详情')
     return orderNo ? `${orderNo} ${base}` : base
   }
+  if (route.name === 'FundDigitalOrders') {
+    return String(route.query.title || route.meta?.title || '实验订单')
+  }
   return String(route.meta?.title || route.name || '未命名')
 }
 

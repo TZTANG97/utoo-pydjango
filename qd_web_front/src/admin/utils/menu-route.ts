@@ -109,6 +109,8 @@ const MENU_ROUTE_MAP: Record<string, string> = {
   'funds/setUSExchangeRate.htm': '/fund/exchange-rate',
   'funds/accountList.htm': '/fund/account-list',
   'digitalManage/digitalManageCenter.htm': '/fund/digital-center',
+  'digitalManage/companySaleListPage.htm': '/fund/digital-center/orders',
+  'digitalManage/expOrderList.htm': '/fund/digital-center/orders',
   'companyPay/companyPayPag.htm': '/fund/company-pay',
   'userPay/userPayPag.htm': '/fund/personal-pay',
   'companyLoanPay/loanPayPag.htm': '/fund/company-loan',
