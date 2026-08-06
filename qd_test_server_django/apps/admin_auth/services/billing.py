@@ -331,7 +331,7 @@ def agree_payment(*, apply_id: int, staff_user_id: str) -> tuple[bool, str]:
         order_pk = _resolve_experiment_order_pk(order_ref)
         if order_pk:
             execute(
-                "UPDATE experiment_order SET isUploadReceipt = 2 WHERE id = %(id)s",
+                "UPDATE experiment_order SET is_upload_receipt = 2 WHERE id = %(id)s",
                 {"id": order_pk},
             )
             try:
@@ -421,7 +421,7 @@ def refuse_payment(*, apply_id: int, staff_user_id: str, mark: str = "") -> tupl
         order_pk = _resolve_experiment_order_pk(order_ref)
         if order_pk:
             execute(
-                "UPDATE experiment_order SET isUploadReceipt = 3 WHERE id = %(id)s",
+                "UPDATE experiment_order SET is_upload_receipt = 3 WHERE id = %(id)s",
                 {"id": order_pk},
             )
     elif order_type == "4":

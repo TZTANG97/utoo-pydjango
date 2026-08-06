@@ -201,7 +201,7 @@ def save_accessory(
         )
         pa_repo.insert_submitted_log(pa_id=pa_id, user_id=user_id)
         execute(
-            "UPDATE experiment_order SET isUploadReceipt = 1 WHERE id = %(oid)s",
+            "UPDATE experiment_order SET is_upload_receipt = 1 WHERE id = %(oid)s",
             {"oid": oid},
         )
         save_exp_user_log(
@@ -324,9 +324,9 @@ def _detail_from_application(
 
     logs = fetch_all(
         """
-        SELECT id, content, paymentId, userId, addTime
+        SELECT id, content, payment_application_id AS paymentId, user_id AS userId, addTime
         FROM payment_application_log
-        WHERE deleteStatus = 0 AND paymentId = %(pid)s
+        WHERE deleteStatus = 0 AND payment_application_id = %(pid)s
         ORDER BY addTime ASC
         """,
         {"pid": int(record_id)},

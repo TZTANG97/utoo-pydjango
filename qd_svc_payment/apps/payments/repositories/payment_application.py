@@ -58,7 +58,7 @@ def insert_submitted_log(*, pa_id: int, user_id: int) -> None:
     execute(
         """
         INSERT INTO payment_application_log
-            (content, paymentId, userId, addTime, deleteStatus)
+            (content, payment_application_id, user_id, addTime, deleteStatus)
         VALUES ('申请已提交', %(pid)s, %(uid)s, NOW(), 0)
         """,
         {"pid": pa_id, "uid": str(user_id)},
