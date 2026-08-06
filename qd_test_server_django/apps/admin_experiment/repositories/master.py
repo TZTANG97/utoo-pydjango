@@ -523,12 +523,38 @@ def get_sample_attr(row_id: int) -> dict[str, Any] | None:
         """
         SELECT
             t.id, t.sttribute_name AS name, t.type, t.parent_id AS parentId,
-            t.special_id AS specialId, t.selection
+            t.special_id AS specialId, t.selection,
+            p.parent_id AS firstId, p.sttribute_name AS parentName
         FROM sample_attribute_manage t
+        LEFT JOIN sample_attribute_manage p ON t.parent_id = p.id
         WHERE t.id = %(id)s
         LIMIT 1
         """,
         {"id": row_id},
+    )
+
+
+def special_id_exists(special_id: int, *, exclude_id: int | None = None) -> bool:
+    """对齐 Java sampleAttributeManageList815：一级特殊字段编号唯一。"""
+    where = f"WHERE {_nd('t')} AND t.type = 1 AND t.special_id = %(sid)s"
+    params: dict[str, Any] = {"sid": special_id}
+    if exclude_id:
+        where += " AND t.id <> %(eid)s"
+        params["eid"] = exclude_id
+    return int(scalar(f"SELECT COUNT(*) FROM sample_attribute_manage t {where}", params) or 0) > 0
+
+
+def count_sample_attr_children(parent_id: int) -> int:
+    return int(
+        scalar(
+            f"""
+            SELECT COUNT(*)
+            FROM sample_attribute_manage t
+            WHERE {_nd('t')} AND t.parent_id = %(pid)s
+            """,
+            {"pid": parent_id},
+        )
+        or 0
     )
 
 
@@ -569,11 +595,15 @@ def set_sample_attr_status(row_id: int, status: int) -> None:
     )
 
 
-def soft_delete_sample_attr(row_id: int) -> None:
+def soft_delete_sample_attr(row_id: int) -> str | None:
+    """删除；有下级时返回错误文案（对齐 Java deltwo）。"""
+    if count_sample_attr_children(row_id) > 0:
+        return "该属性下存在子属性，请先删除子属性！"
     execute(
         "UPDATE sample_attribute_manage SET deleteStatus = 1 WHERE id = %(id)s",
         {"id": row_id},
     )
+    return None
 
 
 def list_sample_attr_options(type_: int, parent_id: str = "") -> list[dict[str, Any]]:

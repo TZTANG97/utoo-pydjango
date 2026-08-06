@@ -42,15 +42,17 @@
             v-model="form.syuser_id"
             filterable
             remote
+            clearable
             :remote-method="searchUsers"
             :loading="userLoading"
             style="width: 100%"
             placeholder="输入用户名搜索"
+            @visible-change="onUserSelectVisible"
           >
             <el-option
               v-for="item in userOptions"
               :key="String(item.id)"
-              :label="`${item.userName || item.trueName || item.id}`"
+              :label="userLabel(item)"
               :value="String(item.id)"
             />
           </el-select>
@@ -98,12 +100,32 @@ const form = reactive({
 
 onMounted(() => load())
 
+function userLabel(item: Record<string, unknown>) {
+  const name = String(item.userName || item.trueName || item.id || '')
+  const trueName = String(item.trueName || '')
+  if (trueName && trueName !== name) return `${name}（${trueName}）`
+  return name
+}
+
+function onUserSelectVisible(open: boolean) {
+  // 新增无列表、编辑仅有当前项时，展开下拉再拉一批可选用户
+  if (open && userOptions.value.length <= 1) searchUsers('')
+}
+
 async function searchUsers(keyword: string) {
   userLoading.value = true
   try {
-    const res = await fetchSyUserOptions(keyword)
+    const res = await fetchSyUserOptions(keyword || '')
     if (isAjaxOk(res) && Array.isArray(res.obj)) {
-      userOptions.value = res.obj as Record<string, unknown>[]
+      const list = res.obj as Record<string, unknown>[]
+      // 编辑态：保证当前已选账号仍在选项中
+      if (form.syuser_id && !list.some((u) => String(u.id) === form.syuser_id)) {
+        const current = userOptions.value.find((u) => String(u.id) === form.syuser_id)
+        if (current) list.unshift(current)
+      }
+      userOptions.value = list
+    } else {
+      if (!isAjaxOk(res)) ElMessage.error(ajaxErrorMessage(res, '用户列表加载失败'))
     }
   } finally {
     userLoading.value = false
@@ -114,6 +136,7 @@ function openCreate() {
   form.id = ''
   form.syuser_id = ''
   form.type = 1
+  userOptions.value = []
   isEdit.value = false
   dialogVisible.value = true
   searchUsers('')

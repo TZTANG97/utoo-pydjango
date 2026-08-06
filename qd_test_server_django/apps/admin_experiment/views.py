@@ -446,11 +446,19 @@ def sample_attr_save(request: Request, user=None):
     if type_ > 1 and not parent_id:
         return fail("请选择上级属性")
     row_id = to_int(data.get("id"))
+    special_id = to_int(data.get("specialId") or data.get("special_id"))
+    if type_ == 1:
+        if special_id is None:
+            return fail("请填写特殊字段编号")
+        if special_id < 1 or special_id > 100:
+            return fail("特殊字段编号须为 1-100 的整数")
+        if master_repo.special_id_exists(special_id, exclude_id=row_id):
+            return fail("该一级特殊字段编号已存在，请重新填写！")
     payload: dict = {
         "name": name,
         "type": type_,
         "parent_id": parent_id,
-        "special_id": to_int(data.get("specialId") or data.get("special_id")),
+        "special_id": special_id,
     }
     # 选择方式仅二级属性使用；三级不传则不覆盖原值
     if "selection" in data and data.get("selection") not in (None, ""):
@@ -486,7 +494,9 @@ def sample_attr_del(request: Request, user=None):
     row_id = to_int(data.get("id"))
     if not row_id:
         return fail("参数错误")
-    master_repo.soft_delete_sample_attr(row_id)
+    err = master_repo.soft_delete_sample_attr(row_id)
+    if err:
+        return fail(err)
     return ok(res_msg="删除成功")
 
 

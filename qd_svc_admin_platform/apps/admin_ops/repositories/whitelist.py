@@ -89,11 +89,11 @@ def list_sy_users(keyword: str = "") -> list[dict[str, Any]]:
     where = "WHERE 1=1"
     params: dict[str, Any] = {}
     if keyword:
-        where += " AND (user_name LIKE %(kw)s OR trueName LIKE %(kw)s)"
+        where += " AND (user_name LIKE %(kw)s OR true_name LIKE %(kw)s)"
         params["kw"] = f"%{keyword}%"
     return fetch_all(
         f"""
-        SELECT id, user_name AS userName, trueName
+        SELECT id, user_name AS userName, true_name AS trueName
         FROM sy_users
         {where}
         ORDER BY user_name ASC
