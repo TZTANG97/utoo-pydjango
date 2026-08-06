@@ -212,6 +212,7 @@ def list_projects(
         f"""
         SELECT
             t.id, t.addTime, t.project_name AS projectName, t.class_id AS classId,
+            t.test_price AS testPrice, t.country,
             m.name AS className, m2.name AS secName, m3.name AS firstName
         FROM experiment_project t
         LEFT JOIN experiment_manage m ON t.class_id = m.id

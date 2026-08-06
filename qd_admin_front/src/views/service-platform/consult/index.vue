@@ -34,7 +34,7 @@
           <el-button link type="primary" @click="goDetail(row, 'edit')">查看</el-button>
           <el-button link type="primary" @click="goDetail(row, 'view')">详情</el-button>
           <el-button
-            v-if="Number(row.status) !== 3"
+            v-if="![2, 3].includes(Number(row.status))"
             link
             type="danger"
             @click="handleCancel(row)"

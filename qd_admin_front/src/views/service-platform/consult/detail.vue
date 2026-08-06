@@ -11,6 +11,7 @@
     </header>
 
     <el-form v-if="form.id" label-width="130px" class="form-card" :disabled="readonly" @submit.prevent>
+      <div class="section-head"><h3>预约信息</h3></div>
       <el-row :gutter="16">
         <el-col :span="12">
           <el-form-item label="实验测试分类">
@@ -44,6 +45,59 @@
             <el-input v-model="form.syUserName" disabled />
           </el-form-item>
         </el-col>
+        <el-col :span="24">
+          <el-form-item label="咨询详情">
+            <el-input v-model="form.content" type="textarea" :rows="3" maxlength="500" show-word-limit />
+          </el-form-item>
+        </el-col>
+        <el-col :span="24">
+          <el-form-item label="备注">
+            <el-input v-model="form.remark" type="textarea" :rows="2" maxlength="500" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="24">
+          <el-form-item label="用户上传资料">
+            <div v-if="files.length" class="file-list">
+              <a
+                v-for="(f, i) in files"
+                :key="i"
+                class="file-link"
+                :href="fileHref(f)"
+                target="_blank"
+                rel="noopener"
+              >
+                {{ String(f.info || f.name || `附件${i + 1}`) }}
+              </a>
+            </div>
+            <span v-else class="muted">无</span>
+          </el-form-item>
+        </el-col>
+        <el-col :span="24">
+          <el-form-item label="样品寄回地址">
+            <el-input v-model="form.send_address" type="textarea" :rows="2" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="样品是否回收">
+            <el-switch v-model="form.reverso_context" />
+          </el-form-item>
+        </el-col>
+        <template v-if="form.reverso_context">
+          <el-col :span="12">
+            <el-form-item label="收件人姓名">
+              <el-input v-model="form.addressee_name" clearable />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="收件人电话">
+              <el-input v-model="form.addressee_mobile" clearable />
+            </el-form-item>
+          </el-col>
+        </template>
+      </el-row>
+
+      <div class="section-head"><h3>订单信息</h3></div>
+      <el-row :gutter="16">
         <el-col :span="12">
           <el-form-item label="所属公司">
             <el-select v-model="form.supplier_name" filterable clearable placeholder="请选择" style="width: 100%">
@@ -126,62 +180,13 @@
             </el-select>
           </el-form-item>
         </el-col>
-        <el-col :span="24">
-          <el-form-item label="咨询详情">
-            <el-input v-model="form.content" type="textarea" :rows="3" maxlength="500" show-word-limit />
-          </el-form-item>
-        </el-col>
-        <el-col :span="24">
-          <el-form-item label="备注">
-            <el-input v-model="form.remark" type="textarea" :rows="2" maxlength="500" />
-          </el-form-item>
-        </el-col>
-        <el-col :span="24">
-          <el-form-item label="用户上传资料">
-            <div v-if="files.length" class="file-list">
-              <a
-                v-for="(f, i) in files"
-                :key="i"
-                class="file-link"
-                :href="fileHref(f)"
-                target="_blank"
-                rel="noopener"
-              >
-                {{ String(f.info || f.name || `附件${i + 1}`) }}
-              </a>
-            </div>
-            <span v-else class="muted">无</span>
-          </el-form-item>
-        </el-col>
-        <el-col :span="24">
-          <el-form-item label="样品寄回地址">
-            <el-input v-model="form.send_address" type="textarea" :rows="2" />
-          </el-form-item>
-        </el-col>
-        <el-col :span="12">
-          <el-form-item label="样品是否回收">
-            <el-switch v-model="form.reverso_context" />
-          </el-form-item>
-        </el-col>
-        <template v-if="form.reverso_context">
-          <el-col :span="12">
-            <el-form-item label="收件人姓名">
-              <el-input v-model="form.addressee_name" clearable />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="收件人电话">
-              <el-input v-model="form.addressee_mobile" clearable />
-            </el-form-item>
-          </el-col>
-        </template>
         <el-col :span="6">
           <el-form-item label="是否开票">
             <el-switch v-model="form.invoiceType" />
           </el-form-item>
         </el-col>
         <el-col :span="6">
-          <el-form-item label="是否云视频">
+          <el-form-item label="是否含视频">
             <el-switch v-model="form.is_video" />
           </el-form-item>
         </el-col>
@@ -202,23 +207,22 @@
       </div>
       <el-table v-if="sampleInfos.length" :data="sampleInfos" border stripe class="sample-table">
         <el-table-column type="index" label="#" width="50" />
-        <el-table-column label="样品编号" min-width="110">
-          <template #default="{ row }">{{ row.sample_num || row.sampleNum || '-' }}</template>
+        <el-table-column label="样品数量" min-width="100">
+          <template #default="{ row }">{{ row.sample_num ?? row.sampleNum ?? '-' }}</template>
         </el-table-column>
-        <el-table-column label="样品名称" min-width="120">
+        <el-table-column label="样品名称/类型" min-width="140">
           <template #default="{ row }">{{ row.sample_name || row.sampleName || '-' }}</template>
         </el-table-column>
         <el-table-column label="主要成分" min-width="120">
           <template #default="{ row }">{{ row.main_component || row.mainComponent || '-' }}</template>
         </el-table-column>
-        <el-table-column label="含磁" width="80">
-          <template #default="{ row }">{{ ynLabel(row.is_magnetic ?? row.isMagnetic) }}</template>
+        <el-table-column label="是否含磁" width="100">
+          <template #default="{ row }">{{ magneticLabel(row.is_magnetic ?? row.isMagnetic) }}</template>
         </el-table-column>
-        <el-table-column label="喷金" width="80">
-          <template #default="{ row }">{{ ynLabel(row.is_gold_spraying ?? row.isGoldSpraying) }}</template>
-        </el-table-column>
-        <el-table-column label="数量" width="80">
-          <template #default="{ row }">{{ row.sample_amount ?? row.sampleAmount ?? row.nums ?? '-' }}</template>
+        <el-table-column label="是否喷金" min-width="140">
+          <template #default="{ row }">
+            {{ goldLabel(row.is_gold_spraying ?? row.isGoldSpraying, row.gold_desc ?? row.goldDesc) }}
+          </template>
         </el-table-column>
       </el-table>
 
@@ -235,9 +239,26 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="型号" min-width="110">
+        <el-table-column label="产品型号" min-width="140">
           <template #default="{ row }">
-            <el-input v-model="row.goods_spec" :disabled="readonly" size="small" />
+            <el-select
+              v-model="row.goods_spec"
+              :disabled="readonly"
+              clearable
+              filterable
+              allow-create
+              default-first-option
+              size="small"
+              style="width: 100%"
+              placeholder="请选择型号"
+            >
+              <el-option
+                v-for="spec in modelOptions(row)"
+                :key="spec"
+                :label="spec"
+                :value="spec"
+              />
+            </el-select>
           </template>
         </el-table-column>
         <el-table-column label="品牌" min-width="100">
@@ -261,12 +282,12 @@
             <el-input v-model="row.experiment_class_name" :disabled="readonly" size="small" />
           </template>
         </el-table-column>
-        <el-table-column label="单价" width="110">
+        <el-table-column label="实际测试金额" width="120">
           <template #default="{ row }">
             <el-input v-model="row.goods_price" :disabled="readonly" size="small" @change="recalcTotals" />
           </template>
         </el-table-column>
-        <el-table-column label="参考价" width="110">
+        <el-table-column label="标准测试金额" width="120">
           <template #default="{ row }">
             <el-input v-model="row.reference_price" :disabled="readonly" size="small" />
           </template>
@@ -349,6 +370,9 @@
       >
         <el-table-column prop="project_name" label="设备名称" min-width="160" />
         <el-table-column prop="class_name" label="实验分类" min-width="140" />
+        <el-table-column label="测试单价" width="100">
+          <template #default="{ row }">{{ row.test_price ?? row.testPrice ?? '-' }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="80">
           <template #default="{ row }">
             <el-button link type="primary" @click.stop="pickDevice(row)">选择</el-button>
@@ -523,6 +547,7 @@ function emptyChild(): ChildRow {
   return {
     goods_id: '',
     goods_name: '',
+    goods_model: '',
     goods_spec: '',
     goods_brand_name: '',
     goods_nums: '1',
@@ -549,10 +574,28 @@ function removeChild(index: number) {
   recalcTotals()
 }
 
-function ynLabel(v: unknown) {
-  if (v === true || v === 1 || v === '1' || v === '是' || v === 'Y' || v === 'y') return '是'
-  if (v === false || v === 0 || v === '0' || v === '否' || v === 'N' || v === 'n') return '否'
-  return v == null || v === '' ? '-' : String(v)
+/** 样品含磁/喷金：库内 0=是，非 0=否 */
+function magneticLabel(v: unknown) {
+  if (v == null || v === '') return '-'
+  return Number(v) === 0 ? '是' : '否'
+}
+
+function goldLabel(isGold: unknown, goldDesc: unknown) {
+  if (isGold == null || isGold === '') return '-'
+  if (Number(isGold) === 0) return '是'
+  const desc = String(goldDesc ?? '').trim()
+  return desc ? `否(${desc})` : '否()'
+}
+
+function modelOptions(row: ChildRow): string[] {
+  const raw = String(row.goods_model || row.goodsModel || '').trim()
+  const parts = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const cur = String(row.goods_spec || '').trim()
+  if (cur && !parts.includes(cur)) parts.unshift(cur)
+  return parts
 }
 
 function deviceLabel(row: ChildRow) {
@@ -581,6 +624,7 @@ function mapDeviceRow(row: Record<string, unknown>) {
     project_name: row.project_name || row.projectName || '',
     class_name: row.class_name || row.className || '',
     class_id: row.class_id ?? row.classId ?? '',
+    test_price: row.test_price ?? row.testPrice ?? '',
   }
 }
 
@@ -614,15 +658,20 @@ function pickGoods(row: Record<string, unknown>) {
   if (idx < 0 || !childs.value[idx]) return
   const mapped = mapGoodsRow(row)
   const target = childs.value[idx]
+  const modelRaw = String(mapped.goods_model || '')
+  const specs = modelRaw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
   target.goods_id = mapped.id
   target.goods_name = mapped.goods_name
-  target.goods_spec = mapped.goods_model
+  target.goods_model = modelRaw
+  target.goods_spec = specs[0] || modelRaw
   target.goods_brand_name = mapped.goods_brand_name
   target.goods_brand_id = mapped.goods_brand_id
   if (!target.goods_nums) target.goods_nums = '1'
   goodsDialogVisible.value = false
   recalcTotals()
-  // 选完产品后主动弹出设备选择（对齐小程序）
   openDevicePicker(idx)
 }
 
@@ -660,6 +709,13 @@ function pickDevice(row: Record<string, unknown>) {
   target.experiment_project_name = mapped.project_name
   target.experiment_class_id = mapped.class_id
   target.experiment_class_name = mapped.class_name
+  const price = mapped.test_price
+  if (price !== '' && price != null) {
+    const p = String(price)
+    target.goods_price = p
+    target.reference_price = p
+    recalcTotals()
+  }
   deviceDialogVisible.value = false
 }
 
@@ -835,11 +891,12 @@ async function loadDetail() {
             ...c,
             goods_id: c.goods_id ?? c.goodsId ?? '',
             goods_name: c.goods_name || c.goodsName || eg?.goods_name || eg?.goodsName || '',
+            goods_model: String(
+              c.goods_model || c.goodsModel || eg?.goods_model || eg?.goodsModel || ''
+            ),
             goods_spec:
               c.goods_spec ||
               c.goodsSpec ||
-              eg?.goods_model ||
-              eg?.goodsModel ||
               '',
             goods_brand_name:
               c.goods_brand_name || c.goodsBrandName || eg?.brand_name || eg?.brandName || '',
@@ -941,7 +998,8 @@ async function onCancel() {
       return
     }
     ElMessage.success(res.resMsg || '取消成功')
-    goBack()
+    form.status = 3
+    await loadDetail()
   } finally {
     cancelling.value = false
   }

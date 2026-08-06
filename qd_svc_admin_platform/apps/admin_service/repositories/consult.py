@@ -37,10 +37,12 @@ def list_consults(
         SELECT
             t.*,
             em.name AS className,
-            COALESCE(su.user_name, su.true_name, '') AS syUserName
+            COALESCE(su.user_name, su.true_name, su2.user_name, su2.true_name, '') AS syUserName
         FROM service_consult t
         LEFT JOIN experiment_manage em ON t.class_id = em.id
-        LEFT JOIN sy_users su ON em.head_user_id = su.id
+        LEFT JOIN experiment_manage em2 ON em.parent_id = em2.id
+        LEFT JOIN sy_users su ON em2.syuser_id = su.id
+        LEFT JOIN sy_users su2 ON em.head_user_id = su2.id
         {where}
         ORDER BY t.addTime DESC
         {clause}
@@ -108,9 +110,15 @@ def get_consult_detail(consult_id: int) -> dict[str, Any] | None:
     """对齐 Java ServiceConsultAction.consultDetail.ajax 的 obj 形状。"""
     row = fetch_one(
         """
-        SELECT t.*, em.name AS className, em.head_user_id AS headUserId
+        SELECT
+            t.*,
+            em.name AS className,
+            em.head_user_id AS headUserId,
+            em.parent_id AS parentClassId,
+            em2.syuser_id AS parentSyUserId
         FROM service_consult t
         LEFT JOIN experiment_manage em ON t.class_id = em.id
+        LEFT JOIN experiment_manage em2 ON em.parent_id = em2.id
         WHERE t.id = %(id)s AND IFNULL(t.deleteStatus, 0) = 0
         LIMIT 1
         """,
@@ -122,6 +130,8 @@ def get_consult_detail(consult_id: int) -> dict[str, Any] | None:
     consult = dict(row)
     class_name = consult.pop("className", None) or ""
     head_user_id = consult.pop("headUserId", None)
+    consult.pop("parentClassId", None)
+    parent_sy_user_id = consult.pop("parentSyUserId", None)
     try:
         class_id = int(consult.get("class_id") or 0)
     except (TypeError, ValueError):
@@ -135,7 +145,10 @@ def get_consult_detail(consult_id: int) -> dict[str, Any] | None:
         consult["status"] = -1
 
     sy_user_name = ""
-    if head_user_id not in (None, ""):
+    # 详情优先 head_user_id（与 Java Action 一致），再回落到父级 syuser_id（与列表一致）
+    for uid in (head_user_id, parent_sy_user_id):
+        if uid in (None, ""):
+            continue
         su = fetch_one(
             """
             SELECT user_name, true_name
@@ -143,10 +156,12 @@ def get_consult_detail(consult_id: int) -> dict[str, Any] | None:
             WHERE id = %(id)s
             LIMIT 1
             """,
-            {"id": str(head_user_id)},
+            {"id": str(uid)},
         )
         if su:
             sy_user_name = str(su.get("user_name") or su.get("true_name") or "")
+            if sy_user_name:
+                break
     consult["syUserName"] = sy_user_name
 
     children = fetch_all(
@@ -693,6 +708,10 @@ def save_order_from_consult(
     msg_text = (c.get("zxcontent") or c.get("content") or "")[:1000]
 
     order_pk = None
+    insert_err = ""
+    # 空日期用 None，避免 MySQL 把 '' 当成非法 datetime
+    coll_val = c.get("collection_time") or None
+    delv_val = c.get("delivery_time") or None
     try:
         order_pk = execute_insert(
             """
@@ -731,50 +750,65 @@ def save_order_from_consult(
                 "sup": c.get("supplier_name") or None,
                 "ct": c.get("currency_type") or 1,
                 "ga": float(c.get("goods_amount") or 0),
-                "coll": c.get("collection_time") or "",
-                "delv": c.get("delivery_time") or None,
+                "coll": coll_val,
+                "delv": delv_val,
                 "tp": float(c.get("totalPrice") or 0),
                 "class_id": c.get("class_id"),
-                "taddr": c.get("test_address_id"),
-                "acc": c.get("company_account_id"),
+                "taddr": c.get("test_address_id") or None,
+                "acc": c.get("company_account_id") or None,
                 "iv": c.get("is_video") or 0,
                 "ia": c.get("is_arrive") or 0,
                 "io": c.get("is_on") or 0,
                 "add_uid": staff_user_id or None,
             },
         )
-    except Exception:
+    except Exception as exc:
+        insert_err = str(exc)
         order_pk = None
 
     if not order_pk:
-        order_pk = execute_insert(
-            """
-            INSERT INTO experiment_order
-                (addTime, deleteStatus, order_id, order_type, order_status,
-                 totalPrice, sale_manager, sale_user, customer_name, supplier_name,
-                 currency_type, invoiceType, consultid, mobile, class_id)
-            VALUES
-                (NOW(), 0, %(ono)s, %(ot)s, 5,
-                 %(tp)s, %(sm)s, %(su)s, %(cust)s, %(sup)s,
-                 %(ct)s, %(inv)s, %(cid)s, %(mobile)s, %(class_id)s)
-            """,
-            {
-                "ono": order_no,
-                "ot": order_type,
-                "tp": float(c.get("totalPrice") or 0),
-                "sm": c.get("sale_manager") or None,
-                "su": c.get("sale_user") or None,
-                "cust": customer_id,
-                "sup": c.get("supplier_name") or None,
-                "ct": c.get("currency_type") or 1,
-                "inv": invoice_type,
-                "cid": c["id"],
-                "mobile": c.get("mobile") or "",
-                "class_id": c.get("class_id"),
-            },
-        )
+        try:
+            order_pk = execute_insert(
+                """
+                INSERT INTO experiment_order
+                    (addTime, deleteStatus, order_id, order_type, order_status,
+                     totalPrice, sale_manager, sale_user, customer_name, supplier_name,
+                     currency_type, invoiceType, consultid, mobile, class_id,
+                     collection_time, delivery_time, goods_amount, reverso_context,
+                     send_address, addressee_name, addressee_mobile)
+                VALUES
+                    (NOW(), 0, %(ono)s, %(ot)s, 5,
+                     %(tp)s, %(sm)s, %(su)s, %(cust)s, %(sup)s,
+                     %(ct)s, %(inv)s, %(cid)s, %(mobile)s, %(class_id)s,
+                     %(coll)s, %(delv)s, %(ga)s, %(rev)s,
+                     %(addr)s, %(an)s, %(am)s)
+                """,
+                {
+                    "ono": order_no,
+                    "ot": order_type,
+                    "tp": float(c.get("totalPrice") or 0),
+                    "sm": c.get("sale_manager") or None,
+                    "su": c.get("sale_user") or None,
+                    "cust": customer_id,
+                    "sup": c.get("supplier_name") or None,
+                    "ct": c.get("currency_type") or 1,
+                    "inv": invoice_type,
+                    "cid": c["id"],
+                    "mobile": c.get("mobile") or "",
+                    "class_id": c.get("class_id"),
+                    "coll": coll_val,
+                    "delv": delv_val,
+                    "ga": float(c.get("goods_amount") or 0),
+                    "rev": reverso,
+                    "addr": c.get("send_address") or "",
+                    "an": c.get("addressee_name") or "",
+                    "am": c.get("addressee_mobile") or "",
+                },
+            )
+        except Exception as exc:
+            return False, f"创建订单失败：{exc or insert_err}", None
     if not order_pk:
-        return False, "创建订单失败", None
+        return False, f"创建订单失败：{insert_err or '未知错误'}", None
 
     for idx, ch in enumerate(children, 1):
         child_no = f"{order_no}-{idx:02d}"
@@ -784,7 +818,7 @@ def save_order_from_consult(
                 INSERT INTO experiment_order_child
                     (addTime, deleteStatus, order_form_id, order_id,
                      goods_id, goods_name, goods_spec, goods_brand_name, goods_nums,
-                     price, reference_price, experiment_project_id, experiment_project_name,
+                     goods_price, reference_price, experiment_project_id, experiment_project_name,
                      experiment_class_id, experiment_class_name, sample_id,
                      order_status, op_status, currency_type)
                 VALUES
@@ -797,39 +831,42 @@ def save_order_from_consult(
                 {
                     "oid": order_pk,
                     "cno": child_no,
-                    "gid": ch.get("goods_id"),
+                    "gid": ch.get("goods_id") or None,
                     "gn": ch.get("goods_name") or "",
                     "gs": ch.get("goods_spec") or "",
                     "gb": ch.get("goods_brand_name") or "",
                     "nums": ch.get("goods_nums") or 1,
                     "price": ch.get("goods_price") or 0,
                     "ref": ch.get("reference_price") or 0,
-                    "epid": ch.get("experiment_project_id"),
+                    "epid": ch.get("experiment_project_id") or None,
                     "epn": ch.get("experiment_project_name") or "",
-                    "ecid": ch.get("experiment_class_id"),
+                    "ecid": ch.get("experiment_class_id") or None,
                     "ecn": ch.get("experiment_class_name") or "",
-                    "sid": ch.get("sample_id"),
+                    "sid": ch.get("sample_id") or None,
                     "ct": ch.get("currency_type") or 1,
                 },
             )
-        except Exception:
-            execute_insert(
-                """
-                INSERT INTO experiment_order_child
-                    (addTime, deleteStatus, order_form_id, order_id,
-                     goods_name, goods_nums, price, order_status, op_status)
-                VALUES
-                    (NOW(), 0, %(oid)s, %(cno)s,
-                     %(gn)s, %(nums)s, %(price)s, 1, 1)
-                """,
-                {
-                    "oid": order_pk,
-                    "cno": child_no,
-                    "gn": ch.get("goods_name") or "",
-                    "nums": ch.get("goods_nums") or 1,
-                    "price": ch.get("goods_price") or 0,
-                },
-            )
+        except Exception as exc:
+            try:
+                execute_insert(
+                    """
+                    INSERT INTO experiment_order_child
+                        (addTime, deleteStatus, order_form_id, order_id,
+                         goods_name, goods_nums, goods_price, order_status, op_status)
+                    VALUES
+                        (NOW(), 0, %(oid)s, %(cno)s,
+                         %(gn)s, %(nums)s, %(price)s, 1, 1)
+                    """,
+                    {
+                        "oid": order_pk,
+                        "cno": child_no,
+                        "gn": ch.get("goods_name") or "",
+                        "nums": ch.get("goods_nums") or 1,
+                        "price": ch.get("goods_price") or 0,
+                    },
+                )
+            except Exception as exc2:
+                return False, f"创建订单子行失败：{exc2 or exc}", None
 
     execute(
         """
