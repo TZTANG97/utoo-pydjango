@@ -1,5 +1,6 @@
 export const INVOICE_STATUS: Record<number, string> = {
   1: '开票中',
+  2: '退票中',
   3: '已作废',
   4: '已开票',
   5: '已驳回',
@@ -8,6 +9,13 @@ export const INVOICE_STATUS: Record<number, string> = {
 export const INVOICE_TYPE: Record<number, string> = {
   1: '增值税专用发票',
   2: '增值税普通发票',
+}
+
+/** 发票介质：电子普通 / 纸质 / 电子专票 */
+export const INVOICE_MEDIA_TYPE: Record<number, string> = {
+  1: '电子普通发票',
+  2: '纸质发票',
+  3: '电子增值税专票',
 }
 
 export const PAY_TYPE: Record<number, string> = {

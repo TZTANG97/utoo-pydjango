@@ -89,6 +89,142 @@ def get_invoice_apply(apply_id: int) -> dict[str, Any] | None:
     return to_jsonable(row) if row else None
 
 
+def _order_status_label(status: Any) -> str:
+    try:
+        st = int(status) if status is not None else None
+    except (TypeError, ValueError):
+        st = None
+    labels = {
+        0: "已取消",
+        5: "订单未发起审核",
+        10: "已驳回",
+        15: "审核中",
+        20: "待审核",
+        25: "待确认",
+        30: "已审核",
+        35: "样品发货",
+        36: "样品到货",
+        38: "测试中",
+        39: "测试中",
+        40: "已确认",
+        41: "已付款",
+        42: "已开票",
+        43: "部分完成",
+        50: "已完成",
+        55: "已评价",
+        60: "已关闭",
+        66: "待平台确认",
+        67: "待客户确认",
+        70: "已开票待收款",
+    }
+    if st is None:
+        return "-"
+    return labels.get(st, str(st))
+
+
+def list_invoice_related_orders(order_ids_raw: str) -> list[dict[str, Any]]:
+    """关联订单：编号/下单时间/所属公司/状态/总价。"""
+    out: list[dict[str, Any]] = []
+    for part in str(order_ids_raw or "").split(","):
+        part = part.strip()
+        if not part.isdigit():
+            continue
+        row = fetch_one(
+            """
+            SELECT
+                eo.id, eo.order_id AS orderId, eo.order_id AS order_id,
+                eo.addTime, eo.totalPrice, eo.order_status AS orderStatus,
+                eo.order_type AS orderType, eo.is_online AS isOnline,
+                eo.custom_user_id AS customUserId,
+                eo.customer_name AS customerName,
+                eo.supplier_name AS supplierName,
+                IFNULL(u.company_name, '') AS companyName
+            FROM experiment_order eo
+            LEFT JOIN `user` u ON CAST(u.id AS CHAR) = CAST(eo.supplier_name AS CHAR)
+            WHERE eo.id = %(id)s
+            LIMIT 1
+            """,
+            {"id": int(part)},
+        )
+        if not row:
+            continue
+        item = to_jsonable(row)
+        item["statusLabel"] = _order_status_label(item.get("orderStatus"))
+        item["company_name"] = item.get("companyName") or ""
+        out.append(item)
+    return out
+
+
+def list_invoice_order_files(order_ids_raw: str) -> list[dict[str, Any]]:
+    """订单资料：accessory type=5（对齐 Java getByExpOfId1120）。"""
+    from django.conf import settings
+
+    base = (getattr(settings, "IMAGE_WEB_SERVER", "") or "").rstrip("/")
+    out: list[dict[str, Any]] = []
+    for part in str(order_ids_raw or "").split(","):
+        part = part.strip()
+        if not part.isdigit():
+            continue
+        rows = fetch_all(
+            """
+            SELECT id, name, path, info, ext, type, exp_of_id AS expOfId
+            FROM accessory
+            WHERE IFNULL(deleteStatus, 0) = 0
+              AND IFNULL(type, 0) = 5
+              AND CAST(exp_of_id AS CHAR) = CAST(%(oid)s AS CHAR)
+            ORDER BY id ASC
+            """,
+            {"oid": int(part)},
+        )
+        for r in rows:
+            item = to_jsonable(r)
+            path = str(item.get("path") or "").rstrip("/")
+            name = str(item.get("name") or "")
+            if path.startswith("http"):
+                item["url"] = f"{path}/{name}" if name else path
+            elif base and path and name:
+                item["url"] = f"{base}/{path.strip('/')}/{name}"
+            else:
+                item["url"] = f"{path}/{name}" if path and name else (path or name or "")
+            item["displayName"] = str(item.get("info") or name or item["url"] or "-")
+            out.append(item)
+    return out
+
+
+def list_invoice_record_logs(apply_id: int) -> list[dict[str, Any]]:
+    rows = fetch_all(
+        """
+        SELECT
+            l.id, l.addTime, l.content, l.user_id AS userId,
+            IFNULL(su.true_name, IFNULL(su.user_name, IFNULL(eu.trueName, IFNULL(eu.userName, '')))) AS addusername
+        FROM invoice_record_log l
+        LEFT JOIN sy_users su ON CAST(su.id AS CHAR) = CAST(l.user_id AS CHAR)
+        LEFT JOIN exp_user eu ON CAST(eu.id AS CHAR) = CAST(l.user_id AS CHAR)
+        WHERE l.invoice_apply_id = %(aid)s
+        ORDER BY l.addTime DESC, l.id DESC
+        """,
+        {"aid": apply_id},
+    )
+    return [to_jsonable(r) for r in rows]
+
+
+def get_invoice_detail(apply_id: int) -> dict[str, Any] | None:
+    """对齐 Java invoiceDetail.ajax：obj + files + ofList + logs。"""
+    row = get_invoice_apply(apply_id)
+    if not row:
+        return None
+    order_ids = str(row.get("order_ids") or "")
+    of_list = list_invoice_related_orders(order_ids)
+    return {
+        "obj": row,
+        "files": list_invoice_order_files(order_ids),
+        "ofList": of_list,
+        "logs": list_invoice_record_logs(apply_id),
+        "ids": order_ids,
+        "isSqfp": True,
+    }
+
+
 def count_pay_logs(
     *,
     order_num: str = "",

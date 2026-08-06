@@ -51,10 +51,11 @@ def invoice_list_page(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view(require_staff=True)
 def invoice_detail(request: Request, user=None):
+    del user
     apply_id = request.query_params.get("id") or request.data.get("id")
     if not apply_id:
         return Response(ajax_fail("缺少 id"))
-    row = billing_repo.get_invoice_apply(int(apply_id))
+    row = billing_repo.get_invoice_detail(int(apply_id))
     if not row:
         return Response(ajax_fail("发票申请不存在"))
     return Response(ajax_ok(obj=row))
@@ -81,7 +82,10 @@ def invoice_open_preview(request: Request, user=None):
     apply_id = request.query_params.get("id") or request.data.get("id")
     if not apply_id:
         return Response(ajax_fail("缺少 id"))
-    row = billing_service.get_invoice_open_preview(int(apply_id))
+    try:
+        row = billing_service.get_invoice_open_preview(int(apply_id))
+    except Exception as exc:
+        return Response(ajax_fail(f"加载开票信息失败：{exc}"))
     if not row:
         return Response(ajax_fail("发票申请不存在"))
     return Response(ajax_ok(obj=row))
@@ -92,7 +96,9 @@ def invoice_open_preview(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view(require_staff=True)
 def invoice_agree(request: Request, user=None):
-    """对齐 Java addBillDataInvoice / 开票。"""
+    """开票确认（对齐 Java addBillDataInvoice）。"""
+    from django.db import DatabaseError
+
     apply_id = request.data.get("id") or request.query_params.get("id")
     if not apply_id:
         return Response(ajax_fail("缺少 id"))
@@ -107,12 +113,15 @@ def invoice_agree(request: Request, user=None):
     if not isinstance(items, list):
         items = []
     mark = str(request.data.get("mark") or "")
-    ok, msg = billing_service.agree_invoice(
-        apply_id=int(apply_id),
-        staff_user_id=_staff_id(user),
-        items=items,
-        mark=mark,
-    )
+    try:
+        ok, msg = billing_service.agree_invoice(
+            apply_id=int(apply_id),
+            staff_user_id=_staff_id(user),
+            items=items,
+            mark=mark,
+        )
+    except DatabaseError as exc:
+        return Response(ajax_fail(f"开票失败：{exc}"))
     return Response(ajax_ok(res_msg=msg) if ok else ajax_fail(msg))
 
 

@@ -85,7 +85,7 @@ def reject_invoice(*, apply_id: int, staff_user_id: str) -> tuple[bool, str]:
             (content, invoice_apply_id, user_id, addTime, deleteStatus)
         VALUES ('驳回开票申请', %(aid)s, %(uid)s, NOW(), 0)
         """,
-        {"aid": apply_id, "uid": str(staff_user_id or "") or None},
+        {"aid": apply_id, "uid": str(staff_user_id or "").strip() or "0"},
     )
     return True, "驳回成功"
 
@@ -97,11 +97,12 @@ def get_invoice_open_preview(apply_id: int) -> dict[str, Any] | None:
         return None
     order_ids = [x.strip() for x in str(row.get("order_ids") or "").split(",") if x.strip()]
     moneys = [x.strip() for x in str(row.get("moneys") or "").split(",") if x.strip()]
+    related = {str(o.get("id")): o for o in billing_repo.list_invoice_related_orders(str(row.get("order_ids") or ""))}
     lines: list[dict[str, Any]] = []
     for i, oid in enumerate(order_ids):
         if not oid.isdigit():
             continue
-        eo = fetch_one(
+        eo = related.get(oid) or fetch_one(
             """
             SELECT id, order_id AS orderNo, totalPrice, order_type AS orderType
             FROM experiment_order WHERE id = %(id)s LIMIT 1
@@ -119,14 +120,93 @@ def get_invoice_open_preview(apply_id: int) -> dict[str, Any] | None:
         lines.append(
             {
                 "of_id": int(oid),
-                "orderNo": eo.get("orderNo") or "",
+                "orderNo": eo.get("orderId") or eo.get("orderNo") or eo.get("order_id") or "",
                 "totalPrice": eo.get("totalPrice"),
-                "orderType": eo.get("orderType"),
+                "orderType": eo.get("orderType") or eo.get("order_type"),
+                "companyName": eo.get("companyName") or eo.get("company_name") or "",
                 "amount": amt,
                 "mark": "",
             }
         )
     return {**row, "orderLines": lines}
+
+
+def _write_invoice_member_log(
+    *,
+    order: dict[str, Any],
+    bill_id: int,
+    money: Decimal,
+) -> None:
+    """对齐 Java：线上/线下写入 user_invoice_log 或 company_invoice_log。"""
+    of_id = int(order["id"])
+    is_online = int(order.get("is_online") or order.get("isOnline") or 0)
+    custom_uid = order.get("custom_user_id") or order.get("customUserId")
+    company_id = order.get("customer_name") or order.get("customerName")
+    try:
+        if is_online == 1:
+            if custom_uid not in (None, ""):
+                execute_insert(
+                    """
+                    INSERT INTO user_invoice_log
+                        (addTime, deleteStatus, of_id, money, user_id, invoice_date, qd_bill_id, type)
+                    VALUES
+                        (NOW(), 0, %(oid)s, %(money)s, %(uid)s, NOW(), %(bid)s, 0)
+                    """,
+                    {
+                        "oid": of_id,
+                        "money": float(money),
+                        "uid": int(custom_uid),
+                        "bid": bill_id,
+                    },
+                )
+            elif company_id not in (None, ""):
+                execute_insert(
+                    """
+                    INSERT INTO company_invoice_log
+                        (addTime, deleteStatus, of_id, money, company_id, invoice_date, qd_bill_id)
+                    VALUES
+                        (NOW(), 0, %(oid)s, %(money)s, %(cid)s, NOW(), %(bid)s)
+                    """,
+                    {
+                        "oid": of_id,
+                        "money": float(money),
+                        "cid": int(company_id) if str(company_id).isdigit() else company_id,
+                        "bid": bill_id,
+                    },
+                )
+        else:
+            if company_id not in (None, ""):
+                execute_insert(
+                    """
+                    INSERT INTO company_invoice_log
+                        (addTime, deleteStatus, of_id, money, company_id, invoice_date, qd_bill_id)
+                    VALUES
+                        (NOW(), 0, %(oid)s, %(money)s, %(cid)s, NOW(), %(bid)s)
+                    """,
+                    {
+                        "oid": of_id,
+                        "money": float(money),
+                        "cid": int(company_id) if str(company_id).isdigit() else company_id,
+                        "bid": bill_id,
+                    },
+                )
+            elif custom_uid not in (None, ""):
+                execute_insert(
+                    """
+                    INSERT INTO user_invoice_log
+                        (addTime, deleteStatus, of_id, money, user_id, invoice_date, qd_bill_id, type)
+                    VALUES
+                        (NOW(), 0, %(oid)s, %(money)s, %(uid)s, NOW(), %(bid)s, 0)
+                    """,
+                    {
+                        "oid": of_id,
+                        "money": float(money),
+                        "uid": int(custom_uid),
+                        "bid": bill_id,
+                    },
+                )
+    except Exception:
+        logger.exception("write invoice member log failed of_id=%s bill_id=%s", of_id, bill_id)
 
 
 @transaction.atomic
@@ -138,6 +218,8 @@ def agree_invoice(
     mark: str = "",
 ) -> tuple[bool, str]:
     """对齐 Java addBillDataInvoice：按订单写入开票 qd_bill(type=1)，申请 status=4。"""
+    from django.db import DatabaseError
+
     row = billing_repo.get_invoice_apply(apply_id)
     if not row:
         return False, "发票申请不存在"
@@ -189,55 +271,65 @@ def agree_invoice(
         return False, "没有可开票的订单"
 
     staff = _safe_staff_uid(staff_user_id)
-    for oid, amt, mk in bill_items:
-        eo = fetch_one(
-            "SELECT id, order_id FROM experiment_order WHERE id = %(id)s LIMIT 1",
-            {"id": oid},
-        )
-        if not eo:
-            return False, f"订单不存在: {oid}"
+    staff_log_uid = str(staff_user_id or "").strip() or (str(staff) if staff else "0")
+
+    try:
+        for oid, amt, mk in bill_items:
+            eo = fetch_one(
+                """
+                SELECT id, order_id, is_online, custom_user_id, customer_name
+                FROM experiment_order WHERE id = %(id)s LIMIT 1
+                """,
+                {"id": oid},
+            )
+            if not eo:
+                return False, f"订单不存在: {oid}"
+            bill_id = execute_insert(
+                """
+                INSERT INTO qd_bill
+                    (add_time, add_user_id, exp_of_id, money, type, is_split, bill_date, mark)
+                VALUES
+                    (NOW(), %(uid)s, %(oid)s, %(money)s, 1, 0, NOW(), %(mark)s)
+                """,
+                {
+                    "uid": str(staff) if staff is not None else staff_log_uid,
+                    "oid": oid,
+                    "money": float(amt),
+                    "mark": mk or "同意开票申请",
+                },
+            )
+            _write_invoice_member_log(order=eo, bill_id=int(bill_id), money=amt)
+            try:
+                execute(
+                    "UPDATE experiment_order SET is_apply = 1 WHERE id = %(id)s",
+                    {"id": oid},
+                )
+            except Exception:
+                pass
+
         execute(
-            """
-            INSERT INTO qd_bill
-                (add_time, add_user_id, exp_of_id, money, type, is_split, bill_date, mark)
-            VALUES
-                (NOW(), %(uid)s, %(oid)s, %(money)s, 1, 0, NOW(), %(mark)s)
-            """,
-            {
-                "uid": staff,
-                "oid": oid,
-                "money": float(amt),
-                "mark": mk or "同意开票申请",
-            },
+            "UPDATE invoice_apply_log SET status = 4 WHERE id = %(id)s",
+            {"id": apply_id},
         )
         try:
             execute(
-                "UPDATE experiment_order SET is_apply = 1 WHERE id = %(id)s",
-                {"id": oid},
+                "UPDATE invoice_apply_log SET wk_order_ids = '' WHERE id = %(id)s",
+                {"id": apply_id},
             )
         except Exception:
             pass
 
-    execute(
-        "UPDATE invoice_apply_log SET status = 4 WHERE id = %(id)s",
-        {"id": apply_id},
-    )
-    try:
-        execute(
-            "UPDATE invoice_apply_log SET wk_order_ids = '' WHERE id = %(id)s",
-            {"id": apply_id},
+        execute_insert(
+            """
+            INSERT INTO invoice_record_log
+                (content, invoice_apply_id, user_id, addTime, deleteStatus)
+            VALUES ('同意开票申请', %(aid)s, %(uid)s, NOW(), 0)
+            """,
+            {"aid": apply_id, "uid": staff_log_uid},
         )
-    except Exception:
-        pass
-
-    execute_insert(
-        """
-        INSERT INTO invoice_record_log
-            (content, invoice_apply_id, user_id, addTime, deleteStatus)
-        VALUES ('同意开票申请', %(aid)s, %(uid)s, NOW(), 0)
-        """,
-        {"aid": apply_id, "uid": str(staff_user_id or "") or None},
-    )
+    except DatabaseError as exc:
+        logger.exception("agree_invoice db error apply=%s", apply_id)
+        return False, f"开票失败：{exc}"
     return True, "开票成功"
 
 

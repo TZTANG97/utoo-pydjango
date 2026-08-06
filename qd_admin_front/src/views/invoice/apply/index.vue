@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -11,6 +11,7 @@ import {
 import {
   INVOICE_STATUS,
   INVOICE_TYPE,
+  INVOICE_MEDIA_TYPE,
   formatDate,
   formatMoney,
 } from '@/utils/billing-labels'
@@ -23,6 +24,9 @@ const page = ref(1)
 const pageSize = ref(10)
 const detailVisible = ref(false)
 const detail = ref<Record<string, unknown> | null>(null)
+const detailFiles = ref<Record<string, unknown>[]>([])
+const detailOrders = ref<Record<string, unknown>[]>([])
+const detailLogs = ref<Record<string, unknown>[]>([])
 const openVisible = ref(false)
 const openLoading = ref(false)
 const openSaving = ref(false)
@@ -58,6 +62,16 @@ function statusLabel(status: unknown) {
 
 function invoiceTypeLabel(type: unknown) {
   return INVOICE_TYPE[Number(type)] || '-'
+}
+
+function invoiceMediaLabel(type: unknown) {
+  return INVOICE_MEDIA_TYPE[Number(type)] || '-'
+}
+
+function payLabel(v: unknown) {
+  if (Number(v) === 1) return '已回款'
+  if (Number(v) === 0) return '未回款'
+  return '-'
 }
 
 async function loadData() {
@@ -98,7 +112,17 @@ async function openDetail(row: Record<string, unknown>) {
     ElMessage.error(ajaxErrorMessage(res, '加载详情失败'))
     return
   }
-  detail.value = (res.obj || null) as Record<string, unknown> | null
+  const payload = (res.obj || {}) as Record<string, unknown>
+  // 新结构 { obj, files, ofList, logs }；兼容旧扁平结构
+  const obj = (payload.obj && typeof payload.obj === 'object'
+    ? payload.obj
+    : payload) as Record<string, unknown>
+  detail.value = obj
+  detailFiles.value = Array.isArray(payload.files) ? (payload.files as Record<string, unknown>[]) : []
+  detailOrders.value = Array.isArray(payload.ofList)
+    ? (payload.ofList as Record<string, unknown>[])
+    : []
+  detailLogs.value = Array.isArray(payload.logs) ? (payload.logs as Record<string, unknown>[]) : []
   detailVisible.value = true
 }
 
@@ -140,6 +164,7 @@ async function openInvoice(row: Record<string, unknown>) {
         {
           of_id: '',
           orderNo: String(obj.order_id || '-'),
+          totalPrice: obj.invoice_money,
           amount: String(obj.invoice_money || ''),
           mark: '',
         },
@@ -289,6 +314,11 @@ loadData()
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="发票介质" min-width="120" align="center">
+          <template #default="{ row }">
+            <span class="cell-muted">{{ invoiceMediaLabel(row.invoice_type) }}</span>
+          </template>
+        </el-table-column>
         <el-table-column
           prop="invoice_title"
           label="公司名称"
@@ -307,6 +337,18 @@ loadData()
         >
           <template #default="{ row }">
             <span class="cell-muted">{{ row.credit_code || '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="是否回款" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag
+              :type="Number(row.is_pay) === 1 ? 'success' : 'info'"
+              size="small"
+              effect="plain"
+              round
+            >
+              {{ payLabel(row.is_pay) }}
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="发票状态" min-width="110" align="center">
@@ -364,7 +406,7 @@ loadData()
     <el-dialog
       v-model="detailVisible"
       title="发票申请详情"
-      width="720px"
+      width="900px"
       destroy-on-close
     >
       <template v-if="detail">
@@ -382,15 +424,72 @@ loadData()
         </div>
 
         <el-descriptions :column="2" border class="detail-desc">
-          <el-descriptions-item label="申请时间">{{ formatDate(detail.addTime) }}</el-descriptions-item>
-          <el-descriptions-item label="用户名">{{ detail.userName || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="发票类型">{{ invoiceTypeLabel(detail.type) }}</el-descriptions-item>
+          <el-descriptions-item label="申请日期">{{ formatDate(detail.addTime) }}</el-descriptions-item>
+          <el-descriptions-item label="申请人">{{ detail.userName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="电话">{{ detail.mobile || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="公司名称" :span="2">{{ detail.invoice_title || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="信用代码" :span="2">{{ detail.credit_code || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="邮箱" :span="2">{{ detail.email || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="发票类型">{{ invoiceTypeLabel(detail.type) }}</el-descriptions-item>
+          <el-descriptions-item label="公司名称">{{ detail.invoice_title || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="信用代码">{{ detail.credit_code || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="发票金额">¥ {{ formatMoney(detail.invoice_money) }}</el-descriptions-item>
+          <el-descriptions-item label="发票介质">{{ invoiceMediaLabel(detail.invoice_type) }}</el-descriptions-item>
+          <el-descriptions-item v-if="Number(detail.invoice_type) === 2" label="邮寄地址" :span="2">
+            {{ detail.address_info || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="是否回款">{{ payLabel(detail.is_pay) }}</el-descriptions-item>
+          <el-descriptions-item label="邮箱">{{ detail.email || '-' }}</el-descriptions-item>
           <el-descriptions-item label="备注" :span="2">{{ detail.notes || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="订单资料" :span="2">
+            <div v-if="detailFiles.length" class="file-list">
+              <a
+                v-for="f in detailFiles"
+                :key="String(f.id)"
+                class="file-link"
+                :href="String(f.url || '#')"
+                target="_blank"
+                rel="noopener"
+              >
+                {{ f.displayName || f.info || f.name || '附件' }}
+              </a>
+            </div>
+            <span v-else class="cell-muted">暂无资料</span>
+          </el-descriptions-item>
         </el-descriptions>
+
+        <div class="section-title">关联订单</div>
+        <el-table :data="detailOrders" border stripe size="small" empty-text="暂无关联订单">
+          <el-table-column label="关联订单编号" min-width="160" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span class="cell-code">{{ row.orderId || row.order_id || '-' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="下单时间" min-width="160">
+            <template #default="{ row }">{{ formatDate(row.addTime) }}</template>
+          </el-table-column>
+          <el-table-column label="所属公司名称" min-width="160" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.companyName || row.company_name || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="状态" width="120">
+            <template #default="{ row }">{{ row.statusLabel || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="订单总价" width="120" align="right">
+            <template #default="{ row }">
+              <span class="money">¥ {{ formatMoney(row.totalPrice) }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <div class="section-title">操作记录</div>
+        <el-table :data="detailLogs" border stripe size="small" empty-text="暂无操作记录">
+          <el-table-column label="操作时间" min-width="170">
+            <template #default="{ row }">{{ formatDate(row.addTime) }}</template>
+          </el-table-column>
+          <el-table-column label="操作人员" min-width="120">
+            <template #default="{ row }">{{ row.addusername || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="操作" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.content || '-' }}</template>
+          </el-table-column>
+        </el-table>
 
         <div v-if="Number(detail.status) === 1" class="detail-actions">
           <el-button type="warning" @click="openInvoice(detail)">开票</el-button>
@@ -399,16 +498,21 @@ loadData()
       </template>
     </el-dialog>
 
-    <el-dialog v-model="openVisible" title="开票" width="720px" destroy-on-close>
+    <el-dialog v-model="openVisible" title="开票" width="820px" destroy-on-close>
       <div v-loading="openLoading">
         <el-table :data="openLines" border stripe>
           <el-table-column prop="orderNo" label="订单编号" min-width="150" show-overflow-tooltip />
+          <el-table-column label="订单总额" width="120" align="right">
+            <template #default="{ row }">
+              <span class="money">¥ {{ formatMoney(row.totalPrice) }}</span>
+            </template>
+          </el-table-column>
           <el-table-column label="开票金额" width="160">
             <template #default="{ row }">
               <el-input v-model="row.amount" placeholder="金额" clearable />
             </template>
           </el-table-column>
-          <el-table-column label="备注" min-width="160">
+          <el-table-column label="操作备注" min-width="160">
             <template #default="{ row }">
               <el-input v-model="row.mark" placeholder="可选" clearable />
             </template>
@@ -652,5 +756,27 @@ loadData()
   display: flex;
   justify-content: flex-end;
   margin-top: 18px;
+}
+
+.section-title {
+  margin: 18px 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #24324a;
+}
+
+.file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.file-link {
+  color: #2f6fed;
+  text-decoration: none;
+}
+
+.file-link:hover {
+  text-decoration: underline;
 }
 </style>
