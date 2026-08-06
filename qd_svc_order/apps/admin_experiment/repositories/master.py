@@ -231,6 +231,7 @@ def get_project(row_id: int) -> dict[str, Any] | None:
         """
         SELECT
             t.id, t.addTime, t.project_name AS projectName, t.class_id AS classId,
+            t.test_price AS testPrice, t.country,
             m.name AS className, m.parent_id AS secId, m2.parent_id AS firstId
         FROM experiment_project t
         LEFT JOIN experiment_manage m ON t.class_id = m.id
@@ -247,7 +248,10 @@ def save_project(data: dict[str, Any], *, row_id: int | None = None) -> int:
         execute(
             """
             UPDATE experiment_project
-            SET project_name=%(project_name)s, class_id=%(class_id)s
+            SET project_name=%(project_name)s,
+                class_id=%(class_id)s,
+                test_price=%(test_price)s,
+                country=%(country)s
             WHERE id=%(id)s
             """,
             {**data, "id": row_id},
@@ -255,8 +259,10 @@ def save_project(data: dict[str, Any], *, row_id: int | None = None) -> int:
         return row_id
     return execute_insert(
         """
-        INSERT INTO experiment_project (addTime, deleteStatus, project_name, class_id)
-        VALUES (NOW(), 0, %(project_name)s, %(class_id)s)
+        INSERT INTO experiment_project
+            (addTime, deleteStatus, project_name, class_id, test_price, country)
+        VALUES
+            (NOW(), 0, %(project_name)s, %(class_id)s, %(test_price)s, %(country)s)
         """,
         data,
     )

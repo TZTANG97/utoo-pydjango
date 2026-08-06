@@ -203,9 +203,26 @@ def project_save(request: Request, user=None):
         return fail("项目名称不能为空")
     if not class_id:
         return fail("请选择三级类目")
+    price_raw = data.get("testPrice")
+    if price_raw is None:
+        price_raw = data.get("test_price")
+    test_price = None
+    if price_raw not in (None, ""):
+        try:
+            test_price = float(price_raw)
+        except (TypeError, ValueError):
+            return fail("测试单价格式错误")
+        if test_price < 0:
+            return fail("测试单价不能为负数")
+    country = str(data.get("country") or "").strip() or None
     row_id = to_int(data.get("id"))
     new_id = master_repo.save_project(
-        {"project_name": name, "class_id": class_id},
+        {
+            "project_name": name,
+            "class_id": class_id,
+            "test_price": test_price,
+            "country": country,
+        },
         row_id=row_id,
     )
     return ok({"id": new_id}, res_msg="保存成功")

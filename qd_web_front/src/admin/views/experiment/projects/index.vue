@@ -89,6 +89,12 @@
         <el-form-item label="项目名称" required>
           <el-input v-model="form.projectName" />
         </el-form-item>
+        <el-form-item label="测试单价">
+          <el-input v-model="form.testPrice" clearable placeholder="请输入测试单价" />
+        </el-form-item>
+        <el-form-item label="隶属国家">
+          <el-input v-model="form.country" clearable placeholder="请输入国家名称" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -126,6 +132,8 @@ const form = reactive({
   firstId: '',
   secId: '',
   classId: '',
+  testPrice: '',
+  country: '',
 })
 
 function listParams() {
@@ -176,7 +184,15 @@ async function onFormSecChange() {
 }
 
 function openCreate() {
-  Object.assign(form, { id: undefined, projectName: '', firstId: '', secId: '', classId: '' })
+  Object.assign(form, {
+    id: undefined,
+    projectName: '',
+    firstId: '',
+    secId: '',
+    classId: '',
+    testPrice: '',
+    country: '',
+  })
   formSecOpts.value = []
   formThirdOpts.value = []
   dialogVisible.value = true
@@ -194,6 +210,9 @@ async function openEdit(row: Record<string, unknown>) {
   form.firstId = obj.firstId != null ? String(obj.firstId) : ''
   form.secId = obj.secId != null ? String(obj.secId) : ''
   form.classId = obj.classId != null ? String(obj.classId) : ''
+  form.testPrice =
+    obj.testPrice != null && obj.testPrice !== '' ? String(obj.testPrice) : ''
+  form.country = String(obj.country || '')
   formSecOpts.value = form.firstId ? await loadOpts(2, form.firstId) : []
   formThirdOpts.value = form.secId ? await loadOpts(3, form.secId) : []
   dialogVisible.value = true
@@ -208,12 +227,22 @@ async function handleSubmit() {
     ElMessage.warning('请选择三级类目')
     return
   }
+  const priceText = form.testPrice.trim()
+  if (priceText) {
+    const n = Number(priceText)
+    if (!Number.isFinite(n) || n < 0) {
+      ElMessage.warning('测试单价格式错误')
+      return
+    }
+  }
   saving.value = true
   try {
     const res = await saveProject({
       id: form.id,
       projectName: form.projectName.trim(),
       classId: form.classId,
+      testPrice: priceText || undefined,
+      country: form.country.trim() || undefined,
     })
     if (isAjaxOk(res)) {
       ElMessage.success('保存成功')
