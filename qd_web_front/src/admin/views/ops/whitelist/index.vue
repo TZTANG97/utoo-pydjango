@@ -75,16 +75,16 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import AdminPageCard from '@/components/AdminPageCard.vue'
+import AdminPageCard from '@admin/components/AdminPageCard.vue'
 import {
   addWhitelist,
   deleteWhitelist,
   fetchSyUserOptions,
   fetchWhitelist,
   updateWhitelist,
-} from '@/api/ops'
-import { useDataTable } from '@/composables/useDataTable'
-import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
+} from '@admin/api/ops'
+import { useDataTable } from '@admin/composables/useDataTable'
+import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
 const { loading, rows, total, pagination, load } = useDataTable(fetchWhitelist)
 const dialogVisible = ref(false)
