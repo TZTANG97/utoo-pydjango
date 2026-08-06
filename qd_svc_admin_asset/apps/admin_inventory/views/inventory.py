@@ -180,6 +180,16 @@ def lab_options(request: Request, user=None):
 @api_view(["GET", "POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
+@admin_ajax_view()
+def lab_query_all(request: Request, user=None):
+    """对齐 Java /lab/queryAllLab.ajax：部门关联等场景的实验室下拉。"""
+    del user, request
+    return Response(ajax_ok(obj=booking_repo.list_lab_options()))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
 @admin_ajax_view(require_staff=False)
 def sel_line_list(request: Request, user=None):
     """小程序实验平台 DataTable — /lab/selLineList.ajax（字段 id/line_num）。"""

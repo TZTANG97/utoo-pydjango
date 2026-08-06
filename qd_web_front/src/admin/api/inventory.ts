@@ -133,6 +133,8 @@ export const updateInventory = (data: Record<string, unknown>) =>
 // 实验室
 export const fetchLabList = (p: Record<string, unknown>) => fetchDatatable('/lab/list.ajax', p)
 export const fetchLabOptions = () => postAjax('/lab/options.ajax')
+/** 对齐 Java /lab/queryAllLab.ajax：部门关联实验室等 */
+export const fetchAllLabs = () => postAjax('/lab/queryAllLab.ajax')
 export const getLab = (id: string | number) => postAjax('/lab/get.ajax', { id })
 export const saveLab = (data: Record<string, unknown>) => postAjax('/lab/save.ajax', data)
 export const updateLabStatus = (id: string | number, status: number) =>

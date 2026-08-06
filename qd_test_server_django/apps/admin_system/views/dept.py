@@ -11,6 +11,16 @@ from apps.admin_system.views.common import merge_payload
 from apps.core.responses import ajax_fail, ajax_ok
 
 
+def _normalize_lab_ids(value) -> str | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, (list, tuple)):
+        parts = [str(x).strip() for x in value if x not in (None, "")]
+        return ",".join(parts) if parts else None
+    text = str(value).strip()
+    return text or None
+
+
 def _dept_payload(data: dict) -> dict:
     return {
         "id": data.get("id"),
@@ -22,7 +32,7 @@ def _dept_payload(data: dict) -> dict:
         "super_id": data.get("superId") or data.get("super_id") or "0",
         "lead_uid": data.get("leadUid") or data.get("lead_uid"),
         "dept_desc": data.get("deptDesc") or data.get("dept_desc"),
-        "lab_ids": data.get("labIds") or data.get("lab_ids"),
+        "lab_ids": _normalize_lab_ids(data.get("labIds") if "labIds" in data else data.get("lab_ids")),
     }
 
 
@@ -95,6 +105,30 @@ def dept_delete(request: Request, user=None):
 @authentication_classes([])
 @permission_classes([AllowAny])
 @admin_ajax_view()
-def dept_options(_request: Request, user=None):
-    del user
+def dept_options(request: Request, user=None):
+    data = merge_payload(request)
+    scope = str(data.get("scope") or data.get("for") or "").strip().lower()
+    # 用户管理下拉：非 admin 仅本部门及下级
+    if scope in ("yhgl", "usermgmt", "1"):
+        name = ""
+        dept_id = ""
+        if isinstance(user, dict):
+            name = str(user.get("user_name") or user.get("userName") or "").strip()
+            dept_id = str(user.get("dept_id") or user.get("deptId") or "").strip()
+        opts = dept_repo.list_dept_options_for_yhgl(is_admin=(name == "admin"), dept_id=dept_id)
+        return ajax_response(True, obj=opts)
     return ajax_response(True, obj=dept_repo.list_dept_options())
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def dept_load_all_yhgl(_request: Request, user=None):
+    name = ""
+    dept_id = ""
+    if isinstance(user, dict):
+        name = str(user.get("user_name") or user.get("userName") or "").strip()
+        dept_id = str(user.get("dept_id") or user.get("deptId") or "").strip()
+    opts = dept_repo.list_dept_options_for_yhgl(is_admin=(name == "admin"), dept_id=dept_id)
+    return ajax_response(True, obj=opts)

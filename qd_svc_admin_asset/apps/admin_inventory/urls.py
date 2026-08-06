@@ -61,6 +61,7 @@ urlpatterns = [
     # 实验室
     path("lab/list.ajax", inv.lab_list),
     path("lab/options.ajax", inv.lab_options),
+    path("lab/queryAllLab.ajax", inv.lab_query_all),
     path("lab/selLineList.ajax", inv.sel_line_list),
     path("lab/get.ajax", inv.lab_get),
     path("lab/save.ajax", inv.lab_save),
