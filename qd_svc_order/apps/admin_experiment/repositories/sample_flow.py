@@ -948,28 +948,58 @@ def test_start(
     )
     if not ok:
         return ok, msg
-    # 实验日志：开始测试
+    # 写入设备预约实验日志（须带 line_id，详情页按实验线查询）
+    resolved_line = child_line or lid
+    line_pk: int | None = None
+    try:
+        line_pk = int(resolved_line) if str(resolved_line).isdigit() else None
+    except (TypeError, ValueError):
+        line_pk = None
     try:
         execute_insert(
             """
             INSERT INTO experiment_log
-                (addTime, deleteStatus, order_child_id, start_time, status)
-            VALUES (NOW(), 0, %(cid)s, NOW(), 2)
+                (addTime, deleteStatus, order_child_id, line_id, start_time, status)
+            VALUES (NOW(), 0, %(cid)s, %(line_id)s, NOW(), 2)
             """,
-            {"cid": ids[0]},
+            {"cid": ids[0], "line_id": line_pk},
         )
     except Exception:
         try:
             execute_insert(
                 """
                 INSERT INTO experiment_log
-                    (addTime, deleteStatus, order_child_id, start_time)
-                VALUES (NOW(), 0, %(cid)s, NOW())
+                    (addTime, deleteStatus, order_child_id, line_id, start_time)
+                VALUES (NOW(), 0, %(cid)s, %(line_id)s, NOW())
                 """,
-                {"cid": ids[0]},
+                {"cid": ids[0], "line_id": line_pk},
             )
         except Exception:
-            pass
+            logger.exception("insert experiment_log failed child=%s", ids[0])
+    # 样品管理单操作记录
+    try:
+        got_rows = fetch_all(
+            """
+            SELECT DISTINCT c.out_id AS outId
+            FROM exp_goods_out_treasury_child c
+            INNER JOIN exp_goods_out_treasury o ON c.out_id = o.id
+            WHERE c.order_child_id = %(cid)s
+              AND IFNULL(o.status, 0) != 3
+              AND IFNULL(c.deleteStatus, 0) = 0
+            """,
+            {"cid": ids[0]},
+        )
+        for got in got_rows or []:
+            oid = got.get("outId")
+            if not oid:
+                continue
+            _write_outin_log(
+                of_id=int(oid),
+                info="开始测试",
+                staff_user_id=staff_user_id,
+            )
+    except Exception:
+        logger.exception("write start-test depot log failed child=%s", ids[0])
     # 平台占用 +1（失败不阻断）
     try:
         execute(
@@ -979,8 +1009,22 @@ def test_start(
                 line_status = CASE WHEN IFNULL(line_status, 0) = 0 THEN 1 ELSE line_status END
             WHERE id = %(id)s
             """,
-            {"id": int(lid) if lid.isdigit() else 0},
+            {"id": line_pk or 0},
         )
+    except Exception:
+        pass
+    # 测试人员进行中数量 +1
+    try:
+        tuid = child.get("testUserId")
+        if tuid not in (None, ""):
+            execute(
+                """
+                UPDATE sy_users
+                SET test_num = IFNULL(test_num, 0) + 1
+                WHERE id = %(id)s
+                """,
+                {"id": tuid},
+            )
     except Exception:
         pass
     try:

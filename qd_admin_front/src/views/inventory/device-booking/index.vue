@@ -1,8 +1,15 @@
 <template>
   <admin-page-card title="设备预约">
-    <el-form :inline="true" class="filter-form" @submit.prevent>
+    <el-form :inline="true" class="filter-form" @submit.prevent="reload">
       <el-form-item label="实验室编号">
-        <el-select v-model="filters.labNum" clearable filterable placeholder="全部" style="width: 150px">
+        <el-select
+          v-model="filters.labNum"
+          clearable
+          filterable
+          placeholder="全部"
+          style="width: 150px"
+          @keyup.enter="reload"
+        >
           <el-option
             v-for="lab in labs"
             :key="'n-' + String(lab.id)"
@@ -12,7 +19,14 @@
         </el-select>
       </el-form-item>
       <el-form-item label="实验室名称">
-        <el-select v-model="filters.labName" clearable filterable placeholder="全部" style="width: 160px">
+        <el-select
+          v-model="filters.labName"
+          clearable
+          filterable
+          placeholder="全部"
+          style="width: 160px"
+          @keyup.enter="reload"
+        >
           <el-option
             v-for="lab in labs"
             :key="'m-' + String(lab.id)"
@@ -22,7 +36,14 @@
         </el-select>
       </el-form-item>
       <el-form-item label="实验线类型">
-        <el-select v-model="filters.classId" clearable filterable placeholder="全部" style="width: 160px">
+        <el-select
+          v-model="filters.classId"
+          clearable
+          filterable
+          placeholder="全部"
+          style="width: 160px"
+          @keyup.enter="reload"
+        >
           <el-option
             v-for="c in classes"
             :key="String(c.id)"
@@ -32,7 +53,14 @@
         </el-select>
       </el-form-item>
       <el-form-item label="实验线编号">
-        <el-select v-model="filters.lineNum" clearable filterable placeholder="全部" style="width: 150px">
+        <el-select
+          v-model="filters.lineNum"
+          clearable
+          filterable
+          placeholder="全部"
+          style="width: 150px"
+          @keyup.enter="reload"
+        >
           <el-option
             v-for="line in lines"
             :key="String(line.id)"
@@ -42,13 +70,19 @@
         </el-select>
       </el-form-item>
       <el-form-item label="实验线状态">
-        <el-select v-model="filters.status" clearable placeholder="全部" style="width: 120px">
+        <el-select
+          v-model="filters.status"
+          clearable
+          placeholder="全部"
+          style="width: 120px"
+          @keyup.enter="reload"
+        >
           <el-option label="启用" value="1" />
           <el-option label="禁用" value="2" />
         </el-select>
       </el-form-item>
       <el-form-item>
-        <el-button type="primary" @click="reload">查询</el-button>
+        <el-button type="primary" native-type="submit" @click="reload">查询</el-button>
       </el-form-item>
     </el-form>
 
