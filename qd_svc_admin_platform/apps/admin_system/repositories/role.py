@@ -86,8 +86,11 @@ def set_role_menus(role_id: str, menu_ids: list[str]) -> None:
     for menu_id in menu_ids:
         if menu_id:
             execute_insert(
-                "INSERT INTO sy_role_menu (role_id, menu_id) VALUES (%(role_id)s, %(menu_id)s)",
-                {"role_id": role_id, "menu_id": menu_id},
+                """
+                INSERT INTO sy_role_menu (id, role_id, menu_id)
+                VALUES (%(id)s, %(role_id)s, %(menu_id)s)
+                """,
+                {"id": new_id(), "role_id": role_id, "menu_id": menu_id},
             )
 
 
@@ -137,8 +140,11 @@ def add_users_to_role(role_id: str, user_ids: list[str]) -> None:
         )
         if not exists:
             execute_insert(
-                "INSERT INTO sy_user_role (role_id, user_id) VALUES (%(role_id)s, %(user_id)s)",
-                {"role_id": role_id, "user_id": user_id},
+                """
+                INSERT INTO sy_user_role (id, role_id, user_id)
+                VALUES (%(id)s, %(role_id)s, %(user_id)s)
+                """,
+                {"id": new_id(), "role_id": role_id, "user_id": user_id},
             )
 
 

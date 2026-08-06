@@ -28,6 +28,8 @@ def list_users(
     true_name: str = "",
     user_sex: str = "",
     role_type: str = "",
+    exclude_admin: bool = False,
+    dept_ids: list[str] | None = None,
     page: int,
     page_size: int,
 ) -> tuple[list[dict[str, Any]], int]:
@@ -72,7 +74,15 @@ def list_users(
               )
             """
         # type=-1 或其他：仅 pt_type + 启用，不加角色过滤
-    if dept_id and dept_id != "0":
+    if exclude_admin:
+        where += " AND u.user_name <> 'admin'"
+    scoped = [str(x) for x in (dept_ids or []) if x not in (None, "", "0")]
+    if scoped:
+        placeholders = ", ".join(f"%(_did_{i})s" for i in range(len(scoped)))
+        where += f" AND u.dept_id IN ({placeholders})"
+        for i, did in enumerate(scoped):
+            params[f"_did_{i}"] = did
+    elif dept_id and dept_id != "0":
         where += " AND u.dept_id = %(dept_id)s"
         params["dept_id"] = dept_id
     if user_name:
@@ -331,22 +341,37 @@ def set_user_roles(user_id: str, role_ids: list[str]) -> None:
     for role_id in role_ids:
         if role_id:
             execute_insert(
-                "INSERT INTO sy_user_role (user_id, role_id) VALUES (%(user_id)s, %(role_id)s)",
-                {"user_id": user_id, "role_id": role_id},
+                """
+                INSERT INTO sy_user_role (id, user_id, role_id)
+                VALUES (%(id)s, %(user_id)s, %(role_id)s)
+                """,
+                {"id": new_id(), "user_id": user_id, "role_id": role_id},
             )
 
 
 def list_user_powers(user_id: str) -> list[dict[str, Any]]:
+    """对齐 Java MenuMapper.findmenubyuserid：顶级菜单 + menu_url。"""
     rows = fetch_all(
         """
-        SELECT DISTINCT m.id, m.menu_name AS menuName, m.url, m.menu_sort AS menuSort
-        FROM sy_user_role ur
-        INNER JOIN sy_role_menu rm ON rm.role_id = ur.role_id
+        SELECT DISTINCT
+            m.id,
+            m.menu_name AS menuName,
+            m.menu_url AS url,
+            m.menu_sort AS menuSort
+        FROM sy_role_menu rm
         INNER JOIN sy_menu m ON m.id = rm.menu_id
-        WHERE ur.user_id = %(user_id)s
+        WHERE m.menu_super_id = '0'
+          AND IFNULL(m.pt_type, '') LIKE %(pt_type)s
+          AND rm.role_id IN (
+              SELECT r.id
+              FROM sy_role r
+              INNER JOIN sy_user_role ur ON ur.role_id = r.id
+              WHERE ur.user_id = %(user_id)s
+                AND r.type = 2
+          )
         ORDER BY m.menu_sort ASC, m.menu_name ASC
         """,
-        {"user_id": user_id},
+        {"user_id": user_id, "pt_type": "%2%"},
     )
     return [
         {

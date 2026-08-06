@@ -21,6 +21,7 @@ urlpatterns = [
     path("sys/dept/update.ajax", dept_views.dept_update),
     path("sys/dept/del.ajax", dept_views.dept_delete),
     path("sys/dept/options.ajax", dept_views.dept_options),
+    path("sys/dept/loadAllYhgl.ajax", dept_views.dept_load_all_yhgl),
     # sys/user
     path("sys/user/queryUsers.ajax", user_views.user_list),
     path("sys/user/queryUsersExcept.ajax", user_views.user_list_except),

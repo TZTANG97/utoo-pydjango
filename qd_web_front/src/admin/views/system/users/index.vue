@@ -6,8 +6,15 @@
 
     <el-form :inline="true" @submit.prevent="reload">
       <el-form-item label="部门">
-        <el-select v-model="deptId" placeholder="全部" clearable filterable style="width: 180px">
-          <el-option label="全部" value="" />
+        <el-select
+          v-model="deptId"
+          placeholder="全部"
+          clearable
+          filterable
+          :disabled="!isSuperAdmin && deptOptions.length <= 1"
+          style="width: 180px"
+        >
+          <el-option v-if="isSuperAdmin" label="全部" value="" />
           <el-option
             v-for="item in deptOptions"
             :key="String(item.id)"
@@ -55,12 +62,13 @@
       <el-table-column label="操作" width="520" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button link type="primary" @click="openRoles(row)">修改权限</el-button>
-          <el-button link type="primary" @click="openPowers(row)">查看权限</el-button>
+          <el-button v-if="isSuperAdmin" link type="primary" @click="openRoles(row)">修改权限</el-button>
+          <el-button v-if="isSuperAdmin" link type="primary" @click="openPowers(row)">查看权限</el-button>
           <el-button link type="warning" @click="openPassword(row)">重置密码</el-button>
-          <el-button link type="primary" @click="openAccess(row)">订单访问权限</el-button>
-          <el-button link type="primary" @click="openExpManage(row)">管理测试项目</el-button>
+          <el-button v-if="isSuperAdmin" link type="primary" @click="openAccess(row)">订单访问权限</el-button>
+          <el-button v-if="isSuperAdmin" link type="primary" @click="openExpManage(row)">管理测试项目</el-button>
           <el-button
+            v-if="isSuperAdmin"
             link
             :type="Number(row.userStatus) === 1 ? 'danger' : 'success'"
             @click="toggleStatus(row)"
@@ -383,7 +391,16 @@ import {
   updateUserStatus,
 } from '@admin/api/system'
 import { useDataTable } from '@admin/composables/useDataTable'
+import { useUserStore } from '@admin/stores/user'
 import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
+
+const userStore = useUserStore()
+const isSuperAdmin = computed(() => {
+  const login = String(userStore.loginName || '').trim()
+  const profile = (userStore.profile || {}) as Record<string, unknown>
+  const profileName = String(profile.userName || profile.user_name || '').trim()
+  return login === 'admin' || profileName === 'admin'
+})
 
 const deptId = ref('')
 const userName = ref('')
@@ -470,7 +487,13 @@ async function loadFormOptions() {
 }
 
 onMounted(async () => {
-  deptOptions.value = await fetchDeptOptions()
+  await userStore.ensureProfile().catch(() => undefined)
+  deptOptions.value = await fetchDeptOptions({ scope: 'yhgl' })
+  if (!isSuperAdmin.value && deptOptions.value.length) {
+    const profile = (userStore.profile || {}) as Record<string, unknown>
+    const ownDept = String(profile.deptId || profile.dept_id || deptOptions.value[0]?.id || '')
+    deptId.value = ownDept
+  }
   roleOptions.value = await fetchUserRoleOptions()
   await loadFormOptions()
   await reload()

@@ -24,9 +24,22 @@ def _to_int(value, default=None):
 
 def _actor_id(request: Request, user) -> str:
     if isinstance(user, dict):
-        return str(user.get("id") or user.get("userId") or "")
+        return str(user.get("id") or user.get("userId") or user.get("user_id") or "")
     data = merge_payload(request)
     return str(data.get("operatorId") or data.get("logUserId") or "")
+
+
+def _is_super_admin(user) -> bool:
+    if not isinstance(user, dict):
+        return False
+    name = str(user.get("user_name") or user.get("userName") or user.get("loginName") or "").strip()
+    return name == "admin"
+
+
+def _staff_dept_id(user) -> str:
+    if not isinstance(user, dict):
+        return ""
+    return str(user.get("dept_id") or user.get("deptId") or "").strip()
 
 
 def _user_payload(data: dict) -> dict:
@@ -63,16 +76,32 @@ def _user_payload(data: dict) -> dict:
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def user_list(request: Request, user=None):
-    del user
     user_repo.backfill_null_register_times()
     data = merge_payload(request)
     draw, page, page_size = parse_datatable_params(request)
+    is_admin = _is_super_admin(user)
+    req_dept = str(data.get("deptId") or data.get("dept_id") or "").strip()
+    dept_ids: list[str] | None = None
+    if not is_admin:
+        from apps.admin_system.repositories import dept as dept_repo
+
+        staff_dept = _staff_dept_id(user)
+        allowed = dept_repo.list_dept_ids_with_children(staff_dept)
+        if req_dept and req_dept != "0":
+            if req_dept not in allowed:
+                req_dept = staff_dept or (allowed[0] if allowed else "")
+            dept_ids = [req_dept] if req_dept else allowed
+        else:
+            dept_ids = allowed
+            req_dept = ""
     rows, total = user_repo.list_users(
-        dept_id=str(data.get("deptId") or data.get("dept_id") or ""),
+        dept_id=req_dept if is_admin else "",
+        dept_ids=None if is_admin else dept_ids,
         user_name=(data.get("userName") or data.get("user_name") or "").strip(),
         true_name=(data.get("trueName") or data.get("true_name") or "").strip(),
         user_sex=str(data.get("userSex") if data.get("userSex") is not None else data.get("user_sex") or ""),
         role_type=str(data.get("type") if data.get("type") is not None else ""),
+        exclude_admin=not is_admin,
         page=page,
         page_size=page_size,
     )
@@ -223,6 +252,8 @@ def user_update(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def user_disable(request: Request, user=None):
+    if not _is_super_admin(user):
+        return Response(ajax_fail("无权限操作"))
     data = merge_payload(request)
     user_id = data.get("id")
     if not user_id:
@@ -266,6 +297,8 @@ def user_update_password(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def user_update_roles(request: Request, user=None):
+    if not _is_super_admin(user):
+        return Response(ajax_fail("无权限操作"))
     data = merge_payload(request)
     user_id = str(data.get("id") or data.get("userId") or data.get("user_id") or "").strip()
     if not user_id:
@@ -282,7 +315,8 @@ def user_update_roles(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def user_show_powers(request: Request, user=None):
-    del user
+    if not _is_super_admin(user):
+        return Response(ajax_fail("无权限操作"))
     data = merge_payload(request)
     user_id = str(data.get("id") or data.get("userId") or "").strip()
     if not user_id:
@@ -337,7 +371,8 @@ def user_role_options(_request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def user_access_rights_query(request: Request, user=None):
-    del user
+    if not _is_super_admin(user):
+        return Response(ajax_fail("无权限操作"))
     data = merge_payload(request)
     user_id = str(data.get("id") or data.get("userId") or "").strip()
     if not user_id:
@@ -350,6 +385,8 @@ def user_access_rights_query(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def user_access_rights_update(request: Request, user=None):
+    if not _is_super_admin(user):
+        return Response(ajax_fail("无权限操作"))
     data = merge_payload(request)
     user_id = str(data.get("userId") or data.get("user_id") or data.get("id") or "").strip()
     if not user_id:
@@ -407,7 +444,8 @@ def user_access_sale_options(_request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def user_exp_manage_available(request: Request, user=None):
-    del user
+    if not _is_super_admin(user):
+        return Response(ajax_fail("无权限操作"))
     data = merge_payload(request)
     user_id = str(data.get("userId") or data.get("id") or "").strip()
     if not user_id:
@@ -420,7 +458,8 @@ def user_exp_manage_available(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def user_exp_manage_list(request: Request, user=None):
-    del user
+    if not _is_super_admin(user):
+        return Response(ajax_fail("无权限操作"))
     data = merge_payload(request)
     user_id = str(data.get("userId") or data.get("id") or "").strip()
     if not user_id:
@@ -433,6 +472,8 @@ def user_exp_manage_list(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def user_exp_manage_add(request: Request, user=None):
+    if not _is_super_admin(user):
+        return Response(ajax_fail("无权限操作"))
     data = merge_payload(request)
     user_id = str(data.get("userId") or data.get("user_id") or data.get("id") or "").strip()
     exp_manage_id = data.get("exp_manage_id") or data.get("expManageId")
@@ -453,6 +494,8 @@ def user_exp_manage_add(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def user_exp_manage_delete(request: Request, user=None):
+    if not _is_super_admin(user):
+        return Response(ajax_fail("无权限操作"))
     data = merge_payload(request)
     row_id = data.get("id")
     if row_id in (None, ""):

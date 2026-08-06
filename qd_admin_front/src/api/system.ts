@@ -45,8 +45,11 @@ async function fetchTree<T = Record<string, unknown>>(url: string, params?: Reco
   return []
 }
 
-async function fetchOptions<T = Record<string, unknown>>(url: string) {
-  const res = await postAjax(url)
+async function fetchOptions<T = Record<string, unknown>>(
+  url: string,
+  params?: Record<string, unknown>
+) {
+  const res = await postAjax(url, params)
   if (isAjaxOk(res) && Array.isArray(res.obj)) {
     return res.obj as T[]
   }
@@ -58,8 +61,8 @@ export function fetchDeptTree() {
   return fetchTree('/sys/dept/loadAll.ajax')
 }
 
-export function fetchDeptOptions() {
-  return fetchOptions('/sys/dept/options.ajax')
+export function fetchDeptOptions(params?: Record<string, unknown>) {
+  return fetchOptions('/sys/dept/options.ajax', params)
 }
 
 export function getDeptById(id: string | number) {

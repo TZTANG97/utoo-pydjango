@@ -88,6 +88,39 @@ def list_dept_options() -> list[dict[str, Any]]:
     return [{"id": r["id"], "deptName": r.get("dept_name"), "superId": r.get("super_id")} for r in rows]
 
 
+def list_dept_ids_with_children(root_dept_id: str) -> list[str]:
+    """本部门及下级部门 id（对齐 Java DeptAction.loadAllYhgl / childDept）。"""
+    root = str(root_dept_id or "").strip()
+    if not root or root == "0":
+        return []
+    rows = fetch_all("SELECT id, super_id FROM sy_dept")
+    children_map: dict[str, list[str]] = {}
+    for row in rows:
+        pid = str(row.get("super_id") or "0")
+        children_map.setdefault(pid, []).append(str(row.get("id") or ""))
+    out: list[str] = []
+    stack = [root]
+    seen: set[str] = set()
+    while stack:
+        cur = stack.pop()
+        if not cur or cur in seen:
+            continue
+        seen.add(cur)
+        out.append(cur)
+        stack.extend(children_map.get(cur, []))
+    return out
+
+
+def list_dept_options_for_yhgl(*, is_admin: bool, dept_id: str = "") -> list[dict[str, Any]]:
+    all_opts = list_dept_options()
+    if is_admin:
+        return all_opts
+    allowed = set(list_dept_ids_with_children(dept_id))
+    if not allowed:
+        return []
+    return [o for o in all_opts if str(o.get("id") or "") in allowed]
+
+
 def _normalize_dept(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": row.get("id"),
