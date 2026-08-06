@@ -39,6 +39,8 @@ urlpatterns = [
     path("supplier/queryAllPay.ajax", views.company_options),
     path("userPay/queryAllUserPay.ajax", views.user_pay_options),
     path("projectPay/queryLabs.ajax", views.lab_options),
+    path("projectPay/queryProjects.ajax", views.project_pay_users),
+    path("projectPay/queryLabsByUser.ajax", views.project_pay_labs_by_user),
     # 各公司资金支出
     path("companyPay/selDetailList.ajax", views.company_pay_list),
     path("companyPay/submitCompanyPay.ajax", views.company_pay_save),

@@ -36,12 +36,33 @@
           />
         </el-select>
       </el-form-item>
-      <el-form-item v-if="mode === 'project'" label="实验室">
-        <el-select v-model="labId" filterable clearable placeholder="选择实验室" style="width: 220px">
+      <el-form-item v-if="mode === 'project'" label="选择项目">
+        <el-select
+          v-model="projectUserId"
+          filterable
+          clearable
+          placeholder="请选择"
+          style="width: 180px"
+          @change="onProjectUserChange"
+        >
+          <el-option
+            v-for="u in projectUsers"
+            :key="String(u.id)"
+            :label="String(u.userName || u.user_name || '')"
+            :value="String(u.id)"
+          />
+        </el-select>
+        <el-select
+          v-model="labId"
+          filterable
+          clearable
+          placeholder="选择实验室"
+          style="width: 200px; margin-left: 8px"
+        >
           <el-option
             v-for="l in labs"
             :key="String(l.id)"
-            :label="String(l.labName || '')"
+            :label="String(l.labName || l.lab_name || '')"
             :value="String(l.id)"
           />
         </el-select>
@@ -64,7 +85,13 @@
       </el-form-item>
       <el-form-item v-if="!isFundPayMode">
         <el-button type="primary" :loading="loading" @click="loadRows">查询</el-button>
-        <el-button type="success" :loading="saving" :disabled="companyId === '-1'" @click="handleSave">
+        <el-button
+          v-if="!isOpsHidden"
+          type="success"
+          :loading="saving"
+          :disabled="companyId === '-1'"
+          @click="handleSave"
+        >
           保存
         </el-button>
       </el-form-item>
@@ -237,16 +264,56 @@
       </template>
       <template v-else>
         <el-table-column label="租金" min-width="100">
-          <template #default="{ row }"><el-input-number v-model="row.rentFees" :min="0" :precision="2" controls-position="right" size="small" /></template>
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.rentFees"
+              :min="0"
+              :precision="2"
+              controls-position="right"
+              size="small"
+              :disabled="isRowLocked(row)"
+              @change="recalcProjectRow(row)"
+            />
+          </template>
         </el-table-column>
         <el-table-column label="电费" min-width="100">
-          <template #default="{ row }"><el-input-number v-model="row.elecFees" :min="0" :precision="2" controls-position="right" size="small" /></template>
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.elecFees"
+              :min="0"
+              :precision="2"
+              controls-position="right"
+              size="small"
+              :disabled="isRowLocked(row)"
+              @change="recalcProjectRow(row)"
+            />
+          </template>
         </el-table-column>
         <el-table-column label="人工" min-width="100">
-          <template #default="{ row }"><el-input-number v-model="row.laborFees" :min="0" :precision="2" controls-position="right" size="small" /></template>
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.laborFees"
+              :min="0"
+              :precision="2"
+              controls-position="right"
+              size="small"
+              :disabled="isRowLocked(row)"
+              @change="recalcProjectRow(row)"
+            />
+          </template>
         </el-table-column>
         <el-table-column label="配件" min-width="100">
-          <template #default="{ row }"><el-input-number v-model="row.partsFees" :min="0" :precision="2" controls-position="right" size="small" /></template>
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.partsFees"
+              :min="0"
+              :precision="2"
+              controls-position="right"
+              size="small"
+              :disabled="isRowLocked(row)"
+              @change="recalcProjectRow(row)"
+            />
+          </template>
         </el-table-column>
       </template>
       <el-table-column label="支出总额" width="120" align="right">
@@ -307,8 +374,9 @@ import {
   fetchCompanyLoanList,
   fetchCompanyOptions,
   fetchCompanyPayList,
-  fetchLabOptions,
+  fetchProjectPayLabsByUser,
   fetchProjectPayList,
+  fetchProjectPayUsers,
   fetchUserPayList,
   fetchUserPayOptions,
   saveCompanyLoan,
@@ -327,11 +395,18 @@ const props = defineProps<{
 
 const userStore = useUserStore()
 const isFundPayMode = computed(() => props.mode === 'company' || props.mode === 'personal')
-/** Java：admin / userType 1|3 隐藏扣款修正与保存 */
+/** Java：admin 用户名 / userType=1（系统管理员）隐藏扣款修正与保存 */
 const isOpsHidden = computed(() => {
+  const login = String(userStore.loginName || '').toLowerCase()
   const name = String(userStore.welcome?.userName || userStore.userName || '').toLowerCase()
+  const role = String(userStore.welcome?.roleName || userStore.roleName || '')
   const t = Number(userStore.welcome?.userType ?? userStore.userType ?? 0)
-  return name === 'admin' || t === 1 || (props.mode === 'personal' && t === 3)
+  if (login === 'admin' || name === 'admin') return true
+  if (t === 1) return true
+  if (role.includes('系统管理员') || role.includes('超级管理员') || role.toUpperCase() === 'ADMIN') {
+    return true
+  }
+  return props.mode === 'personal' && t === 3
 })
 const loading = ref(false)
 const saving = ref(false)
@@ -341,9 +416,11 @@ const year = ref(isFundPayMode.value ? '' : String(new Date().getFullYear()))
 const accountType = ref(1)
 const companyId = ref('')
 const userId = ref('')
+const projectUserId = ref('')
 const labId = ref('')
 const companies = ref<Record<string, unknown>[]>([])
 const users = ref<Record<string, unknown>[]>([])
+const projectUsers = ref<Record<string, unknown>[]>([])
 const labs = ref<Record<string, unknown>[]>([])
 const rows = ref<Record<string, unknown>[]>([])
 
@@ -394,10 +471,20 @@ onMounted(async () => {
     if (isAjaxOk(res)) users.value = (res.obj as Record<string, unknown>[]) || []
   }
   if (props.mode === 'project') {
-    const res = await fetchLabOptions()
-    if (isAjaxOk(res)) labs.value = (res.obj as Record<string, unknown>[]) || []
+    const res = await fetchProjectPayUsers()
+    if (isAjaxOk(res)) projectUsers.value = (res.obj as Record<string, unknown>[]) || []
   }
 })
+
+async function onProjectUserChange() {
+  labId.value = ''
+  labs.value = []
+  year.value = ''
+  rows.value = []
+  if (!projectUserId.value) return
+  const res = await fetchProjectPayLabsByUser(projectUserId.value)
+  if (isAjaxOk(res)) labs.value = (res.obj as Record<string, unknown>[]) || []
+}
 
 function formatMonth(m: unknown) {
   const n = Number(m)
@@ -434,6 +521,15 @@ function recalcPersonalRow(row: Record<string, unknown>) {
     Number(row.carAmount || 0) +
     Number(row.orderAmount || 0) +
     Number(row.otherAmount || 0)
+  row.payAmount = Math.round(total * 100) / 100
+}
+
+function recalcProjectRow(row: Record<string, unknown>) {
+  const total =
+    Number(row.rentFees || 0) +
+    Number(row.elecFees || 0) +
+    Number(row.laborFees || 0) +
+    Number(row.partsFees || 0)
   row.payAmount = Math.round(total * 100) / 100
 }
 
@@ -499,8 +595,8 @@ async function loadRows() {
     ElMessage.warning('请先选择用户')
     return
   }
-  if (props.mode === 'project' && !labId.value) {
-    ElMessage.warning('请选择实验室')
+  if (props.mode === 'project' && !projectUserId.value) {
+    ElMessage.warning('请先选择项目')
     return
   }
   loading.value = true
@@ -524,7 +620,14 @@ async function loadRows() {
     } else if (props.mode === 'loan') {
       res = await fetchCompanyLoanList({ ...common, companyId: companyId.value })
     } else {
-      res = await fetchProjectPayList({ ...common, labId: labId.value })
+      res = await fetchProjectPayList({
+        ...common,
+        userId: projectUserId.value,
+        user_id: projectUserId.value,
+        labId: labId.value,
+        lab_id: labId.value,
+        account_type: accountType.value,
+      })
     }
     if (!isAjaxOk(res)) {
       ElMessage.error(String(res.msg || '加载失败'))
@@ -548,6 +651,10 @@ async function loadRows() {
 }
 
 async function handleSave() {
+  if (isOpsHidden.value) {
+    ElMessage.warning('当前账号无保存权限')
+    return
+  }
   if (companyId.value === '-1') {
     ElMessage.warning('汇总模式不可保存')
     return
@@ -572,13 +679,29 @@ async function handleSave() {
       return
     }
   }
+  if (props.mode === 'project') {
+    if (!projectUserId.value) {
+      ElMessage.warning('请先选择项目')
+      return
+    }
+    if (!labId.value) {
+      ElMessage.warning('请选择实验室')
+      return
+    }
+    if (!year.value) {
+      ElMessage.warning('请选择年份')
+      return
+    }
+  }
   if (!rows.value.length) {
     ElMessage.warning(
       props.mode === 'company'
         ? '请先选择公司和年份'
         : props.mode === 'personal'
           ? '请先选择用户和年份'
-          : '请先查询'
+          : props.mode === 'project'
+            ? '请先选择项目和年份'
+            : '请先查询'
     )
     return
   }
@@ -589,7 +712,7 @@ async function handleSave() {
       year: year.value,
       accountType: accountType.value,
       companyId: companyId.value,
-      userId: userId.value,
+      userId: props.mode === 'project' ? projectUserId.value : userId.value,
       labId: labId.value,
     }))
     let res

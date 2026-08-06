@@ -69,6 +69,34 @@ def list_labs() -> list[dict[str, Any]]:
     )
 
 
+def list_project_users() -> list[dict[str, Any]]:
+    """各项目资金支出：选择项目 = 实验室关联账号（对齐 Java queryAllUser）。"""
+    return fetch_all(
+        """
+        SELECT DISTINCT t.syuser_id AS id, u.user_name AS userName, u.user_name AS user_name
+        FROM experiment_lab t
+        JOIN sy_users u ON t.syuser_id = u.id
+        WHERE t.deleteStatus = 0 AND t.syuser_id IS NOT NULL AND t.syuser_id != ''
+        ORDER BY u.user_name ASC
+        """
+    )
+
+
+def list_labs_by_syuser(syuser_id: str) -> list[dict[str, Any]]:
+    """按关联账号级联实验室（对齐 Java queryAllUserByType2 / selBySyuserId2）。"""
+    if not syuser_id:
+        return []
+    return fetch_all(
+        """
+        SELECT id, lab_num AS labNum, lab_name AS labName, lab_name AS lab_name
+        FROM experiment_lab
+        WHERE deleteStatus = 0 AND syuser_id = %(sid)s
+        ORDER BY addTime ASC
+        """,
+        {"sid": syuser_id},
+    )
+
+
 # ---- company pay ----
 def list_company_pay(company_id: str, year: str, account_type: int) -> list[dict[str, Any]]:
     if company_id in ("", "-1"):
@@ -834,26 +862,53 @@ def upsert_company_loan(items: list[dict[str, Any]]) -> None:
 
 
 # ---- project pay ----
-def list_project_pay(lab_id: str, year: str, account_type: int) -> list[dict[str, Any]]:
-    rows = fetch_all(
-        """
-        SELECT
-            id, month,
-            rent_fees AS rentFees, elec_fees AS elecFees,
-            labor_fees AS laborFees, parts_fees AS partsFees,
-            pay_amount AS payAmount, status
-        FROM project_pay_detail
-        WHERE lab_id = %(lab_id)s AND year = %(year)s AND account_type = %(account_type)s
-        ORDER BY month
-        """,
-        {"lab_id": lab_id, "year": year, "account_type": account_type},
-    )
+def list_project_pay(
+    lab_id: str, year: str, account_type: int, user_id: str = ""
+) -> list[dict[str, Any]]:
+    where = "WHERE year = %(year)s AND account_type = %(account_type)s"
+    params: dict[str, Any] = {"year": year, "account_type": account_type}
+    if user_id and user_id != "-1":
+        where += " AND user_id = %(user_id)s"
+        params["user_id"] = user_id
+    if lab_id:
+        where += " AND lab_id = %(lab_id)s"
+        params["lab_id"] = lab_id
+    if user_id == "-1" and not lab_id:
+        rows = fetch_all(
+            f"""
+            SELECT
+                month,
+                SUM(rent_fees) AS rentFees, SUM(elec_fees) AS elecFees,
+                SUM(labor_fees) AS laborFees, SUM(parts_fees) AS partsFees,
+                SUM(pay_amount) AS payAmount, 0 AS id, MAX(status) AS status
+            FROM project_pay_detail
+            {where}
+            GROUP BY month
+            ORDER BY month
+            """,
+            params,
+        )
+    else:
+        rows = fetch_all(
+            f"""
+            SELECT
+                id, month,
+                rent_fees AS rentFees, elec_fees AS elecFees,
+                labor_fees AS laborFees, parts_fees AS partsFees,
+                pay_amount AS payAmount, status
+            FROM project_pay_detail
+            {where}
+            ORDER BY month
+            """,
+            params,
+        )
     return _fill_months(rows, ["rent_fees", "elec_fees", "labor_fees", "parts_fees", "pay_amount"])
 
 
 def upsert_project_pay(items: list[dict[str, Any]]) -> None:
     for item in items:
         lab_id = item.get("labId") or item.get("lab_id")
+        user_id = str(item.get("userId") or item.get("user_id") or "").strip()
         year = item.get("year")
         month = str(item.get("month") or "")
         account_type = int(item.get("accountType") or item.get("account_type") or 1)
@@ -907,10 +962,10 @@ def upsert_project_pay(items: list[dict[str, Any]]) -> None:
                     """
                     INSERT INTO project_pay_detail
                         (addTime, deleteStatus, year, month, rent_fees, elec_fees, labor_fees,
-                         parts_fees, pay_amount, status, account_type, lab_id)
+                         parts_fees, pay_amount, status, account_type, lab_id, user_id)
                     VALUES
                         (NOW(), 0, %(year)s, %(month)s, %(rent_fees)s, %(elec_fees)s, %(labor_fees)s,
-                         %(parts_fees)s, %(pay_amount)s, 2, %(account_type)s, %(lab_id)s)
+                         %(parts_fees)s, %(pay_amount)s, 2, %(account_type)s, %(lab_id)s, %(user_id)s)
                     """,
                     {
                         **data,
@@ -918,5 +973,6 @@ def upsert_project_pay(items: list[dict[str, Any]]) -> None:
                         "month": month,
                         "account_type": account_type,
                         "lab_id": lab_id,
+                        "user_id": user_id or None,
                     },
                 )

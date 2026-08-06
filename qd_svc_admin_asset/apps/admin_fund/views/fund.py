@@ -446,6 +446,28 @@ def lab_options(request: Request, user=None):
     return Response(ajax_ok(obj=pay_repo.list_labs()))
 
 
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def project_pay_users(request: Request, user=None):
+    """选择项目下拉：实验室关联账号（对齐 experimentManage/queryAllUser.ajax）。"""
+    del user, request
+    return Response(ajax_ok(obj=pay_repo.list_project_users()))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def project_pay_labs_by_user(request: Request, user=None):
+    """按项目账号级联实验室（对齐 experimentManage/queryAllUserByType2.ajax）。"""
+    del user
+    data = merge_payload(request)
+    syuser_id = str(data.get("syuser_id") or data.get("syuserId") or data.get("user_id") or "").strip()
+    return Response(ajax_ok(obj=pay_repo.list_labs_by_syuser(syuser_id)))
+
+
 # ---- pay details ----
 @api_view(["GET", "POST"])
 @authentication_classes([])
@@ -674,11 +696,14 @@ def project_pay_list(request: Request, user=None):
     del user
     data = merge_payload(request)
     lab_id = str(data.get("labId") or data.get("lab_id") or "")
+    user_id = str(data.get("userId") or data.get("user_id") or "").strip()
     year = str(data.get("year") or "")
     account_type = _to_int(data.get("accountType") or data.get("account_type"), 1) or 1
-    if not lab_id or not year:
-        return Response(ajax_fail("请选择实验室和年份"))
-    rows = pay_repo.list_project_pay(lab_id, year, account_type)
+    if not year:
+        return Response(ajax_fail("请选择年份"))
+    if not user_id:
+        return Response(ajax_fail("请先选择项目"))
+    rows = pay_repo.list_project_pay(lab_id, year, account_type, user_id=user_id)
     return Response(ajax_ok(obj=rows))
 
 
@@ -696,10 +721,12 @@ def project_pay_save(request: Request, user=None):
     if not items:
         return Response(ajax_fail("没有数据"))
     lab_id = items[0].get("labId") or items[0].get("lab_id")
+    user_id = items[0].get("userId") or items[0].get("user_id")
     year = items[0].get("year")
     account_type = items[0].get("accountType") or items[0].get("account_type") or 1
     for it in items:
         it.setdefault("labId", lab_id)
+        it.setdefault("userId", user_id)
         it.setdefault("year", year)
         it.setdefault("accountType", account_type)
     pay_repo.upsert_project_pay(items)

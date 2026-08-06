@@ -125,6 +125,11 @@ export const passAccountLog = (id: string | number, status: string | number) =>
 export const fetchCompanyOptions = () => postAjax('/companyPay/queryCompanies.ajax')
 export const fetchUserPayOptions = () => postAjax('/userPay/queryAllUserPay.ajax')
 export const fetchLabOptions = () => postAjax('/projectPay/queryLabs.ajax')
+/** 各项目资金支出：选择项目（实验室关联账号） */
+export const fetchProjectPayUsers = () => postAjax('/projectPay/queryProjects.ajax')
+/** 按项目账号级联实验室 */
+export const fetchProjectPayLabsByUser = (syuserId: string | number) =>
+  postAjax('/projectPay/queryLabsByUser.ajax', { syuser_id: syuserId })
 
 export const fetchCompanyPayList = (p: Record<string, unknown>) =>
   postAjax('/companyPay/selDetailList.ajax', p)
