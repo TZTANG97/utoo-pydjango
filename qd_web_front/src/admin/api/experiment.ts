@@ -78,6 +78,7 @@ export const updateManageStatus = (id: string | number, status: number) =>
 export const deleteManage = (id: string | number) => postAjax(`${BASE}/manage/del.ajax`, { id })
 export const fetchManageOptions = (type: number, parentId?: string | number) =>
   postAjax(`${BASE}/manage/options.ajax`, { type, parentId: parentId || '' })
+export const fetchManagePtTypes = () => postAjax(`${BASE}/manage/queryPtTypeAll.ajax`, {})
 
 // 测试项目
 export const fetchProjectList = (p: Record<string, unknown>) =>

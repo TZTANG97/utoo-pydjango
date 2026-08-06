@@ -50,11 +50,14 @@ def list_manages(
         f"""
         SELECT
             t.id, t.addTime, t.name, t.sequence, t.type, t.parent_id AS parentId,
-            t.pt_type AS ptType, t.intro, t.deleteStatus,
+            t.pt_type AS ptType, t.enname, t.special_type AS specialType,
+            t.syuser_id AS syuserId, t.head_user_id AS headUserId,
+            t.intro, t.deleteStatus, pt.name AS ptName,
             p.name AS parentName, p1.name AS firstName, p1.id AS firstId
         FROM experiment_manage t
         LEFT JOIN experiment_manage p ON t.parent_id = p.id
         LEFT JOIN experiment_manage p1 ON p.parent_id = p1.id
+        LEFT JOIN pt_type pt ON t.pt_type = pt.id
         {where}
         ORDER BY t.sequence ASC, t.id DESC
         {clause}
@@ -69,11 +72,18 @@ def get_manage(row_id: int) -> dict[str, Any] | None:
         """
         SELECT
             t.id, t.addTime, t.name, t.sequence, t.type, t.parent_id AS parentId,
-            t.pt_type AS ptType, t.intro, t.manage_main_photo_id AS photoId,
+            t.pt_type AS ptType, t.enname, t.special_type AS specialType,
+            t.syuser_id AS syuserId, t.head_user_id AS headUserId,
+            t.intro, t.project_details AS projectDetails,
+            t.app_project_details AS appProjectDetails,
+            t.manage_main_photo_id AS photoId,
+            t.app_manage_main_photo_id AS appPhotoId,
+            pt.name AS ptName,
             p.name AS parentName, p1.name AS firstName, p1.id AS firstId
         FROM experiment_manage t
         LEFT JOIN experiment_manage p ON t.parent_id = p.id
         LEFT JOIN experiment_manage p1 ON p.parent_id = p1.id
+        LEFT JOIN pt_type pt ON t.pt_type = pt.id
         WHERE t.id = %(id)s
         LIMIT 1
         """,
@@ -87,7 +97,10 @@ def save_manage(data: dict[str, Any], *, row_id: int | None = None) -> int:
             """
             UPDATE experiment_manage
             SET name=%(name)s, sequence=%(sequence)s, parent_id=%(parent_id)s,
-                pt_type=%(pt_type)s, intro=%(intro)s
+                pt_type=%(pt_type)s, enname=%(enname)s, special_type=%(special_type)s,
+                syuser_id=%(syuser_id)s, head_user_id=%(head_user_id)s,
+                intro=%(intro)s, project_details=%(project_details)s,
+                app_project_details=%(app_project_details)s
             WHERE id=%(id)s
             """,
             {**data, "id": row_id},
@@ -96,27 +109,66 @@ def save_manage(data: dict[str, Any], *, row_id: int | None = None) -> int:
     return execute_insert(
         """
         INSERT INTO experiment_manage
-            (addTime, deleteStatus, name, sequence, type, parent_id, pt_type, intro)
+            (addTime, deleteStatus, name, sequence, type, parent_id, pt_type,
+             enname, special_type, syuser_id, head_user_id, intro,
+             project_details, app_project_details)
         VALUES
-            (NOW(), 0, %(name)s, %(sequence)s, %(type)s, %(parent_id)s, %(pt_type)s, %(intro)s)
+            (NOW(), 0, %(name)s, %(sequence)s, %(type)s, %(parent_id)s, %(pt_type)s,
+             %(enname)s, %(special_type)s, %(syuser_id)s, %(head_user_id)s, %(intro)s,
+             %(project_details)s, %(app_project_details)s)
         """,
         data,
     )
 
 
-def set_manage_status(row_id: int, status: int) -> None:
-    # 表无独立 status：启用=恢复，禁用=软删
+def count_manage_children(parent_id: int, child_type: int | None = None) -> int:
+    where = f"WHERE {_nd('t')} AND t.parent_id = %(pid)s"
+    params: dict[str, Any] = {"pid": parent_id}
+    if child_type is not None:
+        where += " AND t.type = %(type)s"
+        params["type"] = child_type
+    return int(scalar(f"SELECT COUNT(*) FROM experiment_manage t {where}", params) or 0)
+
+
+def set_manage_status(row_id: int, status: int) -> str | None:
+    # 表无独立 status：启用=恢复，禁用=软删；禁用时若有下级则拦截
+    if int(status) != 1 and count_manage_children(row_id) > 0:
+        return "当前类型还有下级，请删除下级后再操作！"
     delete_status = 0 if int(status) == 1 else 1
     execute(
         "UPDATE experiment_manage SET deleteStatus = %(ds)s WHERE id = %(id)s",
         {"id": row_id, "ds": delete_status},
     )
+    return None
 
 
-def soft_delete_manage(row_id: int) -> None:
+def soft_delete_manage(row_id: int) -> str | None:
+    """软删；一级/二级有下级时返回错误文案。"""
+    row = fetch_one(
+        "SELECT type FROM experiment_manage WHERE id = %(id)s LIMIT 1",
+        {"id": row_id},
+    )
+    if not row:
+        return "记录不存在"
+    type_ = int(row.get("type") or 0)
+    if type_ in (1, 2) and count_manage_children(row_id) > 0:
+        return "当前类型还有下级，请删除下级后再操作！"
     execute(
         "UPDATE experiment_manage SET deleteStatus = 1 WHERE id = %(id)s",
         {"id": row_id},
+    )
+    return None
+
+
+def list_pt_types() -> list[dict[str, Any]]:
+    return fetch_all(
+        """
+        SELECT t.id AS value, t.name AS label, t.id, t.name
+        FROM pt_type t
+        WHERE IFNULL(t.deleteStatus, 0) = 0
+        ORDER BY t.addTime DESC, t.id ASC
+        LIMIT 500
+        """
     )
 
 

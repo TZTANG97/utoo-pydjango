@@ -11,6 +11,7 @@ urlpatterns = [
     path("adminExperiment/manage/updateStatus.ajax", views.manage_status),
     path("adminExperiment/manage/del.ajax", views.manage_del),
     path("adminExperiment/manage/options.ajax", views.manage_options),
+    path("adminExperiment/manage/queryPtTypeAll.ajax", views.manage_pt_types),
     # 测试项目
     path("adminExperiment/project/list.ajax", views.project_list),
     path("adminExperiment/project/get.ajax", views.project_get),

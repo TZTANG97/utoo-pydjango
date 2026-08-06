@@ -100,13 +100,35 @@ def manage_save(request: Request, user=None):
     parent_id = to_int(data.get("parentId") or data.get("parent_id"))
     if type_ > 1 and not parent_id:
         return fail("请选择上级类目")
+    enname = (data.get("enname") or data.get("enName") or "").strip().upper()
+    if not enname:
+        return fail("请填写项目英文大写代码")
+    if len(enname) > 4 or not enname.isalpha():
+        return fail("项目英文大写代码须为不超过4位的英文字母")
+    pt_type = to_int(data.get("ptType") or data.get("pt_type"), 0) or 0
+    if type_ == 1 and not pt_type:
+        return fail("请选择所属平台")
+    special_raw = data.get("specialType") if "specialType" in data else data.get("special_type")
+    special_type = to_int(special_raw, 0) or 0 if special_raw not in (None, "") else 0
+    syuser_id = (data.get("syuserId") or data.get("syuser_id") or "").strip() or None
+    head_user_id = (data.get("headUserId") or data.get("head_user_id") or "").strip() or None
     payload = {
         "name": name,
         "sequence": to_int(data.get("sequence"), 0) or 0,
         "type": type_,
         "parent_id": parent_id,
-        "pt_type": to_int(data.get("ptType") or data.get("pt_type"), 0) or 0,
+        "pt_type": pt_type if type_ == 1 else 0,
+        "enname": enname,
+        "special_type": special_type if type_ == 1 else 0,
+        "syuser_id": syuser_id if type_ in (2, 3) else None,
+        "head_user_id": head_user_id if type_ == 3 else None,
         "intro": (data.get("intro") or "").strip(),
+        "project_details": data.get("projectDetails") or data.get("project_details") or "",
+        "app_project_details": (
+            (data.get("appProjectDetails") or data.get("app_project_details") or "")
+            if type_ == 3
+            else ""
+        ),
     }
     row_id = to_int(data.get("id"))
     new_id = master_repo.save_manage(payload, row_id=row_id)
@@ -124,7 +146,9 @@ def manage_status(request: Request, user=None):
     status = to_int(data.get("status"), 1)
     if not row_id or status is None:
         return fail("参数错误")
-    master_repo.set_manage_status(row_id, status)
+    err = master_repo.set_manage_status(row_id, status)
+    if err:
+        return fail(err)
     return ok(res_msg="操作成功")
 
 
@@ -138,7 +162,9 @@ def manage_del(request: Request, user=None):
     row_id = to_int(data.get("id"))
     if not row_id:
         return fail("参数错误")
-    master_repo.soft_delete_manage(row_id)
+    err = master_repo.soft_delete_manage(row_id)
+    if err:
+        return fail(err)
     return ok(res_msg="删除成功")
 
 
@@ -152,6 +178,15 @@ def manage_options(request: Request, user=None):
     type_ = to_int(data.get("type"), 1) or 1
     parent_id = str(data.get("parentId") or data.get("parent_id") or "").strip()
     return ok(master_repo.list_manage_options(type_, parent_id))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def manage_pt_types(request: Request, user=None):
+    del user, request
+    return ok(master_repo.list_pt_types())
 
 
 # ---------- experiment_project ----------
