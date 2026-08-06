@@ -514,19 +514,36 @@ def company_pay_update_status(*, row_id: int) -> str | None:
 
 # ---- personal pay ----
 def list_user_pay(user_id: str, year: str, account_type: int) -> list[dict[str, Any]]:
-    rows = fetch_all(
-        """
-        SELECT
-            id, month, wages, taxes,
-            loan_interest AS loanInterest, car_amount AS carAmount,
-            order_amount AS orderAmount, other_amount AS otherAmount,
-            pay_amount AS payAmount, status
-        FROM user_pay_detail
-        WHERE user_id = %(user_id)s AND year = %(year)s AND account_type = %(account_type)s
-        ORDER BY month
-        """,
-        {"user_id": user_id, "year": year, "account_type": account_type},
-    )
+    if user_id == "-1":
+        rows = fetch_all(
+            """
+            SELECT
+                month,
+                SUM(wages) AS wages, SUM(taxes) AS taxes,
+                SUM(loan_interest) AS loanInterest, SUM(car_amount) AS carAmount,
+                SUM(order_amount) AS orderAmount, SUM(other_amount) AS otherAmount,
+                SUM(pay_amount) AS payAmount, 0 AS id, MAX(status) AS status
+            FROM user_pay_detail
+            WHERE year = %(year)s AND account_type = %(account_type)s
+            GROUP BY month
+            ORDER BY month
+            """,
+            {"year": year, "account_type": account_type},
+        )
+    else:
+        rows = fetch_all(
+            """
+            SELECT
+                id, month, wages, taxes,
+                loan_interest AS loanInterest, car_amount AS carAmount,
+                order_amount AS orderAmount, other_amount AS otherAmount,
+                pay_amount AS payAmount, status
+            FROM user_pay_detail
+            WHERE user_id = %(user_id)s AND year = %(year)s AND account_type = %(account_type)s
+            ORDER BY month
+            """,
+            {"user_id": user_id, "year": year, "account_type": account_type},
+        )
     return _fill_months(
         rows,
         ["wages", "taxes", "loan_interest", "car_amount", "order_amount", "other_amount", "pay_amount"],

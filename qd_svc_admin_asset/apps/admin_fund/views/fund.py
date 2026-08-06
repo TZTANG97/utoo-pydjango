@@ -485,12 +485,22 @@ def company_pay_list(request: Request, user=None):
     return Response(ajax_ok(obj=rows))
 
 
+def _is_admin_login(user) -> bool:
+    if not isinstance(user, dict):
+        return False
+    login = str(
+        user.get("user_name") or user.get("userName") or user.get("loginName") or ""
+    ).strip().lower()
+    return login == "admin"
+
+
 @api_view(["POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def company_pay_save(request: Request, user=None):
-    del user
+    if _is_admin_login(user):
+        return Response(ajax_fail("当前账号仅可查看，不可保存"))
     data = merge_payload(request)
     items = data.get("list") or data.get("items") or []
     if isinstance(data, list):
@@ -503,6 +513,8 @@ def company_pay_save(request: Request, user=None):
     if not items:
         return Response(ajax_fail("没有数据"))
     company_id = items[0].get("companyId") or items[0].get("company_id")
+    if str(company_id) == "-1":
+        return Response(ajax_fail("汇总模式不可保存"))
     year = items[0].get("year")
     account_type = items[0].get("accountType") or items[0].get("account_type") or 1
     for it in items:
@@ -581,7 +593,8 @@ def user_pay_list(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def user_pay_save(request: Request, user=None):
-    del user
+    if _is_admin_login(user):
+        return Response(ajax_fail("当前账号仅可查看，不可保存"))
     data = merge_payload(request)
     items = data.get("list") or data.get("items") or []
     raw = request.data
@@ -590,6 +603,8 @@ def user_pay_save(request: Request, user=None):
     if not items:
         return Response(ajax_fail("没有数据"))
     user_id = items[0].get("userId") or items[0].get("user_id")
+    if str(user_id) == "-1":
+        return Response(ajax_fail("汇总模式不可保存"))
     year = items[0].get("year")
     account_type = items[0].get("accountType") or items[0].get("account_type") or 1
     for it in items:
@@ -670,10 +685,7 @@ def company_loan_list(request: Request, user=None):
 @admin_ajax_view()
 def company_loan_save(request: Request, user=None):
     # 对齐 Java：admin 仅可查看，不可保存
-    login = ""
-    if isinstance(user, dict):
-        login = str(user.get("user_name") or user.get("userName") or user.get("loginName") or "").strip()
-    if login.lower() == "admin":
+    if _is_admin_login(user):
         return Response(ajax_fail("当前账号仅可查看，不可保存"))
     data = merge_payload(request)
     items = data.get("list") or data.get("items") or []

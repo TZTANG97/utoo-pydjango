@@ -10,7 +10,7 @@
           style="width: 220px"
           @change="onFilterChange"
         >
-          <el-option v-if="mode === 'loan'" label="全部汇总" value="-1" />
+          <el-option v-if="mode === 'loan' || (mode === 'company' && isAdminViewOnly)" label="全部汇总" value="-1" />
           <el-option
             v-for="c in companies"
             :key="String(c.id)"
@@ -28,6 +28,7 @@
           style="width: 220px"
           @change="onFilterChange"
         >
+          <el-option v-if="isAdminViewOnly" label="全部汇总" value="-1" />
           <el-option
             v-for="u in users"
             :key="String(u.id)"
@@ -356,7 +357,14 @@
     </el-table>
 
     <div v-if="isFundPayMode" class="company-footer">
-      <el-button v-if="!isOpsHidden" type="warning" size="large" :loading="saving" @click="handleSave">
+      <el-button
+        v-if="!isOpsHidden"
+        type="warning"
+        size="large"
+        :loading="saving"
+        :disabled="isSummarySelected"
+        @click="handleSave"
+      >
         保存
       </el-button>
       <p class="ops-tip">
@@ -405,8 +413,9 @@ const props = defineProps<{
 
 const userStore = useUserStore()
 const isFundPayMode = computed(() => props.mode === 'company' || props.mode === 'personal')
-/** Java：admin 登录名只能查看，隐藏扣款/修正/保存 */
-const isOpsHidden = computed(() => {
+
+/** 对齐 Java：登录名为 admin / 系统管理员角色 → 仅可查看 */
+const isAdminViewOnly = computed(() => {
   const login = String(
     userStore.loginName ||
       userStore.welcome?.loginName ||
@@ -421,7 +430,32 @@ const isOpsHidden = computed(() => {
   if (role.includes('系统管理员') || role.includes('超级管理员') || role.toUpperCase() === 'ADMIN') {
     return true
   }
-  return props.mode === 'personal' && t === 3
+  return false
+})
+
+/** 对齐 Java userPay userType=2（公司账号）才可录入 */
+const isCompanyRole = computed(() => {
+  const t = Number(userStore.welcome?.userType ?? userStore.userType ?? 0)
+  const role = String(userStore.welcome?.roleName || userStore.roleName || '')
+  if (t === 2) return true
+  return role.includes('公司基金') || role.includes('公司账号') || role === '公司'
+})
+
+/**
+ * 隐藏保存/扣款/修正：
+ * - 各公司资金支出 / 借贷款 / 项目：admin 仅查看
+ * - 个人资金支出：仅公司账号可录入（admin 及其他角色只读）
+ */
+const isOpsHidden = computed(() => {
+  if (isAdminViewOnly.value) return true
+  if (props.mode === 'personal') return !isCompanyRole.value
+  return false
+})
+
+const isSummarySelected = computed(() => {
+  if (props.mode === 'company' || props.mode === 'loan') return companyId.value === '-1'
+  if (props.mode === 'personal') return userId.value === '-1'
+  return false
 })
 const loading = ref(false)
 const saving = ref(false)
@@ -515,7 +549,7 @@ function formatMoney(v: unknown) {
 }
 
 function isRowLocked(row: Record<string, unknown>) {
-  return isOpsHidden.value || Number(row.status) === 1
+  return isOpsHidden.value || isSummarySelected.value || Number(row.status) === 1
 }
 
 function recalcCompanyRow(row: Record<string, unknown>) {
@@ -671,10 +705,10 @@ async function loadRows() {
 
 async function handleSave() {
   if (isOpsHidden.value) {
-    ElMessage.warning('当前账号无保存权限')
+    ElMessage.warning('当前账号仅可查看，不可保存')
     return
   }
-  if (companyId.value === '-1') {
+  if (isSummarySelected.value || companyId.value === '-1') {
     ElMessage.warning('汇总模式不可保存')
     return
   }
