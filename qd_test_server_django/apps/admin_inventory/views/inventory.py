@@ -26,6 +26,26 @@ def _to_int(value, default=None):
         return default
 
 
+def _is_lab_admin(user) -> bool:
+    """对齐 Java ExperimentLabController：仅 sy_users.user_name == admin。"""
+    if not user:
+        return False
+    if isinstance(user, dict):
+        name = str(
+            user.get("user_name")
+            or user.get("loginName")
+            or user.get("userName")
+            or ""
+        ).strip()
+    else:
+        name = str(
+            getattr(user, "user_name", None)
+            or getattr(user, "userName", None)
+            or ""
+        ).strip()
+    return name.lower() == "admin"
+
+
 # ---- 库存管理 ----
 @api_view(["GET", "POST"])
 @authentication_classes([])
@@ -151,7 +171,6 @@ def inventory_update(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def lab_list(request: Request, user=None):
-    del user
     data = merge_payload(request)
     draw, page, page_size = parse_datatable_params(request)
     rows, total = lab_repo.list_labs(
@@ -165,6 +184,9 @@ def lab_list(request: Request, user=None):
         page=page,
         page_size=page_size,
     )
+    flag = "1" if _is_lab_admin(user) else "0"
+    for row in rows:
+        row["flag"] = flag
     return Response(datatable_payload(draw=draw, total=total, rows=rows))
 
 
@@ -226,7 +248,8 @@ def lab_get(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def lab_save(request: Request, user=None):
-    del user
+    if not _is_lab_admin(user):
+        return Response(ajax_fail("无权限操作"))
     data = merge_payload(request)
     payload = {
         "lab_num": (data.get("labNum") or data.get("lab_num") or "").strip(),

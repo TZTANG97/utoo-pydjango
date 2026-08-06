@@ -1,10 +1,10 @@
 <template>
   <admin-page-card title="实验室管理">
-    <template #actions>
+    <template v-if="isLabAdmin" #actions>
       <el-button type="primary" @click="openCreate">新增实验室</el-button>
     </template>
 
-    <el-form :inline="true" class="filter-form" @submit.prevent>
+    <el-form :inline="true" class="filter-form" @submit.prevent="reload">
       <el-form-item label="实验室编号">
         <el-select
           v-model="filters.labNum"
@@ -149,7 +149,7 @@
       <el-table-column label="操作" width="200" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openDetail(row)">查看</el-button>
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+          <el-button v-if="canEditLab(row)" link type="primary" @click="openEdit(row)">编辑</el-button>
           <el-button link type="warning" @click="toggleStatus(row)">
             {{ Number(row.status) === 1 ? '禁用' : '启用' }}
           </el-button>
@@ -387,7 +387,7 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import QRCode from 'qrcode'
 import AdminPageCard from '@/components/AdminPageCard.vue'
@@ -405,7 +405,21 @@ import {
 } from '@/api/inventory'
 import { fetchDistrictChildren, fetchUserList } from '@/api/system'
 import { useDataTable } from '@/composables/useDataTable'
+import { useUserStore } from '@/stores/user'
 import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
+
+const userStore = useUserStore()
+/** 对齐 Java：仅 userName == admin 可新增/编辑 */
+const isLabAdmin = computed(() => {
+  const name = String(userStore.loginName || userStore.userName || '')
+    .trim()
+    .toLowerCase()
+  return name === 'admin'
+})
+
+function canEditLab(row: Record<string, unknown>) {
+  return String(row.flag ?? '') === '1' || isLabAdmin.value
+}
 
 const filters = reactive({
   labNum: '',
@@ -829,10 +843,24 @@ async function toggleStatus(row: Record<string, unknown>) {
   await load(listParams())
 }
 
+function onEnterSearch(e: KeyboardEvent) {
+  if (e.key !== 'Enter') return
+  if (dialogVisible.value || detailVisible.value || lineDialogVisible.value || qrVisible.value) return
+  const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase() || ''
+  if (tag === 'textarea') return
+  e.preventDefault()
+  reload()
+}
+
 onMounted(() => {
+  window.addEventListener('keydown', onEnterSearch)
   // 列表与筛选选项互不阻断
   void loadOptions()
   void reload()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onEnterSearch)
 })
 </script>
 
