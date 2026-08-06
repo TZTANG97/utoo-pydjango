@@ -4560,6 +4560,12 @@ def create_exp_order(
     delivery_time = str(_pick(header, "delivery_time", "deliveryTime", default="")).strip()
     msg = str(_pick(header, "msg", "mark", default="")).strip()
     taxes = str(_pick(header, "taxes", default="")).strip()
+    try:
+        is_online = int(_pick(header, "is_online", "isOnline", default=0) or 0)
+    except (TypeError, ValueError):
+        is_online = 0
+    if is_online not in (0, 1):
+        is_online = 0
     out_bill_type_id = str(
         _pick(header, "outBillTypeId", "out_bill_type_id", default="")
     ).strip()
@@ -4683,6 +4689,7 @@ def create_exp_order(
         "ctm": collection_time[:500] if collection_time else None,
         "usi": user_scale_info[:2000] if user_scale_info else None,
         "scsi": salecb_user_scale_info[:2000] if salecb_user_scale_info else None,
+        "online": is_online,
     }
 
     order_pk = None
@@ -4697,7 +4704,7 @@ def create_exp_order(
                  supplier_name, currency_type, pay_way, goods_amount,
                  delivery_time, taxes, totalPrice, class_id, out_bill_type_id,
                  add_user_id, exp_type_id, collection_time,
-                 user_scale_info, scale_info, salecb_user_scale_info)
+                 user_scale_info, scale_info, salecb_user_scale_info, is_online)
             VALUES
                 (NOW(), 0, %(ono)s, %(ot)s, %(st)s,
                  %(mobile)s, %(rev)s, %(addr)s, %(an)s, %(am)s,
@@ -4706,7 +4713,7 @@ def create_exp_order(
                  %(sup)s, %(ct)s, %(pw)s, %(ga)s,
                  %(delv)s, %(tx)s, %(tp)s, %(class_id)s, %(obt)s,
                  %(add_uid)s, %(exp_type)s, %(ctm)s,
-                 %(usi)s, %(usi)s, %(scsi)s)
+                 %(usi)s, %(usi)s, %(scsi)s, %(online)s)
             """,
             params,
         )
@@ -4740,7 +4747,8 @@ def create_exp_order(
                         add_user_id=%(add_uid)s, mobile=%(mobile)s,
                         collection_time=%(ctm)s,
                         user_scale_info=%(usi)s, scale_info=%(usi)s,
-                        salecb_user_scale_info=%(scsi)s
+                        salecb_user_scale_info=%(scsi)s,
+                        is_online=%(online)s
                     WHERE id=%(id)s
                     """,
                     {**params, "id": order_pk},

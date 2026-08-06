@@ -70,7 +70,7 @@
                   v-for="o in customerOpts"
                   :key="String(o.value)"
                   :label="o.label"
-                  :value="o.value"
+                  :value="String(o.value)"
                 />
               </el-select>
               <el-button type="primary" link @click="openAddCustomer">添加</el-button>
@@ -130,7 +130,7 @@
                   v-for="o in supplierOpts"
                   :key="String(o.value)"
                   :label="o.label"
-                  :value="o.value"
+                  :value="String(o.value)"
                 />
               </el-select>
               <el-button type="primary" link @click="openAddSupplier">添加</el-button>
@@ -163,8 +163,9 @@
             <el-select
               v-model="form.payWay"
               filterable
-              clearable
-              placeholder="请选择"
+              :clearable="!(isCopyMode && isOnlineOrder)"
+              :disabled="isCopyMode && isOnlineOrder"
+              :placeholder="isCopyMode && isOnlineOrder ? '线上订单不可修改' : '请选择'"
               style="width: 100%"
               @change="onPayWayChange"
             >
@@ -172,7 +173,7 @@
                 v-for="o in payWayOpts"
                 :key="String(o.value)"
                 :label="o.label"
-                :value="o.value"
+                :value="String(o.value)"
               />
             </el-select>
           </el-form-item>
@@ -525,12 +526,12 @@ import {
   getExpOrderDetail,
   submitExpOrder,
   uploadExpOrderFile,
-} from '@admin/api/experiment'
-import { fetchCustomerAccounts, fetchCustomerNamesExp } from '@admin/api/member'
-import { fetchBillTypeAll, fetchPaytypeAll, fetchTaxAll } from '@admin/api/order-settings'
-import { fetchSupplierAll, fetchUserList } from '@admin/api/system'
-import { useTagsViewStore } from '@admin/stores/tags-view'
-import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
+} from '@/api/experiment'
+import { fetchCustomerAccounts, fetchCustomerNamesExp } from '@/api/member'
+import { fetchBillTypeAll, fetchPaytypeAll, fetchTaxAll } from '@/api/order-settings'
+import { fetchSupplierAll, fetchUserList } from '@/api/system'
+import { useTagsViewStore } from '@/stores/tags-view'
+import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
 
 type Opt = { value: string | number; label: string; nums?: number; scaleVal?: string }
 type ShareRow = { userId: string; value: string }
@@ -568,6 +569,8 @@ const copyFromId = computed(() => {
 })
 const isCopyMode = computed(() => Boolean(copyFromId.value))
 const pageTitle = computed(() => (isCopyMode.value ? '复制订单' : '新增实验订单'))
+/** Java 复制页：线上订单 is_online=1 时付款方式不可改 */
+const isOnlineOrder = ref(false)
 
 function pad2(n: number) {
   return n < 10 ? `0${n}` : String(n)
@@ -680,10 +683,10 @@ async function reloadSuppliers() {
     const list = Array.isArray(res.obj) ? res.obj : Array.isArray(res.data) ? res.data : []
     supplierOpts.value = (list as Record<string, unknown>[])
       .map((r) => ({
-        value: (r.id ?? '') as string | number,
+        value: String(r.id ?? ''),
         label: String(r.companyName || r.company_name || r.name || r.id || ''),
       }))
-      .filter((o) => o.value !== '' && o.value != null)
+      .filter((o) => o.value !== '')
   } catch {
     supplierOpts.value = []
   }
@@ -695,10 +698,10 @@ async function reloadCustomers() {
     const list = Array.isArray(res.obj) ? res.obj : Array.isArray(res.data) ? res.data : []
     customerOpts.value = (list as Record<string, unknown>[])
       .map((r) => ({
-        value: (r.id ?? '') as string | number,
+        value: String(r.id ?? ''),
         label: String(r.name || r.companyName || r.company_name || ''),
       }))
-      .filter((o) => o.value !== '' && o.value != null && o.label)
+      .filter((o) => o.value !== '' && o.label)
   } catch {
     customerOpts.value = []
   }
@@ -710,10 +713,10 @@ async function reloadAccounts(parentId?: string | number) {
     const list = Array.isArray(res.obj) ? res.obj : Array.isArray(res.data) ? res.data : []
     accountOpts.value = (list as Record<string, unknown>[])
       .map((r) => ({
-        value: (r.id ?? '') as string | number,
+        value: String(r.id ?? ''),
         label: String(r.mobile || r.userName || r.trueName || r.id || ''),
       }))
-      .filter((o) => o.value !== '' && o.value != null)
+      .filter((o) => o.value !== '')
   } catch {
     accountOpts.value = []
   }
@@ -727,8 +730,26 @@ async function onCustomerChange(id: string | number) {
 function ensureOpt(list: Opt[], value: string | number | '', label?: string) {
   if (value === '' || value == null) return
   const key = String(value)
-  if (list.some((o) => String(o.value) === key)) return
-  list.push({ value, label: String(label || value) })
+  const hit = list.find((o) => String(o.value) === key)
+  const nice = String(label || '').trim()
+  if (hit) {
+    hit.value = key
+    if (nice && (!hit.label || hit.label === key || hit.label === String(hit.value))) {
+      hit.label = nice
+    }
+    return
+  }
+  list.push({ value: key, label: nice || key })
+}
+
+function bindSelectValue(
+  list: Opt[],
+  value: string | number | '',
+  label?: string
+): string {
+  if (value === '' || value == null) return ''
+  ensureOpt(list, value, label)
+  return String(value)
 }
 
 function truthyOn(v: unknown): boolean {
@@ -738,6 +759,17 @@ function truthyOn(v: unknown): boolean {
   return s === '1' || s === 'true' || s === 'on' || s === '是'
 }
 
+function refreshShareSummary() {
+  const profitText = parseScalePairs(form.userScaleInfo)
+    .filter((r) => r.userId)
+    .map((r) => {
+      const u = shareUsers.value.find((x) => String(x.id) === r.userId)
+      return `${shareUserLabel(u || { id: r.userId })} ${r.value}%`
+    })
+    .join('，')
+  shareSummary.value = profitText ? `毛利：${profitText}` : form.userScaleInfo ? `毛利：${form.userScaleInfo}` : ''
+}
+
 async function fillFromCopy(sourceId: string) {
   const res = await getExpOrderDetail(sourceId)
   if (!isAjaxOk(res) || !res.obj) {
@@ -745,21 +777,50 @@ async function fillFromCopy(sourceId: string) {
     return
   }
   const obj = res.obj as Record<string, unknown>
+  isOnlineOrder.value = Number(obj.isOnline ?? obj.is_online ?? 0) === 1
+
   // Java 复制页：下单时间需重新填写，其余字段带回
   form.orderTime = nowStr()
-  form.classId = (obj.classId ?? '') as string | number | ''
-  form.saleManager = (obj.saleManagerId ?? '') as string | number | ''
-  form.saleUser = (obj.saleUserId ?? '') as string | number | ''
-  form.supplierName = (obj.supplierId ?? '') as string | number | ''
-  form.customerName = (obj.customerId ?? '') as string | number | ''
-  form.customUserId = (obj.customUserId ?? '') as string | number | ''
+  form.classId = bindSelectValue(classOpts.value, obj.classId as string | number | '', String(obj.testClassName || ''))
+  form.saleManager = bindSelectValue(
+    managerOpts.value,
+    obj.saleManagerId as string | number | '',
+    String(obj.saleManager || obj.saleManagerTrueName || obj.saleManagerName || '')
+  )
+  form.saleUser = bindSelectValue(
+    saleUserOpts.value,
+    obj.saleUserId as string | number | '',
+    String(obj.saleUser || obj.saleUserTrueName || obj.saleUserName || '')
+  )
+  form.supplierName = bindSelectValue(
+    supplierOpts.value,
+    obj.supplierId as string | number | '',
+    String(obj.supplierName || '')
+  )
+  form.customerName = bindSelectValue(
+    customerOpts.value,
+    obj.customerId as string | number | '',
+    String(obj.customerName || obj.companyName || '')
+  )
+  form.customUserId = String(obj.customUserId ?? '')
   form.currencyType = Number(obj.currencyType || 1) === 2 ? '2' : '1'
   form.deliveryTime = String(obj.deliveryTime || '').slice(0, 10)
-  form.payWay = (obj.payWay ?? '') as string | number | ''
+  form.payWay = bindSelectValue(
+    payWayOpts.value,
+    obj.payWay as string | number | '',
+    String(obj.payWayName || '')
+  )
   form.totalPrice = obj.totalPrice != null ? String(obj.totalPrice) : ''
   form.invoiceOn = Number(obj.invoiceType) === 1 || String(obj.invoiceLabel || '') === '是'
-  form.outBillTypeId = (obj.outBillTypeId ?? '') as string | number | ''
-  form.taxes = obj.taxes != null && String(obj.taxes) !== '' ? String(obj.taxes) : ''
+  form.outBillTypeId = bindSelectValue(
+    outBillOpts.value,
+    obj.outBillTypeId as string | number | '',
+    String(obj.outBillTypeName || '')
+  )
+  form.taxes =
+    obj.taxes != null && String(obj.taxes) !== ''
+      ? bindSelectValue(taxOpts.value, String(obj.taxes), String(obj.taxes))
+      : ''
   form.reversoOn =
     truthyOn(obj.reversoContext) || String(obj.reversoLabel || '') === '是'
   form.sendAddress = String(obj.shipAddress || '')
@@ -768,9 +829,8 @@ async function fillFromCopy(sourceId: string) {
   form.msg = String(obj.msg || '')
   form.userScaleInfo = String(obj.userScaleInfo || obj.scaleInfo || '')
   form.salecbUserScaleInfo = String(obj.salecbUserScaleInfo || '')
-  if (form.userScaleInfo) {
-    shareSummary.value = `毛利：${form.userScaleInfo}`
-  }
+
+  // 先绑定付款方式选项，再生成收款时间槽并回填
   onPayWayChange(form.payWay)
   const coll = String(obj.collectionTime || '').trim()
   if (coll && collectionTimes.value.length) {
@@ -778,27 +838,16 @@ async function fillFromCopy(sourceId: string) {
     collectionTimes.value = collectionTimes.value.map((_, i) => parts[i] || '')
   }
 
-  ensureOpt(classOpts.value, form.classId, String(obj.testClassName || ''))
-  ensureOpt(managerOpts.value, form.saleManager, String(obj.saleManager || ''))
-  ensureOpt(saleUserOpts.value, form.saleUser, String(obj.saleUser || ''))
-  ensureOpt(supplierOpts.value, form.supplierName, String(obj.supplierName || ''))
-  ensureOpt(
-    customerOpts.value,
-    form.customerName,
-    String(obj.customerName || obj.companyName || '')
-  )
-  ensureOpt(payWayOpts.value, form.payWay, String(obj.payWayName || ''))
-  ensureOpt(outBillOpts.value, form.outBillTypeId, String(obj.outBillTypeName || ''))
-  if (form.taxes !== '') ensureOpt(taxOpts.value, form.taxes, String(form.taxes))
-
   if (form.customerName) {
     await reloadAccounts(form.customerName)
   }
-  ensureOpt(
+  form.customUserId = bindSelectValue(
     accountOpts.value,
     form.customUserId,
-    String(obj.customMobile || obj.mobile || form.customUserId || '')
+    String(obj.customUserMobile || obj.customMobile || obj.mobile || form.customUserId || '')
   )
+
+  refreshShareSummary()
 
   const children = Array.isArray(obj.children)
     ? (obj.children as Record<string, unknown>[])
@@ -877,13 +926,13 @@ async function loadOptions() {
             .map((r) => {
               const row = r as Record<string, unknown>
               return {
-                value: (row.id ?? '') as string | number,
+                value: String(row.id ?? ''),
                 label: String(row.name || row.payName || row.id || ''),
                 nums: Number(row.nums || 0) || 0,
                 scaleVal: String(row.scaleVal || row.scale_val || ''),
               }
             })
-            .filter((o) => o.value !== '' && o.value != null)
+            .filter((o) => o.value !== '')
         } catch {
           payWayOpts.value = []
         }
@@ -1216,6 +1265,7 @@ async function onSave() {
     currency_type: form.currencyType,
     delivery_time: form.deliveryTime,
     pay_way: form.payWay || null,
+    is_online: isOnlineOrder.value ? 1 : 0,
     collection_time: collectionTimes.value.filter(Boolean).join(','),
     totalPrice: form.totalPrice || totalAmount.value,
     invoiceType: form.invoiceOn ? 1 : 2,
