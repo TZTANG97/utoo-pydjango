@@ -21,7 +21,9 @@ def _supplier_payload(data: dict) -> dict:
         "mobile": (data.get("mobile") or "").strip(),
         "address": data.get("address"),
         "area_info": data.get("areaInfo") or data.get("area_info"),
-        "company_code": data.get("companyCode") or data.get("company_code"),
+        "company_code": (data.get("companyCode") or data.get("company_code") or "").strip(),
+        "company_coord": (data.get("companyCoord") or data.get("company_coord") or "").strip(),
+        "syuser_id": str(data.get("syuserId") or data.get("syuser_id") or "").strip(),
         "email": data.get("email"),
         "area_id": data.get("areaId") or data.get("area_id"),
         "city": data.get("city"),
@@ -82,6 +84,16 @@ def supplier_save(request: Request, user=None):
         return Response(ajax_fail("联系人和联系电话不能为空"))
     if not payload.get("area_info"):
         return Response(ajax_fail("请选择区域"))
+    if not payload.get("city"):
+        return Response(ajax_fail("请选择市"))
+    if not payload.get("address"):
+        return Response(ajax_fail("请选择县（区）"))
+    if not payload.get("company_code"):
+        return Response(ajax_fail("请填写公司代码"))
+    if not payload.get("company_coord"):
+        return Response(ajax_fail("请填写公司坐标"))
+    if not payload.get("syuser_id"):
+        return Response(ajax_fail("请选择关联账号"))
     if supplier_id:
         if supplier_repo.find_by_user_name(payload["userName"], exclude_id=int(supplier_id)):
             return Response(ajax_fail("用户名已存在"))

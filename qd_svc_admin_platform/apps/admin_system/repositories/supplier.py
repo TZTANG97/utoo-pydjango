@@ -8,11 +8,12 @@ from qd_common.password_java import encrypt_password_for_storage
 
 SUPPLIER_USER_TYPE = 6
 
-# 编辑/列表共用字段，避免宽 SELECT 因列缺失导致 DatabaseError
-# 注意：本地 `user` 表无 city/province 列
+# 编辑/列表共用字段；company_coord / syuser_id 与原平台 User 表一致
+# 注意：本地 `user` 表无 city/province 列，区划由 address（县/区 ID）反查
 _SUPPLIER_SELECT = """
     id, userName, company_name, trueName, mobile, address, area_info,
-    company_code, addTime, deleteStatus, email, area_id, address_info
+    company_code, company_coord, syuser_id, addTime, deleteStatus,
+    email, area_id, address_info
 """
 
 
@@ -67,7 +68,7 @@ def get_supplier(supplier_id: int) -> dict[str, Any] | None:
         """,
         {"id": supplier_id, "user_type": SUPPLIER_USER_TYPE},
     )
-    return _normalize_supplier(row) if row else None
+    return _normalize_supplier(row, resolve_district=True) if row else None
 
 
 def find_by_user_name(user_name: str, exclude_id: int | None = None) -> dict[str, Any] | None:
@@ -100,12 +101,13 @@ def insert_supplier(data: dict[str, Any]) -> int:
         """
         INSERT INTO `user`
             (userName, company_name, trueName, mobile, address, area_info, company_code,
-             email, area_id, address_info, userType, password,
+             company_coord, syuser_id, email, area_id, address_info, userType, password,
              deleteStatus, addTime, status)
         VALUES
             (%(userName)s, %(company_name)s, %(trueName)s, %(mobile)s, %(address)s,
-             %(area_info)s, %(company_code)s, %(email)s, %(area_id)s,
-             %(address_info)s, %(user_type)s, %(password)s, 0, NOW(), 1)
+             %(area_info)s, %(company_code)s, %(company_coord)s, %(syuser_id)s,
+             %(email)s, %(area_id)s, %(address_info)s, %(user_type)s, %(password)s,
+             0, NOW(), 1)
         """,
         {
             "userName": data.get("userName") or "",
@@ -115,6 +117,8 @@ def insert_supplier(data: dict[str, Any]) -> int:
             "address": data.get("address") or "",
             "area_info": data.get("area_info") or data.get("areaInfo"),
             "company_code": data.get("company_code") or data.get("companyCode"),
+            "company_coord": data.get("company_coord") or data.get("companyCoord") or "",
+            "syuser_id": data.get("syuser_id") or data.get("syuserId") or "",
             "email": data.get("email"),
             "area_id": data.get("area_id") or data.get("areaId"),
             "address_info": data.get("address_info") or data.get("addreddInfo"),
@@ -143,6 +147,8 @@ def update_supplier(supplier_id: int, data: dict[str, Any]) -> None:
             address = %(address)s,
             area_info = %(area_info)s,
             company_code = %(company_code)s,
+            company_coord = %(company_coord)s,
+            syuser_id = %(syuser_id)s,
             email = %(email)s,
             area_id = %(area_id)s,
             address_info = %(address_info)s
@@ -157,6 +163,8 @@ def update_supplier(supplier_id: int, data: dict[str, Any]) -> None:
             "address": address,
             "area_info": data.get("area_info") or data.get("areaInfo"),
             "company_code": data.get("company_code") or data.get("companyCode"),
+            "company_coord": data.get("company_coord") or data.get("companyCoord") or "",
+            "syuser_id": data.get("syuser_id") or data.get("syuserId") or "",
             "email": data.get("email"),
             "area_id": data.get("area_id") or data.get("areaId"),
             "address_info": data.get("address_info") or data.get("addreddInfo"),
@@ -179,24 +187,39 @@ def toggle_supplier_status(supplier_id: int) -> None:
     )
 
 
+def _district_row(district_id: Any) -> dict[str, Any] | None:
+    if district_id in (None, ""):
+        return None
+    return fetch_one(
+        "SELECT id, dis_name, super_id FROM sy_district WHERE id = %(id)s LIMIT 1",
+        {"id": str(district_id).strip()},
+    )
+
+
+def _resolve_province_city(address: Any) -> tuple[str, str]:
+    """address 存县/区 ID → 反查市、省。"""
+    county = _district_row(address)
+    if not county:
+        return "", ""
+    city = _district_row(county.get("super_id"))
+    if not city:
+        return "", str(county.get("super_id") or "")
+    province_id = str(city.get("super_id") or "")
+    city_id = str(city.get("id") or "")
+    return province_id, city_id
+
+
 def _district_label(address: Any) -> Any:
     """address 存区划 ID（可为非纯数字），解析为可读地名。"""
     if address in (None, ""):
         return address
-    aid = str(address).strip()
-    dist = fetch_one(
-        "SELECT id, dis_name, super_id FROM sy_district WHERE id = %(id)s LIMIT 1",
-        {"id": aid},
-    )
+    dist = _district_row(address)
     if not dist:
         return address
     name = dist.get("dis_name") or ""
     super_id = dist.get("super_id")
     if super_id:
-        parent = fetch_one(
-            "SELECT dis_name FROM sy_district WHERE id = %(id)s LIMIT 1",
-            {"id": str(super_id)},
-        )
+        parent = _district_row(super_id)
         parent_name = (parent or {}).get("dis_name") or ""
         if parent_name and name:
             return f"{parent_name}/{name}"
@@ -205,7 +228,7 @@ def _district_label(address: Any) -> Any:
     return name or address
 
 
-def _normalize_supplier(row: dict[str, Any]) -> dict[str, Any]:
+def _normalize_supplier(row: dict[str, Any], *, resolve_district: bool = False) -> dict[str, Any]:
     area_info = row.get("area_info")
     area_name = ""
     if area_info:
@@ -217,9 +240,12 @@ def _normalize_supplier(row: dict[str, Any]) -> dict[str, Any]:
     address = row.get("address")
     address_label = _district_label(address)
     detail = row.get("address_info")
-    if detail and address_label and str(address_label) != str(address):
-        # 有区划名时，列表可附带详细地址（若存在）
-        pass
+    province = row.get("province")
+    city = row.get("city")
+    if resolve_district and address:
+        p, c = _resolve_province_city(address)
+        province = p or province
+        city = c or city
     return {
         "id": row.get("id"),
         "userName": row.get("userName"),
@@ -233,11 +259,16 @@ def _normalize_supplier(row: dict[str, Any]) -> dict[str, Any]:
         "areaName": area_name,
         "companyCode": row.get("company_code"),
         "company_code": row.get("company_code"),
+        "companyCoord": row.get("company_coord"),
+        "company_coord": row.get("company_coord"),
+        "syuserId": row.get("syuser_id"),
+        "syuser_id": row.get("syuser_id"),
         "addTime": row.get("addTime"),
         "deleteStatus": bool(row.get("deleteStatus")),
         "email": row.get("email"),
         "areaId": row.get("area_id"),
-        "city": row.get("city"),
-        "province": row.get("province"),
+        "city": city,
+        "province": province,
         "addressInfo": detail,
+        "addreddInfo": detail,
     }
