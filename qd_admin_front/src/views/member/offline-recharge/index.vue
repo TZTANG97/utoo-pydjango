@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <admin-page-card title="会员线下充值">
     <template #actions>
       <el-button type="primary" @click="openCreate">新增充值</el-button>
@@ -50,25 +50,61 @@
       />
     </div>
 
-    <el-dialog v-model="createVisible" title="新增线下充值" width="640px">
-      <el-form label-width="100px">
-        <el-form-item label="会员" required>
+    <el-dialog v-model="createVisible" title="新增线下充值" width="680px" destroy-on-close>
+      <el-form label-width="130px">
+        <el-form-item label="会员电话" required>
           <div class="user-pick">
-            <el-input :model-value="selectedUserLabel" readonly placeholder="请选择会员" />
-            <el-button @click="pickerVisible = true">选择</el-button>
+            <el-input
+              :model-value="createForm.mobile"
+              readonly
+              placeholder="点击选择会员"
+              @click="openPicker"
+            />
+            <el-button @click="openPicker">选择</el-button>
           </div>
         </el-form-item>
-        <el-form-item label="金额" required>
+        <el-form-item label="姓名">
+          <span class="readonly-text">{{ createForm.trueName || '-' }}</span>
+        </el-form-item>
+        <el-form-item label="公司">
+          <span class="readonly-text">{{ createForm.companyName || '-' }}</span>
+        </el-form-item>
+        <el-form-item label="账户余额">
+          <span class="readonly-text">{{ balanceText }}</span>
+        </el-form-item>
+        <el-form-item label="充值金额" required>
           <el-input-number v-model="createForm.money" :min="0.01" :precision="2" :step="100" />
         </el-form-item>
-        <el-form-item label="类型">
+        <el-form-item label="操作类型">
           <el-radio-group v-model="createForm.recharge_type">
             <el-radio :value="0">充值</el-radio>
             <el-radio :value="1">赠送</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="createForm.mark" type="textarea" :rows="2" />
+        <el-form-item label="上传用户付款资料">
+          <div class="upload-block">
+            <div v-if="payFiles.length" class="file-list">
+              <div v-for="(f, idx) in payFiles" :key="String(f.id)" class="file-item">
+                <span class="file-name" :title="String(f.info || f.name || '')">
+                  {{ f.info || f.name || `附件${idx + 1}` }}
+                </span>
+                <el-button link type="danger" @click="removePayFile(idx)">删除</el-button>
+              </div>
+            </div>
+            <el-upload :show-file-list="false" :http-request="onUploadPayFile" accept="*">
+              <el-button :loading="uploading">上传文件</el-button>
+            </el-upload>
+          </div>
+        </el-form-item>
+        <el-form-item label="充值备注">
+          <el-input
+            v-model="createForm.mark"
+            type="textarea"
+            :rows="4"
+            maxlength="500"
+            show-word-limit
+            placeholder="请输入内容最多500字"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -77,7 +113,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="pickerVisible" title="选择会员" width="720px">
+    <el-dialog v-model="pickerVisible" title="选择会员" width="780px">
       <el-form :inline="true" @submit.prevent>
         <el-form-item label="手机">
           <el-input v-model="pickerMobile" clearable />
@@ -90,6 +126,7 @@
         <el-table-column prop="trueName" label="姓名" width="120" />
         <el-table-column prop="mobile" label="手机" min-width="120" />
         <el-table-column prop="companyName" label="公司" min-width="160" />
+        <el-table-column prop="ye" label="余额" width="100" />
         <el-table-column prop="userName" label="用户名" min-width="120" />
       </el-table>
       <div class="pager">
@@ -121,7 +158,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminPageCard from '@/components/AdminPageCard.vue'
 import {
   addOfflineRecharge,
@@ -129,6 +166,7 @@ import {
   fetchRechargeUserPicker,
   getOfflineRecharge,
 } from '@/api/member'
+import { deleteExpOrderFile, uploadExpOrderFile } from '@/api/experiment'
 import { useDataTable } from '@/composables/useDataTable'
 import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
 
@@ -145,6 +183,8 @@ const createVisible = ref(false)
 const pickerVisible = ref(false)
 const detailVisible = ref(false)
 const saving = ref(false)
+const uploading = ref(false)
+const payFiles = ref<Record<string, unknown>[]>([])
 const createForm = reactive({
   user_id: '',
   money: 100,
@@ -152,6 +192,8 @@ const createForm = reactive({
   mark: '',
   trueName: '',
   mobile: '',
+  companyName: '',
+  ye: 0 as number | string,
 })
 const detail = reactive<Record<string, unknown>>({})
 const pickerMobile = ref('')
@@ -163,9 +205,10 @@ const {
   load: loadPickerBase,
 } = useDataTable((params) => fetchRechargeUserPicker({ ...params, mobile: pickerMobile.value }))
 
-const selectedUserLabel = computed(() => {
-  if (!createForm.user_id) return ''
-  return `${createForm.trueName || ''} / ${createForm.mobile || ''}`
+const balanceText = computed(() => {
+  if (!createForm.user_id) return '￥0'
+  const n = Number(createForm.ye)
+  return Number.isFinite(n) ? `￥${n}` : `￥${createForm.ye || 0}`
 })
 
 function reload() {
@@ -178,6 +221,11 @@ function loadPicker() {
 
 onMounted(() => reload())
 
+function openPicker() {
+  pickerVisible.value = true
+  loadPicker()
+}
+
 function openCreate() {
   createForm.user_id = ''
   createForm.money = 100
@@ -185,6 +233,9 @@ function openCreate() {
   createForm.mark = ''
   createForm.trueName = ''
   createForm.mobile = ''
+  createForm.companyName = ''
+  createForm.ye = 0
+  payFiles.value = []
   createVisible.value = true
 }
 
@@ -192,7 +243,46 @@ function pickUser(row: Record<string, unknown>) {
   createForm.user_id = String(row.id)
   createForm.trueName = String(row.trueName || '')
   createForm.mobile = String(row.mobile || '')
+  createForm.companyName = String(row.companyName || row.company_name || '')
+  createForm.ye = (row.ye as number | string) ?? 0
   pickerVisible.value = false
+}
+
+async function onUploadPayFile(options: { file: File }) {
+  uploading.value = true
+  try {
+    const fd = new FormData()
+    fd.append('orderdata', options.file)
+    const res = await uploadExpOrderFile(fd)
+    if (!isAjaxOk(res) || !res.obj) {
+      ElMessage.error(ajaxErrorMessage(res, '上传失败'))
+      return
+    }
+    payFiles.value.push(res.obj as Record<string, unknown>)
+    ElMessage.success('上传成功')
+  } finally {
+    uploading.value = false
+  }
+}
+
+async function removePayFile(idx: number) {
+  const file = payFiles.value[idx]
+  if (!file) return
+  try {
+    await ElMessageBox.confirm('确定删除此文件？', '提示', { type: 'warning' })
+  } catch {
+    return
+  }
+  const id = file.id
+  if (id != null && String(id) !== '') {
+    const res = await deleteExpOrderFile(String(id))
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '删除失败'))
+      return
+    }
+  }
+  payFiles.value.splice(idx, 1)
+  ElMessage.success('删除成功')
 }
 
 async function handleCreate() {
@@ -201,12 +291,29 @@ async function handleCreate() {
     return
   }
   if (!createForm.money || createForm.money <= 0) {
-    ElMessage.warning('请填写正确金额')
+    ElMessage.warning('充值金额不可为0')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `请再次确认充值信息 电话:${createForm.mobile}，姓名：${createForm.trueName}，充值金额：${createForm.money}元?`,
+      '确认充值',
+      { type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消' }
+    )
+  } catch {
     return
   }
   saving.value = true
   try {
-    const res = await addOfflineRecharge({ ...createForm })
+    const res = await addOfflineRecharge({
+      user_id: createForm.user_id,
+      money: createForm.money,
+      recharge_type: createForm.recharge_type,
+      mark: createForm.mark,
+      accessoryId: payFiles.value
+        .map((f) => f.id)
+        .filter((id) => id != null && String(id) !== ''),
+    })
     if (isAjaxOk(res)) {
       ElMessage.success('充值成功')
       createVisible.value = false
@@ -244,4 +351,29 @@ async function openDetail(row: Record<string, unknown>) {
   gap: 8px;
   width: 100%;
 }
+.readonly-text {
+  line-height: 32px;
+  color: var(--el-text-color-regular);
+}
+.upload-block {
+  width: 100%;
+}
+.file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 8px;
+}
+.file-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.file-name {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 </style>
+

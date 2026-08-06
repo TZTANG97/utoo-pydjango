@@ -175,3 +175,17 @@ def create_recharge(
     ua_repo.add_recharge_credit(user_id, money)
     ua_repo.insert_account_log(user_id, money, of_id=plog_id)
     return rid
+
+
+def bind_accessories(*, recharge_id: int, accessory_ids: list[int]) -> None:
+    for aid in accessory_ids:
+        if not aid:
+            continue
+        execute(
+            """
+            UPDATE accessory
+            SET off_recharge_id = %(rid)s
+            WHERE id = %(aid)s AND IFNULL(deleteStatus, 0) = 0
+            """,
+            {"rid": recharge_id, "aid": int(aid)},
+        )

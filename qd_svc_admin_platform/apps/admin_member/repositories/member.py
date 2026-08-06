@@ -217,19 +217,24 @@ def bind_member(*, user_id: int, parent_id: int, company_name: str) -> None:
 
 
 def list_picker(*, mobile: str = "", page: int, page_size: int) -> tuple[list[dict[str, Any]], int]:
-    where = "WHERE deleteStatus = 0"
+    where = "WHERE u.deleteStatus = 0"
     params: dict[str, Any] = {}
     if mobile:
-        where += " AND mobile LIKE %(mobile)s"
+        where += " AND u.mobile LIKE %(mobile)s"
         params["mobile"] = f"%{mobile}%"
-    total = int(scalar(f"SELECT COUNT(*) FROM exp_user {where}", params) or 0)
+    total = int(scalar(f"SELECT COUNT(*) FROM exp_user u {where}", params) or 0)
     clause, page_params = page_clause(page, page_size)
     rows = fetch_all(
         f"""
-        SELECT id, userName, trueName, mobile, company_name AS companyName
-        FROM exp_user
+        SELECT
+            u.id, u.userName, u.trueName, u.mobile,
+            u.company_name AS companyName,
+            u.company_name,
+            IFNULL(a.amount, 0) AS ye
+        FROM exp_user u
+        LEFT JOIN user_account a ON u.id = a.user_id AND IFNULL(a.delete_status, 0) = 0
         {where}
-        ORDER BY addTime DESC
+        ORDER BY u.addTime DESC
         {clause}
         """,
         {**params, **page_params},
