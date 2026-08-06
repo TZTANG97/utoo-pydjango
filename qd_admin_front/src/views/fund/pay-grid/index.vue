@@ -259,7 +259,17 @@
       </template>
       <template v-else-if="mode === 'loan'">
         <el-table-column label="还款本金" min-width="140">
-          <template #default="{ row }"><el-input-number v-model="row.loan" :min="0" :precision="2" controls-position="right" size="small" /></template>
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.loan"
+              :min="0"
+              :precision="2"
+              controls-position="right"
+              size="small"
+              :disabled="isOpsHidden || companyId === '-1' || Number(row.status) === 1"
+              @change="recalcLoanRow(row)"
+            />
+          </template>
         </el-table-column>
       </template>
       <template v-else>
@@ -395,9 +405,14 @@ const props = defineProps<{
 
 const userStore = useUserStore()
 const isFundPayMode = computed(() => props.mode === 'company' || props.mode === 'personal')
-/** Java：admin 用户名 / userType=1（系统管理员）隐藏扣款修正与保存 */
+/** Java：admin 登录名只能查看，隐藏扣款/修正/保存 */
 const isOpsHidden = computed(() => {
-  const login = String(userStore.loginName || '').toLowerCase()
+  const login = String(
+    userStore.loginName ||
+      userStore.welcome?.loginName ||
+      (userStore.welcome as { currentUser?: string } | null)?.currentUser ||
+      ''
+  ).toLowerCase()
   const name = String(userStore.welcome?.userName || userStore.userName || '').toLowerCase()
   const role = String(userStore.welcome?.roleName || userStore.roleName || '')
   const t = Number(userStore.welcome?.userType ?? userStore.userType ?? 0)
@@ -531,6 +546,10 @@ function recalcProjectRow(row: Record<string, unknown>) {
     Number(row.laborFees || 0) +
     Number(row.partsFees || 0)
   row.payAmount = Math.round(total * 100) / 100
+}
+
+function recalcLoanRow(row: Record<string, unknown>) {
+  row.payAmount = Math.round(Number(row.loan || 0) * 100) / 100
 }
 
 function fundSummary({ columns, data }: { columns: { property?: string }[]; data: Record<string, unknown>[] }) {

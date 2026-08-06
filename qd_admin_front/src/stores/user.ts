@@ -280,9 +280,21 @@ export const useUserStore = defineStore('admin-user', {
 
         }
 
+        if (this.welcome?.loginName) {
+
+          this.loginName = this.welcome.loginName
+
+        }
+
         if (this.welcome?.roleName) {
 
           this.roleName = this.welcome.roleName
+
+        }
+
+        if (this.welcome?.userType != null) {
+
+          this.userType = Number(this.welcome.userType) || 0
 
         }
 

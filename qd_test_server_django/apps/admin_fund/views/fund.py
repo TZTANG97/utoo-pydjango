@@ -669,7 +669,12 @@ def company_loan_list(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def company_loan_save(request: Request, user=None):
-    del user
+    # 对齐 Java：admin 仅可查看，不可保存
+    login = ""
+    if isinstance(user, dict):
+        login = str(user.get("user_name") or user.get("userName") or user.get("loginName") or "").strip()
+    if login.lower() == "admin":
+        return Response(ajax_fail("当前账号仅可查看，不可保存"))
     data = merge_payload(request)
     items = data.get("list") or data.get("items") or []
     raw = request.data
