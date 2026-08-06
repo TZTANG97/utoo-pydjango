@@ -77,8 +77,15 @@ def member_add(request: Request, user=None):
     if member_repo.mobile_exists(mobile):
         return Response(ajax_fail("手机号已存在"))
     password = (data.get("password") or "123456").strip()
-    parent_id = _to_int(data.get("parent_id") or data.get("parentId") or data.get("comId"))
-    # 企业联系人带 parent_id；个人会员仅保存 company_name 文本（与 Java 一致，不自动建企业）
+    parent_raw = data.get("parent")
+    parent_nested = parent_raw.get("id") if isinstance(parent_raw, dict) else None
+    parent_id = _to_int(
+        data.get("parent_id")
+        or data.get("parentId")
+        or data.get("comId")
+        or data.get("parent.id")
+        or parent_nested
+    )    # 企业联系人带 parent_id；个人会员仅保存 company_name 文本（与 Java 一致，不自动建企业）
     if parent_id and not company_name:
         company = company_repo.get_company(parent_id)
         if company:
@@ -169,7 +176,16 @@ def member_bind(request: Request, user=None):
     del user
     data = merge_payload(request)
     user_id = _to_int(data.get("id") or data.get("userId"))
-    parent_id = _to_int(data.get("parent_id") or data.get("parentId") or data.get("companyId"))
+    parent_raw = data.get("parent")
+    parent_nested = parent_raw.get("id") if isinstance(parent_raw, dict) else None
+    parent_id = _to_int(
+        data.get("parent_id")
+        or data.get("parentId")
+        or data.get("companyId")
+        or data.get("comId")
+        or data.get("parent.id")
+        or parent_nested
+    )
     if not user_id or not parent_id:
         return Response(ajax_fail("参数错误"))
     company = company_repo.get_company(parent_id)
@@ -223,8 +239,29 @@ def load_customer_names(request: Request, user=None):
 @authentication_classes([])
 @permission_classes([AllowAny])
 @admin_ajax_view(require_staff=False)
+def load_customer_names_exp(request: Request, user=None):
+    """后台实验订单客户名称 — /member/loadCustomerNamesExp.ajax（type in 1,3）。"""
+    del user, request
+    from apps.core.db_utils import fetch_all
+
+    rows = fetch_all(
+        """
+        SELECT id, name
+        FROM qd_user_company
+        WHERE delete_status = 0 AND type IN (1, 3)
+        ORDER BY id DESC
+        LIMIT 5000
+        """
+    )
+    return Response(ajax_ok(obj=rows or [], res_msg="获取成功!"))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view(require_staff=False)
 def query_all_company_kh(request: Request, user=None):
-    """小程序客户账号下拉 — /member/queryAllCompanykh.ajax（返回 id/mobile）。"""
+    """客户账号下拉 — /member/queryAllCompanykh.ajax（对齐 Java parent_id ∪ contract_phone）。"""
     del user
     data = merge_payload(request)
     parent_id = str(
@@ -235,12 +272,24 @@ def query_all_company_kh(request: Request, user=None):
     if parent_id.isdigit():
         rows = fetch_all(
             """
-            SELECT id, mobile
-            FROM exp_user
-            WHERE IFNULL(deleteStatus, 0) = 0
-              AND parent_id = %(pid)s
-              AND IFNULL(mobile, '') <> ''
-            ORDER BY id DESC
+            SELECT t.id, t.mobile, t.userName, t.trueName, t.parent_id AS parentId
+            FROM exp_user t
+            WHERE t.id IN (
+                SELECT DISTINCT tab.id FROM (
+                    SELECT t.id
+                    FROM exp_user t
+                    WHERE IFNULL(t.deleteStatus, 0) = 0
+                      AND t.parent_id = %(pid)s
+                    UNION ALL
+                    SELECT t.id
+                    FROM exp_user t
+                    LEFT JOIN qd_user_company uc ON t.mobile = uc.contract_phone
+                    WHERE IFNULL(t.deleteStatus, 0) = 0
+                      AND uc.id = %(pid)s
+                ) tab
+            )
+            AND IFNULL(t.mobile, '') <> ''
+            ORDER BY t.id DESC
             LIMIT 5000
             """,
             {"pid": int(parent_id)},
@@ -248,7 +297,7 @@ def query_all_company_kh(request: Request, user=None):
     else:
         rows = fetch_all(
             """
-            SELECT id, mobile
+            SELECT id, mobile, userName, trueName, parent_id AS parentId
             FROM exp_user
             WHERE IFNULL(deleteStatus, 0) = 0
               AND IFNULL(mobile, '') <> ''

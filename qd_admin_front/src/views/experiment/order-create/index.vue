@@ -464,7 +464,7 @@ import {
   submitExpOrder,
   uploadExpOrderFile,
 } from '@admin/api/experiment'
-import { fetchCustomerAccounts, fetchCustomerNames } from '@admin/api/member'
+import { fetchCustomerAccounts, fetchCustomerNamesExp } from '@admin/api/member'
 import { fetchBillTypeAll, fetchPaytypeAll, fetchTaxAll } from '@admin/api/order-settings'
 import {
   fetchCompanyAccountList,
@@ -630,14 +630,14 @@ async function reloadSuppliers() {
 
 async function reloadCustomers() {
   try {
-    const res = await fetchCustomerNames()
+    const res = await fetchCustomerNamesExp()
     const list = Array.isArray(res.obj) ? res.obj : Array.isArray(res.data) ? res.data : []
     customerOpts.value = (list as Record<string, unknown>[])
       .map((r) => ({
         value: (r.id ?? '') as string | number,
-        label: String(r.name || r.companyName || r.company_name || r.id || ''),
+        label: String(r.name || r.companyName || r.company_name || ''),
       }))
-      .filter((o) => o.value !== '' && o.value != null)
+      .filter((o) => o.value !== '' && o.value != null && o.label)
   } catch {
     customerOpts.value = []
   }

@@ -18,6 +18,7 @@ urlpatterns = [
     path("member/bindUser.ajax", member_views.member_bind),
     path("member/validUserMobileUtoo.ajax", member_views.valid_mobile),
     path("member/loadCustomerNames.ajax", member_views.load_customer_names),
+    path("member/loadCustomerNamesExp.ajax", member_views.load_customer_names_exp),
     path("member/queryAllCompanykh.ajax", member_views.query_all_company_kh),
     path("member/getUserListByComId.ajax", company_detail_views.contact_list_by_company),
     path("member/queryProCityCo.ajax", company_detail_views.query_pro_city_co),

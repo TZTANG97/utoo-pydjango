@@ -62,9 +62,14 @@ export function fetchEnterpriseList(params: Record<string, unknown>) {
   return fetchDatatable('/userCompany/getUserCompanyList.ajax', { type: 3, ...params })
 }
 
-/** 客户名称下拉（qd_user_company type=1） */
+/** 客户名称下拉（小程序：qd_user_company type=1） */
 export function fetchCustomerNames() {
   return postAjax('/member/loadCustomerNames.ajax')
+}
+
+/** 后台实验订单客户名称（type in 1,3，对齐 Java loadCustomerNamesExp） */
+export function fetchCustomerNamesExp() {
+  return postAjax('/member/loadCustomerNamesExp.ajax')
 }
 
 /** 客户账号下拉（exp_user.mobile）；可按企业 parentId 过滤 */
@@ -110,6 +115,10 @@ export function addCompanyContact(data: Record<string, unknown>) {
 
 export function editCompanyContact(data: Record<string, unknown>) {
   return postAjax('/member/editLinkUser.ajax', data)
+}
+
+export function bindCompanyContact(data: Record<string, unknown>) {
+  return postAjax('/member/bindUser.ajax', data)
 }
 
 export function unbindCompanyContact(id: string | number) {

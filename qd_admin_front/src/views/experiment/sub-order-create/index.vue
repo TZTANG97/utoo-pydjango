@@ -491,7 +491,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { createExpSubOrder, getExpOrderDetail, uploadExpOrderFile } from '@/api/experiment'
-import { fetchCustomerAccounts, fetchCustomerNames, fetchEnterpriseList } from '@/api/member'
+import { fetchCustomerAccounts, fetchCustomerNamesExp, fetchEnterpriseList } from '@/api/member'
 import { fetchSelLineList } from '@/api/inventory'
 import {
   fetchBillTypeAll,
@@ -716,7 +716,7 @@ async function loadOptions() {
   await reloadCompanies()
   if (isExperiment.value) {
     try {
-      const cust = await fetchCustomerNames()
+      const cust = await fetchCustomerNamesExp()
       const list = Array.isArray(cust.obj) ? cust.obj : Array.isArray(cust.data) ? cust.data : []
       customerOptions.value = list as Record<string, unknown>[]
     } catch {

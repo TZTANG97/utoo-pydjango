@@ -328,45 +328,115 @@
       v-model="contactDialogVisible"
       :title="contactIsEdit ? '编辑联系人' : '新增联系人'"
       width="640px"
+      @closed="onContactDialogClosed"
     >
-      <el-form label-width="110px">
-        <el-form-item label="企业名称">
-          <el-input v-model="contactForm.company_name" disabled />
-        </el-form-item>
-        <el-form-item label="联系人姓名" required>
-          <el-input v-model="contactForm.trueName" />
-        </el-form-item>
-        <el-form-item v-if="!contactIsEdit" label="密码">
-          <el-input v-model="contactForm.password" placeholder="默认 123456" />
-        </el-form-item>
-        <el-form-item label="部门">
-          <el-input v-model="contactForm.dept" />
-        </el-form-item>
-        <el-form-item label="职位">
-          <el-input v-model="contactForm.job" />
-        </el-form-item>
-        <el-form-item label="座机">
-          <el-input v-model="contactForm.telephone" />
-        </el-form-item>
-        <el-form-item label="分机">
-          <el-input v-model="contactForm.extension" />
-        </el-form-item>
-        <el-form-item label="手机号" required>
-          <el-input v-model="contactForm.mobile" />
-        </el-form-item>
-        <el-form-item label="邮箱">
-          <el-input v-model="contactForm.email" />
-        </el-form-item>
-        <el-form-item label="邮编">
-          <el-input v-model="contactForm.zipCode" />
-        </el-form-item>
-        <el-form-item label="邮寄地址">
-          <el-input v-model="contactForm.addreddInfo" />
-        </el-form-item>
-      </el-form>
+      <template v-if="contactIsEdit">
+        <el-form label-width="110px">
+          <el-form-item label="企业名称">
+            <el-input v-model="contactForm.company_name" disabled />
+          </el-form-item>
+          <el-form-item label="联系人姓名" required>
+            <el-input v-model="contactForm.trueName" />
+          </el-form-item>
+          <el-form-item label="部门">
+            <el-input v-model="contactForm.dept" />
+          </el-form-item>
+          <el-form-item label="职位">
+            <el-input v-model="contactForm.job" />
+          </el-form-item>
+          <el-form-item label="座机">
+            <el-input v-model="contactForm.telephone" />
+          </el-form-item>
+          <el-form-item label="分机">
+            <el-input v-model="contactForm.extension" />
+          </el-form-item>
+          <el-form-item label="手机号" required>
+            <el-input v-model="contactForm.mobile" />
+          </el-form-item>
+          <el-form-item label="邮箱">
+            <el-input v-model="contactForm.email" />
+          </el-form-item>
+          <el-form-item label="邮编">
+            <el-input v-model="contactForm.zipCode" />
+          </el-form-item>
+          <el-form-item label="邮寄地址">
+            <el-input v-model="contactForm.addreddInfo" />
+          </el-form-item>
+        </el-form>
+      </template>
+      <el-tabs v-else v-model="contactDialogTab">
+        <el-tab-pane label="新增联系人" name="create">
+          <el-form label-width="110px">
+            <el-form-item label="企业名称">
+              <el-input v-model="contactForm.company_name" disabled />
+            </el-form-item>
+            <el-form-item label="联系人姓名" required>
+              <el-input v-model="contactForm.trueName" />
+            </el-form-item>
+            <el-form-item label="密码">
+              <el-input v-model="contactForm.password" placeholder="默认 123456" />
+            </el-form-item>
+            <el-form-item label="部门">
+              <el-input v-model="contactForm.dept" />
+            </el-form-item>
+            <el-form-item label="职位">
+              <el-input v-model="contactForm.job" />
+            </el-form-item>
+            <el-form-item label="座机">
+              <el-input v-model="contactForm.telephone" />
+            </el-form-item>
+            <el-form-item label="分机">
+              <el-input v-model="contactForm.extension" />
+            </el-form-item>
+            <el-form-item label="手机号" required>
+              <el-input v-model="contactForm.mobile" />
+            </el-form-item>
+            <el-form-item label="邮箱">
+              <el-input v-model="contactForm.email" />
+            </el-form-item>
+            <el-form-item label="邮编">
+              <el-input v-model="contactForm.zipCode" />
+            </el-form-item>
+            <el-form-item label="邮寄地址">
+              <el-input v-model="contactForm.addreddInfo" />
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+        <el-tab-pane label="绑定" name="bind">
+          <el-form label-width="110px">
+            <el-form-item label="企业名称">
+              <el-input :model-value="selectedName" disabled />
+            </el-form-item>
+            <el-form-item label="手机号" required>
+              <el-select
+                v-model="bindUserId"
+                filterable
+                clearable
+                placeholder="搜索并选择已有会员手机号"
+                style="width: 100%"
+                :loading="bindUserLoading"
+                @change="onBindUserChange"
+              >
+                <el-option
+                  v-for="u in bindUserOpts"
+                  :key="String(u.value)"
+                  :label="u.label"
+                  :value="u.value"
+                />
+              </el-select>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+      </el-tabs>
       <template #footer>
         <el-button @click="contactDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="contactSaving" @click="handleContactSubmit">保存</el-button>
+        <el-button
+          type="primary"
+          :loading="contactSaving"
+          @click="contactIsEdit || contactDialogTab === 'create' ? handleContactSubmit() : handleContactBind()"
+        >
+          {{ !contactIsEdit && contactDialogTab === 'bind' ? '绑定' : '保存' }}
+        </el-button>
       </template>
     </el-dialog>
   </admin-page-card>
@@ -378,6 +448,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminPageCard from '@admin/components/AdminPageCard.vue'
 import {
   addCompanyContact,
+  bindCompanyContact,
   deleteEnterprise,
   editCompanyContact,
   fetchCompanyArrears,
@@ -385,6 +456,7 @@ import {
   fetchCompanyContacts,
   fetchCompanyInvoices,
   fetchCompanyPayLogs,
+  fetchCustomerAccounts,
   fetchDistrictOptions,
   fetchEnterpriseList,
   getEnterprise,
@@ -456,6 +528,11 @@ const selectedContactId = ref('')
 const contactDialogVisible = ref(false)
 const contactIsEdit = ref(false)
 const contactSaving = ref(false)
+const contactDialogTab = ref<'create' | 'bind'>('create')
+const bindUserId = ref<string | number | ''>('')
+const bindUserParentId = ref('')
+const bindUserLoading = ref(false)
+const bindUserOpts = ref<{ value: string | number; label: string; parentId: string }[]>([])
 const contactForm = reactive({
   id: '',
   company_name: '',
@@ -784,8 +861,43 @@ function openContactCreate() {
     return
   }
   resetContactForm()
+  contactDialogTab.value = 'create'
+  bindUserId.value = ''
+  bindUserParentId.value = ''
   contactIsEdit.value = false
   contactDialogVisible.value = true
+  void loadBindUserOptions()
+}
+
+async function loadBindUserOptions() {
+  bindUserLoading.value = true
+  try {
+    // 对齐 Java：绑定下拉拉全量手机号（queryAllCompanykh 无 parentId）
+    const res = await fetchCustomerAccounts('')
+    const list = Array.isArray(res.obj) ? res.obj : Array.isArray(res.data) ? res.data : []
+    bindUserOpts.value = (list as Record<string, unknown>[])
+      .map((r) => ({
+        value: (r.id ?? '') as string | number,
+        label: String(r.mobile || ''),
+        parentId: String(r.parentId || r.parent_id || (r.parent as { id?: unknown } | undefined)?.id || ''),
+      }))
+      .filter((o) => o.value !== '' && o.value != null && o.label)
+  } catch {
+    bindUserOpts.value = []
+  } finally {
+    bindUserLoading.value = false
+  }
+}
+
+function onBindUserChange(id: string | number | '') {
+  const hit = bindUserOpts.value.find((o) => String(o.value) === String(id))
+  bindUserParentId.value = hit?.parentId || ''
+}
+
+function onContactDialogClosed() {
+  contactDialogTab.value = 'create'
+  bindUserId.value = ''
+  bindUserParentId.value = ''
 }
 
 async function openContactEdit() {
@@ -828,6 +940,7 @@ async function handleContactSubmit() {
       ...contactForm,
       parent_id: selectedId.value,
       comId: selectedId.value,
+      'parent.id': selectedId.value,
       userType: 2,
     }
     const res = contactIsEdit.value
@@ -840,6 +953,46 @@ async function handleContactSubmit() {
       return
     }
     ElMessage.error(ajaxErrorMessage(res, '保存失败'))
+  } finally {
+    contactSaving.value = false
+  }
+}
+
+async function handleContactBind() {
+  if (!selectedId.value) {
+    ElMessage.warning('请先选择企业')
+    return
+  }
+  if (bindUserId.value === '' || bindUserId.value == null) {
+    ElMessage.warning('请选择要绑定的手机号')
+    return
+  }
+  const otherParent = bindUserParentId.value
+  if (otherParent && otherParent !== selectedId.value && otherParent !== 'null') {
+    try {
+      await ElMessageBox.confirm('此用户与其他企业已经进行绑定！是否继续绑定到当前企业？', '提示', {
+        type: 'warning',
+      })
+    } catch {
+      return
+    }
+  }
+  contactSaving.value = true
+  try {
+    const res = await bindCompanyContact({
+      id: bindUserId.value,
+      parent_id: selectedId.value,
+      parentId: selectedId.value,
+      comId: selectedId.value,
+      'parent.id': selectedId.value,
+    })
+    if (isAjaxOk(res)) {
+      ElMessage.success('绑定成功')
+      contactDialogVisible.value = false
+      await loadDetailTab()
+      return
+    }
+    ElMessage.error(ajaxErrorMessage(res, '绑定失败'))
   } finally {
     contactSaving.value = false
   }

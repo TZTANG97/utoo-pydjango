@@ -290,7 +290,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { fetchManageOptions, getExpOrderDetail, updateExpOrderBasic, uploadExpOrderFile, deleteExpOrderFile } from '@admin/api/experiment'
-import { fetchCustomerAccounts, fetchCustomerNames } from '@admin/api/member'
+import { fetchCustomerAccounts, fetchCustomerNamesExp } from '@admin/api/member'
 import { fetchBillTypeAll, fetchPaytypeAll } from '@admin/api/order-settings'
 import {
   fetchCompanyAccountList,
@@ -386,14 +386,14 @@ function mapUserRows(rows: Record<string, unknown>[]): Opt[] {
 
 async function loadCustomers() {
   try {
-    const res = await fetchCustomerNames()
+    const res = await fetchCustomerNamesExp()
     const list = Array.isArray(res.obj) ? res.obj : Array.isArray(res.data) ? res.data : []
     customerOpts.value = (list as Record<string, unknown>[])
       .map((r) => ({
         value: (r.id ?? '') as string | number,
-        label: String(r.name || r.companyName || r.company_name || r.id || ''),
+        label: String(r.name || r.companyName || r.company_name || ''),
       }))
-      .filter((o) => o.value !== '' && o.value != null)
+      .filter((o) => o.value !== '' && o.value != null && o.label)
   } catch {
     /* ignore */
   }
