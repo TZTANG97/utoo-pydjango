@@ -15,11 +15,15 @@ def list_proposals(
     page: int,
     page_size: int,
 ) -> tuple[list[dict[str, Any]], int]:
+    """对齐 Java getListBymap1：未传 platform 时仅查 UTOO 相关（2=愉兔, 4=途哲）。"""
     where = "WHERE pi.deleteStatus = 0"
     params: dict[str, Any] = {}
     if platform:
         where += " AND pi.platform = %(platform)s"
         params["platform"] = platform
+    else:
+        # Java: and(pi.platform = 2 or pi.platform = 4)
+        where += " AND pi.platform IN (2, 4)"
     if is_confirmed != "":
         where += " AND pi.is_confirmed = %(is_confirmed)s"
         params["is_confirmed"] = int(is_confirmed)
