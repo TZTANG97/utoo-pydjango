@@ -4809,7 +4809,7 @@ def create_exp_order(
     mobile = ""
     if customer_name and str(customer_name).isdigit():
         crow = fetch_one(
-            "SELECT contractPhone FROM qd_user_company WHERE id = %(id)s LIMIT 1",
+            "SELECT contract_phone AS contractPhone FROM qd_user_company WHERE id = %(id)s LIMIT 1",
             {"id": int(customer_name)},
         )
         if crow and crow.get("contractPhone"):
