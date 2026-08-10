@@ -59,8 +59,28 @@ export function getConsultDetail(id: string | number) {
   return postAjax('/consult/consultDetail.ajax', { id })
 }
 
+export function getConsultDetailXq(id: string | number) {
+  return postAjax('/consult/consultDetailxq.ajax', { id })
+}
+
 export function cancelConsult(id: string | number) {
   return postAjax('/consult/cancelConsult.ajax', { id })
+}
+
+export function updateConsult(list: unknown[]) {
+  return request.post('/consult/updateConsult.ajax', list, {
+    headers: { 'Content-Type': 'application/json' },
+  }) as unknown as Promise<AjaxBody>
+}
+
+export function saveConsultOrder(list: unknown[]) {
+  return request.post('/consult/saveOrder.ajax', list, {
+    headers: { 'Content-Type': 'application/json' },
+  }) as unknown as Promise<AjaxBody>
+}
+
+export function fetchConsultSampleList(consultId: string | number) {
+  return postAjax('/consult/querySampleList.ajax', { consultId })
 }
 
 // --- consult settings ---

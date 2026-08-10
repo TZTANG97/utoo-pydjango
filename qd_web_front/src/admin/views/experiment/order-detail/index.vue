@@ -5,14 +5,28 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import OrderDetailPanel from '../components/OrderDetailPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
 
-const orderId = computed(() => String(route.params.id || ''))
+/**
+ * keep-alive 下不能直接 computed(route.params.id)：
+ * 切到咨询详情等同样带 :id 的路由时，缓存中的订单详情会把咨询 id 当成订单 id 去拉，
+ * 从而弹出「订单不存在」（开过几个详情就会弹几次）。
+ */
+const orderId = ref(String(route.params.id || ''))
+
+watch(
+  () => [route.name, route.params.id] as const,
+  ([name, id]) => {
+    if (name === 'ExperimentOrderDetail' && id != null && String(id) !== '') {
+      orderId.value = String(id)
+    }
+  }
+)
 
 function goBack() {
   const from = String(route.query.from || '')

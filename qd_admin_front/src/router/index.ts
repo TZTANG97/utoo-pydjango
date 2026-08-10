@@ -181,6 +181,12 @@ export const constantRoutes: RouteRecordRaw[] = [
         meta: { title: '咨询管理' },
       },
       {
+        path: 'service-platform/consult/:id',
+        name: 'ServiceConsultDetail',
+        component: () => import('@/views/service-platform/consult/detail.vue'),
+        meta: { title: '咨询详情', hidden: true },
+      },
+      {
         path: 'service-platform/consult-message',
         name: 'ServiceConsultMessage',
         component: () => import('@/views/service-platform/consult-message/index.vue'),

@@ -1208,7 +1208,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -1278,6 +1278,7 @@ const router = useRouter()
 const tagsViewStore = useTagsViewStore()
 
 function syncDetailTagTitle(ot: string, orderNo?: string) {
+  if (route.name !== 'ExperimentOrderDetail') return
   const queryFrom = String(route.query.from || '')
   const from = queryFrom || detailFromByOrderType(ot)
   // 仅当显式带列表 from 时补列表标签；勿按 orderType 推断，否则会从资金/支付等页硬插列表标签
@@ -2457,9 +2458,19 @@ async function onSubmitSampleAction() {
   })
 }
 
+/** keep-alive 停用期间忽略 orderId 变化，避免其它带 :id 路由误触发「订单不存在」 */
+const panelActive = ref(true)
+onActivated(() => {
+  panelActive.value = true
+})
+onDeactivated(() => {
+  panelActive.value = false
+})
+
 watch(
   () => props.orderId,
   () => {
+    if (!panelActive.value) return
     load()
   },
   { immediate: true }
