@@ -812,49 +812,52 @@ def save_order_from_consult(
 
     for idx, ch in enumerate(children, 1):
         child_no = f"{order_no}-{idx:02d}"
+        # experiment_order_child 为 snake_case（add_time/delete_status）；
+        # delete_status：1=删除 2=正常（对齐 Java / admin_experiment 建单）
+        child_params = {
+            "oid": order_pk,
+            "cno": child_no,
+            "gid": ch.get("goods_id") or None,
+            "gn": ch.get("goods_name") or "",
+            "gs": ch.get("goods_spec") or "",
+            "gb": ch.get("goods_brand_name") or "",
+            "nums": ch.get("goods_nums") or 1,
+            "price": ch.get("goods_price") or 0,
+            "ref": ch.get("reference_price") or 0,
+            "epid": ch.get("experiment_project_id") or None,
+            "epn": ch.get("experiment_project_name") or "",
+            "ecid": ch.get("experiment_class_id") or None,
+            "ecn": ch.get("experiment_class_name") or "",
+            "sid": ch.get("sample_id") or None,
+            "ct": ch.get("currency_type") or 1,
+        }
         try:
             execute_insert(
                 """
                 INSERT INTO experiment_order_child
-                    (addTime, deleteStatus, order_form_id, order_id,
+                    (add_time, delete_status, order_form_id, order_id,
                      goods_id, goods_name, goods_spec, goods_brand_name, goods_nums,
                      goods_price, reference_price, experiment_project_id, experiment_project_name,
                      experiment_class_id, experiment_class_name, sample_id,
                      order_status, op_status, currency_type)
                 VALUES
-                    (NOW(), 0, %(oid)s, %(cno)s,
+                    (NOW(), 2, %(oid)s, %(cno)s,
                      %(gid)s, %(gn)s, %(gs)s, %(gb)s, %(nums)s,
                      %(price)s, %(ref)s, %(epid)s, %(epn)s,
                      %(ecid)s, %(ecn)s, %(sid)s,
                      1, 1, %(ct)s)
                 """,
-                {
-                    "oid": order_pk,
-                    "cno": child_no,
-                    "gid": ch.get("goods_id") or None,
-                    "gn": ch.get("goods_name") or "",
-                    "gs": ch.get("goods_spec") or "",
-                    "gb": ch.get("goods_brand_name") or "",
-                    "nums": ch.get("goods_nums") or 1,
-                    "price": ch.get("goods_price") or 0,
-                    "ref": ch.get("reference_price") or 0,
-                    "epid": ch.get("experiment_project_id") or None,
-                    "epn": ch.get("experiment_project_name") or "",
-                    "ecid": ch.get("experiment_class_id") or None,
-                    "ecn": ch.get("experiment_class_name") or "",
-                    "sid": ch.get("sample_id") or None,
-                    "ct": ch.get("currency_type") or 1,
-                },
+                child_params,
             )
         except Exception as exc:
             try:
                 execute_insert(
                     """
                     INSERT INTO experiment_order_child
-                        (addTime, deleteStatus, order_form_id, order_id,
+                        (add_time, delete_status, order_form_id, order_id,
                          goods_name, goods_nums, goods_price, order_status, op_status)
                     VALUES
-                        (NOW(), 0, %(oid)s, %(cno)s,
+                        (NOW(), 2, %(oid)s, %(cno)s,
                          %(gn)s, %(nums)s, %(price)s, 1, 1)
                     """,
                     {
