@@ -6,6 +6,7 @@ from typing import Any
 
 from apps.admin_service.helpers import normalize_rows, page_clause
 from apps.core.db_utils import execute, execute_insert, fetch_all, fetch_one, scalar
+from django.db import transaction
 from qd_common.serialize import to_jsonable
 
 
@@ -585,25 +586,94 @@ def check_save_order_params(c: dict[str, Any]) -> str:
     return ""
 
 
-def _gen_order_no(*, class_id: int | None, currency_type: int) -> str:
-    """简化版订单号：YY + yyyyMM + 序号。"""
-    now = datetime.now()
-    prefix = "YY" if currency_type != 2 else "UY"
-    ym = now.strftime("%Y%m")
-    like = f"{prefix}{ym}%"
-    cnt = int(
-        scalar(
-            """
-            SELECT COUNT(*) FROM experiment_order
-            WHERE order_id LIKE %(like)s AND IFNULL(deleteStatus, 0) = 0
-            """,
-            {"like": like},
-            0,
-        )
-        or 0
+def _gen_order_seq_code(n: int) -> str:
+    """对齐 Java OrderFormUtils.genCode：不足 5 位左补 0。"""
+    if n < 100000:
+        return f"{n:05d}"
+    return str(n)
+
+
+def _manage_ennames(class_id: Any) -> tuple[str, str, str]:
+    """按三级类目向上取 enname，用于订单号。"""
+    en1 = en2 = en3 = ""
+    try:
+        cid = int(class_id) if class_id not in (None, "") else 0
+    except (TypeError, ValueError):
+        cid = 0
+    if not cid:
+        return en1, en2, en3
+    row = fetch_one(
+        "SELECT id, parent_id, enname FROM experiment_manage WHERE id = %(id)s LIMIT 1",
+        {"id": cid},
     )
-    _ = class_id
-    return f"{prefix}{ym}{cnt + 1:05d}"
+    if not row:
+        return en1, en2, en3
+    en3 = str(row.get("enname") or "")
+    pid = row.get("parent_id")
+    if pid:
+        sec = fetch_one(
+            "SELECT id, parent_id, enname FROM experiment_manage WHERE id = %(id)s LIMIT 1",
+            {"id": pid},
+        )
+        if sec:
+            en2 = str(sec.get("enname") or "")
+            pid2 = sec.get("parent_id")
+            if pid2:
+                first = fetch_one(
+                    "SELECT enname FROM experiment_manage WHERE id = %(id)s LIMIT 1",
+                    {"id": pid2},
+                )
+                if first:
+                    en1 = str(first.get("enname") or "")
+    return en1, en2, en3
+
+
+def _gen_order_no(
+    *, class_id: int | None, currency_type: int, supplier_id: Any = None, order_time: str = ""
+) -> str:
+    """对齐 Java orderIdGeranateSale：{company_code}PT{en1}{en2}{en3}{yyyyMM}{5位序号}。"""
+    del currency_type  # 咨询转单当前固定人民币；保留参数兼容调用方
+    en1, en2, en3 = _manage_ennames(class_id)
+    com_code = ""
+    try:
+        sid = int(supplier_id) if supplier_id not in (None, "") else 0
+    except (TypeError, ValueError):
+        sid = 0
+    if sid:
+        u = fetch_one(
+            "SELECT company_code FROM `user` WHERE id = %(id)s LIMIT 1",
+            {"id": sid},
+        )
+        if u:
+            com_code = str(u.get("company_code") or "")
+    dt = None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%Y/%m/%d %H:%M:%S", "%Y/%m/%d"):
+        try:
+            dt = datetime.strptime(str(order_time).strip()[:19], fmt)
+            break
+        except (TypeError, ValueError):
+            continue
+    if dt is None:
+        dt = datetime.now()
+    datestr = dt.strftime("%Y%m")
+    prefix = f"{com_code}PT{en1}{en2}{en3}{datestr}"
+    latest = fetch_one(
+        """
+        SELECT order_id FROM experiment_order
+        WHERE order_id LIKE %(pfx)s
+        ORDER BY order_id DESC
+        LIMIT 1
+        """,
+        {"pfx": f"{prefix}%"},
+    )
+    seq = 1
+    if latest and latest.get("order_id"):
+        oid = str(latest["order_id"])
+        try:
+            seq = int(oid[-5:]) + 1
+        except (TypeError, ValueError):
+            seq = 1
+    return prefix + _gen_order_seq_code(seq)
 
 
 def _ensure_customer_company(company_name: str) -> int | None:
@@ -633,6 +703,20 @@ def _ensure_customer_company(company_name: str) -> int | None:
 
 
 def save_order_from_consult(
+    payload_list: list[Any], *, staff_user_id: str = ""
+) -> tuple[bool, str, int | None]:
+    """对齐 Java saveOrder.ajax：保存咨询并生成实验/分包订单。"""
+    with transaction.atomic():
+        ok, msg, order_pk = _save_order_from_consult_impl(
+            payload_list, staff_user_id=staff_user_id
+        )
+        if not ok:
+            # 业务失败也回滚，避免主单已写、子行失败留下空单
+            transaction.set_rollback(True)
+        return ok, msg, order_pk
+
+
+def _save_order_from_consult_impl(
     payload_list: list[Any], *, staff_user_id: str = ""
 ) -> tuple[bool, str, int | None]:
     """对齐 Java saveOrder.ajax：保存咨询并生成实验/分包订单。"""
@@ -690,7 +774,13 @@ def save_order_from_consult(
     _replace_consult_children(int(c["id"]), children_raw, int(c["currency_type"] or 1))
 
     order_type = "6" if int(c.get("order_type") or 2) == 2 else "8"
-    order_no = _gen_order_no(class_id=c.get("class_id"), currency_type=int(c["currency_type"] or 1))
+    order_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    order_no = _gen_order_no(
+        class_id=c.get("class_id"),
+        currency_type=int(c["currency_type"] or 1),
+        supplier_id=c.get("supplier_name"),
+        order_time=order_time,
+    )
     customer_id = _ensure_customer_company(
         str(c.get("company_name") or existing.get("company_name") or "")
     )
