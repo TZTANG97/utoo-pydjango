@@ -82,6 +82,8 @@ urlpatterns = [
     path("experimentOrder/uploadData.ajax", views.order_upload_file),
     path("experimentOrder/uploadFile.ajax", views.order_upload_file),
     path("adminExperiment/order/deleteFile.ajax", views.order_delete_file),
+    path("adminExperiment/order/downloadFile.ajax", views.order_download_file),
+    path("experimentOrder/downloadFile.ajax", views.order_download_file),
     path("adminExperiment/order/updateMsg.ajax", views.order_update_msg),
     path("adminExperiment/grab/list.ajax", views.grab_list),
     path("adminExperiment/grab/competition.ajax", views.grab_order),

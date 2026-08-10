@@ -19,7 +19,8 @@ def load_accessories(
     clauses = ["deleteStatus = 0"]
     params: dict[str, Any] = {}
     if exp_of_id is not None:
-        clauses.append("exp_of_id = %(eid)s")
+        # Java 实验单附件挂 of_id；本仓新建多写 exp_of_id。复制/详情需两边都查。
+        clauses.append("(exp_of_id = %(eid)s OR of_id = %(eid)s)")
         params["eid"] = exp_of_id
     if child_of_id is not None:
         clauses.append("child_of_id = %(cid)s")
@@ -39,6 +40,27 @@ def load_accessories(
             params,
         )
     except Exception as exc:
+        # 极端环境若无 of_id 列，回退仅 exp_of_id
+        if exp_of_id is not None and "of_id" in str(exc).lower():
+            try:
+                clauses2 = ["deleteStatus = 0", "exp_of_id = %(eid)s"]
+                if child_of_id is not None:
+                    clauses2.append("child_of_id = %(cid)s")
+                if file_type is not None:
+                    clauses2.append("type = %(tp)s")
+                if exclude_types:
+                    clauses2.append(
+                        "IFNULL(type, 0) NOT IN ("
+                        + ",".join(str(t) for t in exclude_types)
+                        + ")"
+                    )
+                return fetch_all(
+                    f"SELECT * FROM accessory WHERE {' AND '.join(clauses2)} ORDER BY id ASC",
+                    params,
+                )
+            except Exception as exc2:
+                logger.warning("load_accessories fallback failed: %s", exc2)
+                return []
         logger.warning("load_accessories failed: %s", exc)
         return []
 

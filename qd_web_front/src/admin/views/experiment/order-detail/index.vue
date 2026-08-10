@@ -5,7 +5,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { onActivated, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import OrderDetailPanel from '../components/OrderDetailPanel.vue'
 
@@ -19,14 +19,22 @@ const router = useRouter()
  */
 const orderId = ref(String(route.params.id || ''))
 
+function syncOrderIdFromRoute() {
+  if (route.name === 'ExperimentOrderDetail' && route.params.id != null && String(route.params.id) !== '') {
+    orderId.value = String(route.params.id)
+  }
+}
+
 watch(
   () => [route.name, route.params.id] as const,
-  ([name, id]) => {
-    if (name === 'ExperimentOrderDetail' && id != null && String(id) !== '') {
-      orderId.value = String(id)
-    }
+  () => {
+    syncOrderIdFromRoute()
   }
 )
+
+onActivated(() => {
+  syncOrderIdFromRoute()
+})
 
 function goBack() {
   const from = String(route.query.from || '')

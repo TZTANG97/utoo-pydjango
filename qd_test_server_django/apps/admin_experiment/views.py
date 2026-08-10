@@ -1,6 +1,7 @@
 """后台实验管理 API（主数据 + 订单列表/详情/抢单/审核/导出）。"""
 from __future__ import annotations
 
+from django.http import HttpResponse
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
@@ -1470,6 +1471,42 @@ def order_update_basic(request: Request, user=None):
         if "companyAccountId" in data or "company_account_id" in data
         else None,
         is_video=data.get("isVideo") if "isVideo" in data or "is_video" in data else None,
+        user_scale_info=data.get("userScaleInfo")
+        if "userScaleInfo" in data or "user_scale_info" in data
+        else None,
+        salecb_user_scale_info=data.get("salecbUserScaleInfo")
+        if "salecbUserScaleInfo" in data or "salecb_user_scale_info" in data
+        else None,
+        warehouse_user=(
+            data.get("warehouseUser")
+            or data.get("warehouse_user")
+            or data.get("stockUser")
+            or data.get("stock_user")
+        )
+        if any(
+            k in data
+            for k in ("warehouseUser", "warehouse_user", "stockUser", "stock_user")
+        )
+        else None,
+        stock_company_id=(
+            data.get("stockCompanyId")
+            or data.get("stock_company_id")
+            or data.get("stock_company_name")
+            or data.get("stockCompanyName")
+        )
+        if any(
+            k in data
+            for k in (
+                "stockCompanyId",
+                "stock_company_id",
+                "stock_company_name",
+                "stockCompanyName",
+            )
+        )
+        else None,
+        in_bill_type_id=data.get("inBillTypeId")
+        if "inBillTypeId" in data or "in_bill_type_id" in data
+        else None,
         children=data.get("children") if isinstance(data.get("children"), list) else None,
         staff_user_id=_staff_id(user),
     )
@@ -1710,6 +1747,26 @@ def order_delete_file(request: Request, user=None):
         return fail("参数错误")
     ok_flag, msg = order_repo.delete_order_file(accessory_id=aid)
     return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def order_download_file(request: Request):
+    """对齐 Java experimentOrder/downloadFile.ajax：强制 attachment 下载，避免浏览器预览。"""
+    data = merge_payload(request)
+    aid = to_int(data.get("id") or data.get("accessoryId"))
+    if not aid:
+        return fail("参数错误")
+    name_hint = str(data.get("name") or data.get("info") or "").strip()
+    from apps.orders.services.file_download import content_disposition, load_accessory_bytes
+
+    raw, filename = load_accessory_bytes(aid, name_hint=name_hint)
+    if not raw:
+        return fail("文件不存在")
+    resp = HttpResponse(raw, content_type="application/octet-stream")
+    resp["Content-Disposition"] = content_disposition(filename or "download")
+    return resp
 
 
 @api_view(["POST"])

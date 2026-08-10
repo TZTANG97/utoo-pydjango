@@ -59,6 +59,7 @@ const MENU_ROUTE_MAP: Record<string, string> = {
   'entry/entryList.htm': '/ops/entry',
   'whitelist/whitelist.htm': '/ops/whitelist',
   'goods/goods_list.htm': '/ops/goods',
+  'goods/goods_listNew.htm': '/ops/goods-lite',
   'redeem/redeemGoodsList.htm': '/ops/goods',
   'goodspec/goods_spec_list.htm': '/ops/spec',
   'goodsbrand/goods_brand_list.htm': '/ops/brand',
@@ -314,6 +315,10 @@ export function mapLegacyMenuUrl(raw: string): string {
   }
   if (normalized.includes('whitelist/whitelist') || normalized.includes('whitelist.htm')) {
     return '/ops/whitelist'
+  }
+  // 精简版须先于 goods_list 匹配（goods_listNew 包含 goods_list 子串）
+  if (normalized.includes('goods_listNew') || normalized.includes('goods/goods_listNew')) {
+    return '/ops/goods-lite'
   }
   if (normalized.includes('goods/goods_list') || normalized.includes('goods_list.htm')) {
     return '/ops/goods'

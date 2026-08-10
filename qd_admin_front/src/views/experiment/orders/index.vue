@@ -6,7 +6,12 @@
         <el-button type="warning" :loading="exporting" @click="handleExport">导出EXCEL</el-button>
       </div>
 
-      <el-form :inline="true" class="filter-form" @submit.prevent="reload">
+      <el-form
+        :inline="true"
+        class="filter-form"
+        @submit.prevent="reload"
+        @keydown.enter="onFilterEnter"
+      >
         <el-form-item>
           <el-input
             v-model="filters.customerName"
@@ -35,7 +40,7 @@
           />
         </el-form-item>
         <el-form-item>
-          <div class="date-range">
+          <div class="date-range" @keydown.enter.capture="onDateEnter">
             <el-date-picker
               v-model="filters.orderStart"
               type="date"
@@ -62,6 +67,7 @@
             filterable
             placeholder="全部所属公司"
             style="width: 160px"
+            @keyup.enter="reload"
           >
             <el-option
               v-for="o in supplierOpts"
@@ -78,6 +84,7 @@
             filterable
             placeholder="全部销售主管"
             style="width: 140px"
+            @keyup.enter="reload"
           >
             <el-option
               v-for="o in managerOpts"
@@ -94,6 +101,7 @@
             filterable
             placeholder="全部销售人员"
             style="width: 140px"
+            @keyup.enter="reload"
           >
             <el-option
               v-for="o in saleUserOpts"
@@ -109,6 +117,7 @@
             clearable
             placeholder="全部订单状态"
             style="width: 150px"
+            @keyup.enter="reload"
           >
             <el-option
               v-for="o in statusOpts"
@@ -345,6 +354,31 @@ const { loading, rows, total, pagination, load } = useDataTable((p) =>
 function reload() {
   pagination.page = 1
   return load(listParams())
+}
+
+/** 下拉选完后回车查询；下拉面板打开时不拦截（留给选中项） */
+function onFilterEnter(e: KeyboardEvent) {
+  if (e.key !== 'Enter' || e.isComposing) return
+  const target = e.target as HTMLElement | null
+  // 日期框由 onDateEnter 单独处理
+  if (target?.closest('.el-date-editor')) return
+  const openSelect = document.querySelector('.el-select__popper:not([aria-hidden="true"])')
+  if (openSelect) return
+  e.preventDefault()
+  reload()
+}
+
+/** 日期输入框回车：capture 阶段拦截，避免被 DatePicker 吞掉 */
+function onDateEnter(e: KeyboardEvent) {
+  if (e.key !== 'Enter' || e.isComposing) return
+  e.preventDefault()
+  e.stopPropagation()
+  // 若日期面板仍打开，先关掉再查
+  const openPicker = document.querySelector('.el-picker__popper:not([aria-hidden="true"])')
+  if (openPicker) {
+    ;(e.target as HTMLElement | null)?.blur?.()
+  }
+  reload()
 }
 
 function resetFilters() {

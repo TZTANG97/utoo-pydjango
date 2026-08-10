@@ -1332,9 +1332,9 @@ def sample_ship_back(
             if str(gotc.get("storePosId")) != str(confirm):
                 return False, f"样本仓库位置不正确!(子行{cid})"
         extra_parts = [", is_sure = 1", ", in_status = 1"]
-        params: dict[str, Any] = {"eno": no[:80], "ename": name[:80]}
-        extra_parts.append(", expressNo = %(eno)s")
-        extra_parts.append(", express_name = %(ename)s")
+        params: dict[str, Any] = {"eno": no[:80]}
+        # 库字段为 snake_case：express_no；快递公司名写入日志（无 express_name 列）
+        extra_parts.append(", express_no = %(eno)s")
         log_suffix = f"样品寄回,{name} 物流单号为：{no}"
         ok, msg = _set_children_status(
             order_id=order_id,

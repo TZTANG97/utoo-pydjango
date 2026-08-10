@@ -219,6 +219,74 @@ export const uploadExpOrderFile = (formData: FormData) =>
 export const deleteExpOrderFile = (id: string | number) =>
   postAjax(`${BASE}/order/deleteFile.ajax`, { id })
 
+/** 对齐 Java downloadFile.ajax：blob 强制下载，避免 window.open 预览 */
+export async function downloadExpOrderFile(
+  id: string | number,
+  displayName?: string
+): Promise<{ ok: boolean; message?: string }> {
+  const { getToken } = await import('@admin/utils/auth')
+  const token = getToken() || ''
+  const base = (import.meta.env.VITE_APP_BASE_API as string) || '/api'
+  const qs = new URLSearchParams({
+    id: String(id),
+    ...(displayName ? { name: displayName } : {}),
+  })
+  const urls = [
+    `${base}/experimentOrder/downloadFile.ajax?${qs}`,
+    `${base}/pc/downloadFile.ajax?${qs}`,
+  ]
+  let lastErr = '下载失败'
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/octet-stream,*/*',
+          'X-Channel': 'admin',
+          ...(token
+            ? { token, Authorization: `Bearer ${token}` }
+            : {}),
+        },
+      })
+      const ct = (res.headers.get('content-type') || '').toLowerCase()
+      if (!res.ok) {
+        lastErr = `下载失败(${res.status})`
+        continue
+      }
+      const blob = await res.blob()
+      if (ct.includes('json') || blob.type.includes('json')) {
+        const text = await blob.text()
+        try {
+          const body = JSON.parse(text) as AjaxBody
+          lastErr = body.resMsg || body.message || lastErr
+        } catch {
+          lastErr = text || lastErr
+        }
+        continue
+      }
+      const cd = res.headers.get('content-disposition') || ''
+      let filename = displayName || `file-${id}`
+      const m = /filename\*=UTF-8''([^;]+)|filename=\"?([^\";]+)\"?/i.exec(cd)
+      if (m) {
+        filename = decodeURIComponent((m[1] || m[2] || filename).trim())
+      }
+      const objUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = objUrl
+      a.download = filename
+      a.style.display = 'none'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(objUrl)
+      return { ok: true }
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : lastErr
+    }
+  }
+  return { ok: false, message: lastErr }
+}
+
 export const updateExpOrderMsg = (id: string | number, msg: string) =>
   postAjax(`${BASE}/order/updateMsg.ajax`, { id, msg })
 

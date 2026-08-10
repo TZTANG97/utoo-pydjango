@@ -886,9 +886,14 @@ async function fillFromCopy(sourceId: string) {
     syncTotalPrice()
   }
 
-  // Java 复制页会带上源单资料 id；附件可改删
+  // Java 复制页模板未渲染源单资料；本仓对齐业务预期：带回订单资料（type=3），排除发票/预约单/测试数据
   const files = Array.isArray(obj.files) ? (obj.files as Record<string, unknown>[]) : []
-  orderFiles.value = files.map((f) => ({ ...f }))
+  orderFiles.value = files
+    .filter((f) => {
+      const t = String(f.type ?? '').trim()
+      return t === '' || t === '3' || t === '7'
+    })
+    .map((f) => ({ ...f }))
 }
 
 async function loadOptions() {

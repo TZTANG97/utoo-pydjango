@@ -1,4 +1,4 @@
-"""附件下载 — downloadFile.ajax"""
+"""附件下载 — 对齐 Java experimentOrder/downloadFile.ajax。"""
 from __future__ import annotations
 
 import logging
@@ -77,19 +77,20 @@ def _public_url(acc: dict) -> str:
 
 
 def _try_oss_download(key: str) -> Optional[bytes]:
-    if not (
-        getattr(settings, "OSS_ACCESS_KEY_ID", "")
-        and getattr(settings, "OSS_ACCESS_KEY_SECRET", "")
-    ):
+    ak = getattr(settings, "OSS_ACCESS_KEY_ID", "") or ""
+    sk = getattr(settings, "OSS_ACCESS_KEY_SECRET", "") or ""
+    if not (ak and sk and key):
         return None
     try:
         import oss2
 
-        endpoint = (settings.OSS_ENDPOINT or "").replace("https://", "").replace(
+        endpoint = (getattr(settings, "OSS_ENDPOINT", "") or "").replace("https://", "").replace(
             "http://", ""
         )
-        auth = oss2.Auth(settings.OSS_ACCESS_KEY_ID, settings.OSS_ACCESS_KEY_SECRET)
-        bucket = oss2.Bucket(auth, endpoint, settings.OSS_BUCKET)
+        if not endpoint:
+            return None
+        auth = oss2.Auth(ak, sk)
+        bucket = oss2.Bucket(auth, endpoint, getattr(settings, "OSS_BUCKET", "qgongye"))
         return bucket.get_object(key).read()
     except Exception as exc:
         logger.warning("OSS download failed key=%s: %s", key, exc)
@@ -121,10 +122,13 @@ def load_accessory_bytes(
     if data:
         return data, download_name
 
-    upload_dir = getattr(settings, "UPLOAD_DIR", "upload")
-    local_path = Path(upload_dir) / key.replace("/", os.sep)
-    if local_path.is_file():
-        return local_path.read_bytes(), download_name
+    upload_root = Path(getattr(settings, "UPLOAD_DIR", None) or "upload")
+    if not upload_root.is_absolute():
+        upload_root = Path(getattr(settings, "BASE_DIR", Path.cwd())) / upload_root
+    if key:
+        local_path = upload_root / key.replace("/", os.sep)
+        if local_path.is_file():
+            return local_path.read_bytes(), download_name
 
     data = _try_http_download(_public_url(acc))
     if data:
@@ -135,6 +139,7 @@ def load_accessory_bytes(
 
 
 def content_disposition(filename: str) -> str:
+    """RFC 5987，兼容中文文件名。"""
     safe = filename.replace('"', "").replace("\r", "").replace("\n", "") or "download"
     encoded = quote(safe)
     return f"attachment; filename=\"{safe}\"; filename*=UTF-8''{encoded}"

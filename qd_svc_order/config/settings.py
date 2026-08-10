@@ -87,6 +87,8 @@ DEBUG_RELOAD = env.bool("DEBUG_RELOAD", default=True)
 OSS_ENDPOINT = env("OSS_ENDPOINT", default="")
 OSS_BUCKET = env("OSS_BUCKET", default="qgongye")
 OSS_PUBLIC_BASE_URL = env("OSS_PUBLIC_BASE_URL", default="")
+OSS_ACCESS_KEY_ID = env("OSS_ACCESS_KEY_ID", default="")
+OSS_ACCESS_KEY_SECRET = env("OSS_ACCESS_KEY_SECRET", default="")
 IMAGE_WEB_SERVER = env("IMAGE_WEB_SERVER", default="")
 # 订单资料等本地落盘目录（相对路径相对本服务 BASE_DIR）
 UPLOAD_DIR = env("UPLOAD_DIR", default="upload")

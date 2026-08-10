@@ -323,7 +323,13 @@ export const constantRoutes: RouteRecordRaw[] = [
         path: 'ops/goods',
         name: 'OpsGoods',
         component: () => import('@/views/ops/goods/index.vue'),
-        meta: { title: '产品管理' },
+        meta: { title: '产品管理', goodsMode: 'full' },
+      },
+      {
+        path: 'ops/goods-lite',
+        name: 'OpsGoodsLite',
+        component: () => import('@/views/ops/goods/index.vue'),
+        meta: { title: '精简版产品管理', goodsMode: 'lite' },
       },
       {
         path: 'ops/spec',

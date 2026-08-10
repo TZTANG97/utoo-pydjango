@@ -59,6 +59,9 @@ urlpatterns = [
     path("goods/class_options.ajax", goods_views.goods_class_options),
     path("goods/updateRecommend.ajax", goods_views.update_recommend),
     path("goods/goods_sale.ajax", goods_views.goods_sale),
+    path("goods/detail.ajax", goods_views.goods_detail),
+    path("goods/save.ajax", goods_views.goods_save),
+    path("goods/options.ajax", goods_views.goods_options),
     # Product catalog
     path("goodspec/list.ajax", catalog_views.spec_list),
     path("goodspec/detail.ajax", catalog_views.spec_detail),

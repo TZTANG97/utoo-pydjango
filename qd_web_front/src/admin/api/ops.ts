@@ -212,6 +212,18 @@ export function toggleGoodsSale(id: string | number) {
   return postAjax('/goods/goods_sale.ajax', { id })
 }
 
+export function getGoodsDetail(id: string | number) {
+  return postAjax('/goods/detail.ajax', { id })
+}
+
+export function saveGoods(data: Record<string, unknown>) {
+  return postAjax('/goods/save.ajax', data)
+}
+
+export function fetchGoodsOptions(keyword = '') {
+  return postAjax('/goods/options.ajax', { keyword })
+}
+
 // Product catalog
 export function fetchSpecList(params: Record<string, unknown>) {
   return fetchDatatable('/goodspec/list.ajax', params)

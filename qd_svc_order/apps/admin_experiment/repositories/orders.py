@@ -1325,6 +1325,7 @@ def get_order(order_id: int) -> dict[str, Any] | None:
             t.class_id AS classId,
             t.sale_manager AS saleManagerId,
             t.sale_user AS saleUserId,
+            t.add_user_id AS addUserId,
             t.supplier_name AS supplierId,
             t.customer_name AS customerId,
             t.custom_user_id AS customUserId,
@@ -1358,6 +1359,7 @@ def get_order(order_id: int) -> dict[str, Any] | None:
             tc.name AS testClassName,
             IFNULL(bill_kp.kpje, 0) AS invoiceAmount,
             IFNULL(bill_sk.skje, 0) AS receiveAmount,
+            tab2.test_user_id AS testUserId,
             tu.user_name AS testName, tu.true_name AS testTrueName
         FROM experiment_order t
         LEFT JOIN experiment_order p ON t.parent_id = p.id
@@ -1708,8 +1710,12 @@ def get_order(order_id: int) -> dict[str, Any] | None:
         recv_bill_cnt = int(row.get("receiveBillCount") or 0)
     except (TypeError, ValueError):
         inv_bill_cnt, recv_bill_cnt = 0, 0
-    # Java isDisabled=true 才显示「编辑订单」；有开票/收款票、主单已分钱、子行 is_sure=1 则禁编
-    edit_allowed_by_bill = inv_bill_cnt <= 0 and recv_bill_cnt <= 0
+    # Java isDisabled=true 才显示「编辑订单」；有票/主单已分钱/子行 is_sure=1 则禁编
+    # 子单对齐 Java：仅收款票影响 isDisabled；主单开票+收款都算
+    if child_kind:
+        edit_allowed_by_bill = recv_bill_cnt <= 0
+    else:
+        edit_allowed_by_bill = inv_bill_cnt <= 0 and recv_bill_cnt <= 0
     can_edit = False
     if parent_kind:
         # 对齐 Java：普通角色 status∈{5,10,20}；管理员/销售主管 status>0 且无票时可编
@@ -1724,12 +1730,12 @@ def get_order(order_id: int) -> dict[str, Any] | None:
     if can_edit and ot in ("9", "10"):
         parent_pk = row.get("parentId") or row.get("parentPkId")
         if parent_pk:
+            # Java selSaleOrderBillList(parent_id, is_split=1)
             split_cnt = int(
                 scalar(
                     """
                     SELECT COUNT(*) FROM qd_bill
-                    WHERE type = 2
-                      AND exp_of_id = %(pid)s
+                    WHERE exp_of_id = %(pid)s
                       AND IFNULL(is_split, 0) = 1
                     """,
                     {"pid": parent_pk},
@@ -2005,12 +2011,27 @@ _CHILD_LINE_SELECT = """
 _CHILD_LINE_JOINS = """
         LEFT JOIN sy_users u ON c.test_user_id = u.id
         LEFT JOIN experiment_line ln ON c.line_id = ln.id
-        LEFT JOIN experiment_video v ON c.id = v.child_id
+        LEFT JOIN (
+            SELECT v1.*
+            FROM experiment_video v1
+            INNER JOIN (
+                SELECT child_id, MAX(id) AS max_id
+                FROM experiment_video
+                GROUP BY child_id
+            ) vx ON v1.id = vx.max_id
+        ) v ON c.id = v.child_id
         LEFT JOIN order_sample_information osi ON c.sample_id = osi.id
         LEFT JOIN (
-            SELECT t1.* FROM exp_goods_out_treasury_child t1
-            LEFT JOIN exp_goods_out_treasury t2 ON t1.out_id = t2.id
-            WHERE IFNULL(t2.status, 0) != 3
+            SELECT t1.*
+            FROM exp_goods_out_treasury_child t1
+            INNER JOIN (
+                SELECT t3.order_child_id, MAX(t3.id) AS max_id
+                FROM exp_goods_out_treasury_child t3
+                LEFT JOIN exp_goods_out_treasury t4 ON t3.out_id = t4.id
+                WHERE IFNULL(t4.status, 0) != 3
+                  AND IFNULL(t3.got_status, 0) NOT IN (3, 5)
+                GROUP BY t3.order_child_id
+            ) tx ON t1.id = tx.max_id
         ) gotc ON c.id = gotc.order_child_id
         LEFT JOIN sample_goods_storehouse gs ON gotc.store_id = gs.id
         LEFT JOIN sample_goods_store_position p ON gotc.store_position_id = p.id
@@ -2314,6 +2335,20 @@ def list_order_children(
         except Exception:
             rows = []
     grab_ctx = _load_grab_perm_ctx(viewer_user_id)
+    # 防御：JOIN 仍可能放大时按子行 id 去重
+    deduped: list[dict[str, Any]] = []
+    seen_ids: set[int] = set()
+    for r in rows:
+        try:
+            cid = int(r.get("id"))
+        except (TypeError, ValueError):
+            deduped.append(r)
+            continue
+        if cid in seen_ids:
+            continue
+        seen_ids.add(cid)
+        deduped.append(r)
+    rows = deduped
     for r in rows:
         r["orderStatusLabel"] = _child_line_status_label(r.get("orderStatus"))
         r["testUserName"] = str(r.get("testUserTrueName") or r.get("testUserName") or "-")
@@ -2465,6 +2500,12 @@ def list_related_orders(related_order_num: Any) -> list[dict[str, Any]]:
         r["addTime"] = str(add_t)[:19] if add_t else ""
         otm = r.get("orderTime") or add_t
         r["orderTime"] = str(otm)[:19] if otm else ""
+        try:
+            r["id"] = int(r.get("id") or 0)
+        except (TypeError, ValueError):
+            r["id"] = r.get("id")
+        # Java relatedOrderType：5=实验订单(type6)，6=实验分包(type8)
+        r["relatedOrderType"] = {"6": "5", "8": "6"}.get(ot, "")
         ordered.append(r)
     return ordered
 
@@ -2508,10 +2549,30 @@ def list_order_files(order_id: int, *, order_type: str | int | None = None) -> l
     return _enrich_accessory_urls(rows)
 
 
-def list_invoice_files(order_id: int) -> list[dict[str, Any]]:
-    """发票资料：accessory.type = 5。"""
+def list_invoice_files(order_id: int, *, order_type: str | int | None = None) -> list[dict[str, Any]]:
+    """发票资料：accessory.type = 5。
+
+    主单(type6/8)写 exp_of_id；子单(type9/10)写 child_of_id（上传侧已按订单类型区分）。
+    """
     from apps.orders.repositories import accessory_list as acc_repo
 
+    ot = str(order_type or "")
+    if ot in ("9", "10"):
+        by_child = acc_repo.load_accessories(child_of_id=order_id, file_type=5)
+        by_exp = acc_repo.load_accessories(exp_of_id=order_id, file_type=5)
+        seen: set[int] = set()
+        merged: list[dict[str, Any]] = []
+        for r in (by_child or []) + (by_exp or []):
+            try:
+                rid = int(r.get("id") or 0)
+            except (TypeError, ValueError):
+                rid = 0
+            if rid and rid in seen:
+                continue
+            if rid:
+                seen.add(rid)
+            merged.append(r)
+        return _enrich_accessory_urls(merged)
     rows = acc_repo.load_accessories(exp_of_id=order_id, file_type=5)
     return _enrich_accessory_urls(rows)
 
@@ -2577,6 +2638,76 @@ def apply_audit_permission(row: dict[str, Any], viewer_user_id: str | int | None
     uid = str(viewer_user_id or "").strip()
     sm = str(row.get("saleManagerId") or "").strip()
     row["canAudit"] = bool(uid and (uid == sm or _is_audit_admin(uid)))
+
+
+def _apply_child_edit_permission(
+    row: dict[str, Any],
+    viewer_user_id: str | int | None,
+    *,
+    role_ctx: dict[str, Any] | None = None,
+) -> None:
+    """对齐 Java 子单详情：编辑/取消仅相关人员 + 管理员；H/R 整段操作按钮不展示。"""
+    ot = str(row.get("orderType") or "")
+    ctx = role_ctx or _viewer_role_context(viewer_user_id)
+    role = str(ctx.get("role") or "")
+    if role in ("H类用户", "R类人员"):
+        row["canEdit"] = False
+        row["canCancel"] = False
+        row["canSubmitAudit"] = False
+        row["canWithdrawAudit"] = False
+        row["canAudit"] = False
+        row["canSaveFinish"] = False
+        return
+    if ot not in ("9", "10"):
+        return
+    if not row.get("canEdit") and not row.get("canCancel"):
+        return
+    uid = str(viewer_user_id or "").strip()
+    if not uid:
+        row["canEdit"] = False
+        row["canCancel"] = False
+        return
+    if _is_audit_admin(uid):
+        return
+    allowed = {
+        str(row.get("addUserId") or "").strip(),
+        str(row.get("saleManagerId") or "").strip(),
+        str(row.get("saleUserId") or "").strip(),
+        str(row.get("testUserId") or "").strip(),
+        str(row.get("testManagerId") or "").strip(),
+    }
+    # 子行测试员也可取消/编辑（对齐 Java testUser）
+    try:
+        oid = int(row.get("id") or 0)
+    except (TypeError, ValueError):
+        oid = 0
+    if oid:
+        try:
+            testers = fetch_all(
+                """
+                SELECT DISTINCT c.test_user_id AS tid
+                FROM experiment_order_child c
+                WHERE (
+                    c.order_form_id = %(oid)s
+                    OR EXISTS (
+                        SELECT 1 FROM exp_qd_purchase_order_child poc
+                        WHERE poc.purchase_order_id = %(oid)s
+                          AND poc.order_child_id = c.id
+                    )
+                )
+                  AND IFNULL(c.delete_status, 2) <> 1
+                  AND c.test_user_id IS NOT NULL
+                """,
+                {"oid": oid},
+            )
+            for t in testers or []:
+                allowed.add(str(t.get("tid") or "").strip())
+        except Exception:
+            pass
+    allowed.discard("")
+    if uid not in allowed:
+        row["canEdit"] = False
+        row["canCancel"] = False
 
 
 def list_order_bills(order_id: int) -> list[dict[str, Any]]:
@@ -2661,7 +2792,12 @@ def get_order_detail_bundle(
     apply_audit_permission(row, viewer_user_id)
     ot = str(row.get("orderType") or "")
     children = list_order_children(order_id, viewer_user_id=viewer_user_id)
-    logs = list_order_logs(order_id)
+    role_ctx = _viewer_role_context(viewer_user_id)
+    logs = _filter_order_logs_for_viewer(
+        list_order_logs(order_id),
+        viewer_user_id=viewer_user_id,
+        role_ctx=role_ctx,
+    )
     bills = list_order_bills(order_id)
     attach_expect_pay_actuals(row, bills)
     linked: list[dict[str, Any]] = []
@@ -2671,17 +2807,49 @@ def get_order_detail_bundle(
         linked = list_linked_child_orders(order_id, child_order_type="9")
     related = list_related_orders(row.get("relatedOrderNum"))
     files = list_order_files(order_id, order_type=ot)
-    invoice_files = list_invoice_files(order_id)
+    # 对齐 Java：子单订单资料附带主单「预约单」附件
+    if ot in ("9", "10"):
+        parent_pk = row.get("parentPkId") or row.get("parentId")
+        try:
+            pid = int(parent_pk) if parent_pk not in (None, "", 0, "0") else 0
+        except (TypeError, ValueError):
+            pid = 0
+        if pid:
+            parent_files = list_order_files(pid, order_type=str(row.get("parentOrderType") or "6"))
+            seen_ids = set()
+            for f in files:
+                try:
+                    seen_ids.add(int(f.get("id") or 0))
+                except (TypeError, ValueError):
+                    pass
+            for f in parent_files:
+                info = str(f.get("info") or f.get("name") or "")
+                if not info.endswith("预约单"):
+                    continue
+                try:
+                    fid = int(f.get("id") or 0)
+                except (TypeError, ValueError):
+                    fid = 0
+                if fid and fid in seen_ids:
+                    continue
+                if fid:
+                    seen_ids.add(fid)
+                files.append(f)
+    invoice_files = list_invoice_files(order_id, order_type=ot)
     yyd_files = [f for f in files if str(f.get("type") or "") == "6"]
-    can_view_share = _viewer_can_see_share(viewer_user_id)
+    can_view_share = bool(role_ctx.get("can_view_share"))
     row["canViewShareInfo"] = can_view_share
-    if not can_view_share:
+    row["canViewLogs"] = bool(role_ctx.get("can_view_logs"))
+    if not can_view_share or not role_ctx.get("can_view_share_detail"):
+        # 隐藏区或 C 类：不返回分成明细（C 类仍显示空的分成信息标签）
         row["userScaleLabel"] = ""
         row["costScaleLabel"] = ""
         row["userScaleInfo"] = ""
         row["scaleInfo"] = ""
         row["salecbUserScaleInfo"] = ""
+    if not role_ctx.get("can_share_ratio"):
         row["canShareRatio"] = False
+    _apply_child_edit_permission(row, viewer_user_id, role_ctx=role_ctx)
     return {
         **row,
         "children": children,
@@ -2935,11 +3103,22 @@ def _format_cost_scale_label(raw: str) -> str:
     return "；".join(f"{_user_display_name(uid)} {val}" for uid, val in pairs)
 
 
-def _viewer_can_see_share(viewer_user_id: str | int | None) -> bool:
-    """测试主管/测试人员及 R/H 类不可看分成信息。"""
+def _viewer_role_context(viewer_user_id: str | int | None) -> dict[str, Any]:
+    """详情页角色可见性：分成 / 操作日志（对齐 Java + C 类业务约束）。"""
+    ctx = {
+        "utoo": "",
+        "role": "",
+        "can_view_share": True,
+        "can_view_share_detail": True,
+        "can_share_ratio": True,
+        "can_view_logs": True,
+        "can_view_all_logs": False,
+        "is_c_sales": False,
+    }
     uid = str(viewer_user_id or "").strip()
     if not uid:
-        return True
+        ctx["can_view_all_logs"] = True
+        return ctx
     u = fetch_one(
         """
         SELECT utoo_type AS utooType
@@ -2950,14 +3129,54 @@ def _viewer_can_see_share(viewer_user_id: str | int | None) -> bool:
         {"id": uid},
     )
     utoo = str((u or {}).get("utooType") or "").strip()
-    if "测试主管" in utoo:
-        return False
-    if "测试人员" in utoo and "测试主管" not in utoo:
-        return False
     role = _resolve_utoo_role_name(utoo)
+    ctx["utoo"] = utoo
+    ctx["role"] = role
+    is_c = role == "C类销售人员" or "C类销售人员" in utoo
+    ctx["is_c_sales"] = is_c
+    if "测试主管" in utoo:
+        ctx["can_view_share"] = False
+        ctx["can_view_share_detail"] = False
+        ctx["can_share_ratio"] = False
+    elif "测试人员" in utoo and "测试主管" not in utoo:
+        ctx["can_view_share"] = False
+        ctx["can_view_share_detail"] = False
+        ctx["can_share_ratio"] = False
     if role in ("R类人员", "H类用户"):
-        return False
-    return True
+        ctx["can_view_share"] = False
+        ctx["can_view_share_detail"] = False
+        ctx["can_share_ratio"] = False
+        ctx["can_view_logs"] = False
+    if is_c:
+        # Java：分成区只显示空的「毛利/成本」；业务要求 C 类不可看操作记录
+        ctx["can_view_share"] = True
+        ctx["can_view_share_detail"] = False
+        ctx["can_share_ratio"] = False
+        ctx["can_view_logs"] = False
+    if role in ("销售主管", "系统管理员") or utoo in ("销售主管", "系统管理员"):
+        ctx["can_view_all_logs"] = True
+    return ctx
+
+
+def _viewer_can_see_share(viewer_user_id: str | int | None) -> bool:
+    """测试主管/测试人员及 R/H 类不可看分成信息。"""
+    return bool(_viewer_role_context(viewer_user_id).get("can_view_share"))
+
+
+def _filter_order_logs_for_viewer(
+    logs: list[dict[str, Any]],
+    *,
+    viewer_user_id: str | int | None,
+    role_ctx: dict[str, Any],
+) -> list[dict[str, Any]]:
+    if not role_ctx.get("can_view_logs"):
+        return []
+    if role_ctx.get("can_view_all_logs"):
+        return logs
+    uid = str(viewer_user_id or "").strip()
+    if not uid:
+        return logs
+    return [lg for lg in logs if str(lg.get("logUserId") or "").strip() == uid]
 
 
 def update_share_ratio(
@@ -3760,6 +3979,11 @@ def update_order_basic(
     test_address_id: Any = None,
     company_account_id: Any = None,
     is_video: Any = None,
+    user_scale_info: Any = None,
+    salecb_user_scale_info: Any = None,
+    warehouse_user: Any = None,
+    stock_company_id: Any = None,
+    in_bill_type_id: Any = None,
     children: list[dict[str, Any]] | None = None,
     staff_user_id: str | int | None = None,
 ) -> tuple[bool, str]:
@@ -3852,6 +4076,29 @@ def update_order_basic(
         except (TypeError, ValueError):
             params["is_video"] = 1 if str(is_video).strip().upper() in ("1", "ON", "TRUE") else 0
         sets.append("is_video = %(is_video)s")
+    if user_scale_info is not None:
+        scale = str(user_scale_info or "").strip()[:500]
+        params["user_scale_info"] = scale
+        sets.append("user_scale_info = %(user_scale_info)s")
+        sets.append("scale_info = %(user_scale_info)s")
+    if salecb_user_scale_info is not None:
+        params["salecb_user_scale_info"] = str(salecb_user_scale_info or "").strip()[:255]
+        sets.append("salecb_user_scale_info = %(salecb_user_scale_info)s")
+    if warehouse_user not in (None, ""):
+        params["warehouse_user"] = str(warehouse_user).strip()[:64]
+        sets.append("warehouse_user = %(warehouse_user)s")
+    if stock_company_id not in (None, ""):
+        try:
+            params["stock_company_id"] = int(stock_company_id)
+            sets.append("stock_company_name = %(stock_company_id)s")
+        except (TypeError, ValueError):
+            pass
+    if in_bill_type_id not in (None, ""):
+        try:
+            params["in_bill_type_id"] = int(in_bill_type_id)
+            sets.append("in_bill_type_id = %(in_bill_type_id)s")
+        except (TypeError, ValueError):
+            pass
     # 对齐 Java：type=6 editSave status==10→5 / 66→67 / >=30→20；
     # type=9/10 updateOrder 一律回退到 5（待提交审核），并重置样品子行状态以便重走流程
     try:
@@ -3916,6 +4163,23 @@ def update_order_basic(
             )
         except Exception:
             pass
+        # 作废旧出库仓位关联，避免详情子行 JOIN 重复、样品按钮错乱
+        try:
+            execute(
+                """
+                UPDATE exp_goods_out_treasury_child gotc
+                JOIN experiment_order_child c ON gotc.order_child_id = c.id
+                LEFT JOIN exp_qd_purchase_order_child poc ON poc.order_child_id = c.id
+                SET gotc.store_id = NULL,
+                    gotc.store_position_id = NULL,
+                    gotc.got_status = 3
+                WHERE (c.order_form_id = %(oid)s OR poc.purchase_order_id = %(oid)s)
+                  AND IFNULL(gotc.got_status, 0) NOT IN (3, 5)
+                """,
+                {"oid": order_id},
+            )
+        except Exception:
+            pass
     # 同步已有产品行数量/单价（对齐 Java editSave 更新 child）
     if children:
         for ch in children:
@@ -3950,12 +4214,31 @@ def update_order_basic(
                     child_sets.append("reference_price = %(ref)s")
                 except (TypeError, ValueError):
                     pass
+            spec_raw = ch.get("goodsSpec") if ch.get("goodsSpec") is not None else ch.get("goods_spec")
+            if spec_raw is not None:
+                child_params["spec"] = str(spec_raw)[:200]
+                child_sets.append("goods_spec = %(spec)s")
+            cost_raw = ch.get("costPrice") if ch.get("costPrice") is not None else ch.get("cost_price")
+            if cost_raw not in (None, ""):
+                try:
+                    child_params["cost"] = float(cost_raw)
+                    child_sets.append("cost_price = %(cost)s")
+                except (TypeError, ValueError):
+                    pass
             if child_sets:
                 execute(
                     f"""
                     UPDATE experiment_order_child
                     SET {', '.join(child_sets)}
-                    WHERE id = %(id)s AND order_form_id = %(oid)s
+                    WHERE id = %(id)s
+                      AND (
+                        order_form_id = %(oid)s
+                        OR EXISTS (
+                          SELECT 1 FROM exp_qd_purchase_order_child poc
+                          WHERE poc.order_child_id = %(id)s
+                            AND poc.purchase_order_id = %(oid)s
+                        )
+                      )
                     """,
                     child_params,
                 )
@@ -4255,8 +4538,20 @@ def create_sub_order_from_parent(
 
     from datetime import datetime
 
-    suffix = datetime.now().strftime("%Y%m%d%H%M%S")
-    new_no = f"{parent.get('orderId') or parent_id}-Z{suffix[-6:]}"
+    # 对齐 Java：实验子单 C + orderIdGeranateSale；分包子单 S + 同规则
+    # （历史正确例：HYYPT… → CHYYPT… / SHYYPT…；勿用 parent-Z时分秒）
+    id_prefix = "C" if child_ot == "10" else "S"
+    order_time = str(
+        form.get("orderTime") or form.get("order_time") or parent.get("orderTime") or ""
+    ).strip()
+    if not order_time:
+        order_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    new_no = _generate_exp_order_no(
+        order_time=order_time,
+        class_id=parent.get("classId"),
+        supplier_id=parent.get("supplierId"),
+        id_prefix=id_prefix,
+    )
     # 分包提交审核 → status=20；实验子单创建 → status=5
     init_status = 20 if child_ot == "9" and form.get("submitAudit") else 5
     try:
@@ -4280,7 +4575,6 @@ def create_sub_order_from_parent(
         invoice_type = 1
     in_bill_type_id = str(form.get("inBillTypeId") or form.get("in_bill_type_id") or "").strip()
     taxes = str(form.get("taxes") or "").strip()
-    order_time = str(form.get("orderTime") or form.get("order_time") or "").strip()
     delivery_time = str(form.get("deliveryTime") or form.get("delivery_time") or "").strip()
     pay_way = str(form.get("payWay") or form.get("pay_way") or "").strip()
     currency_type = str(form.get("currencyType") or form.get("currency_type") or "1").strip() or "1"
@@ -4486,23 +4780,13 @@ def create_sub_order_from_parent(
                 )
             except Exception:
                 pass
-        # 订单资料：创建前上传的 accessory id 列表
+        # 订单资料：创建前上传 / 复制源单的 accessory id 列表
         orderdata = form.get("orderdata") or form.get("orderData") or form.get("fileIds") or ""
         file_ids = _as_str_list(orderdata)
-        for aid in file_ids:
-            if not aid.isdigit():
-                continue
-            try:
-                execute(
-                    """
-                    UPDATE accessory
-                    SET exp_of_id = %(oid)s, type = IFNULL(NULLIF(type, 0), 3)
-                    WHERE id = %(aid)s AND IFNULL(deleteStatus, 0) = 0
-                    """,
-                    {"oid": new_id, "aid": int(aid)},
-                )
-            except Exception:
-                pass
+        raw_acc = form.get("accessoryId") or form.get("accessoryIds")
+        if isinstance(raw_acc, (list, tuple)):
+            file_ids = [str(x) for x in raw_acc] + file_ids
+        _attach_accessories_to_order(int(new_id), file_ids)
 
     # 把产品行挂到新子单（采购关联表）
     for i, cid in enumerate(ids):
@@ -4637,8 +4921,13 @@ def _manage_ennames(class_id: Any) -> tuple[str, str, str]:
     return en1, en2, en3
 
 
-def _generate_exp_order_no(*, order_time: str, class_id: Any, supplier_id: Any) -> str:
-    """对齐 Java orderIdGeranateSale：{company_code}PT{en1}{en2}{en3}{yyyyMM}{5位序号}。"""
+def _generate_exp_order_no(
+    *, order_time: str, class_id: Any, supplier_id: Any, id_prefix: str = ""
+) -> str:
+    """对齐 Java orderIdGeranateSale：{C|S?}{company_code}PT{en1}{en2}{en3}{yyyyMM}{5位序号}。
+
+    id_prefix：实验子单 'C'、分包子单 'S'；主单为空。
+    """
     from datetime import datetime
 
     en1, en2, en3 = _manage_ennames(class_id)
@@ -4661,11 +4950,12 @@ def _generate_exp_order_no(*, order_time: str, class_id: Any, supplier_id: Any) 
     if dt is None:
         dt = datetime.now()
     datestr = dt.strftime("%Y%m")
-    prefix = f"{com_code}PT{en1}{en2}{en3}{datestr}"
+    prefix = f"{id_prefix or ''}{com_code}PT{en1}{en2}{en3}{datestr}"
     latest = fetch_one(
         """
         SELECT order_id FROM experiment_order
         WHERE order_id LIKE %(pfx)s
+          AND LOCATE('-', order_id) = 0
         ORDER BY order_id DESC
         LIMIT 1
         """,
@@ -5098,26 +5388,101 @@ def create_exp_order(
             aids = str(raw_acc).split(",")
         else:
             aids = []
-    for aid in aids or []:
-        s = str(aid).strip()
-        if not s.isdigit():
-            continue
-        try:
-            execute(
-                """
-                UPDATE accessory
-                SET exp_of_id = %(oid)s, type = IFNULL(NULLIF(type, 0), 3)
-                WHERE id = %(aid)s AND IFNULL(deleteStatus, 0) = 0
-                """,
-                {"oid": order_pk, "aid": int(s)},
-            )
-        except Exception:
-            pass
+    _attach_accessories_to_order(int(order_pk), aids or [])
 
     return True, str(order_pk), int(order_pk)
 
 
+def _accessory_linked_order_id(row: dict[str, Any]) -> int:
+    for key in ("exp_of_id", "of_id", "expOfId", "ofId"):
+        v = row.get(key)
+        if v in (None, "", 0, "0"):
+            continue
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            continue
+    return 0
+
+
+def _attach_accessories_to_order(order_pk: int, accessory_ids: list[Any]) -> None:
+    """挂订单资料：未绑定则绑定；已挂其它单则克隆（复制建单不抢走源单附件）。
+
+    同时写 of_id（Java）与 exp_of_id（本仓），避免复制页/详情查不到。
+    """
+    from datetime import datetime
+
+    from apps.orders.repositories import accessory as accessory_repo
+
+    for aid in accessory_ids or []:
+        s = str(aid).strip()
+        if not s.isdigit():
+            continue
+        acc_id = int(s)
+        row = fetch_one(
+            """
+            SELECT * FROM accessory
+            WHERE id = %(id)s AND IFNULL(deleteStatus, 0) = 0
+            LIMIT 1
+            """,
+            {"id": acc_id},
+        )
+        if not row:
+            continue
+        linked = _accessory_linked_order_id(row)
+        if linked == order_pk:
+            continue
+        if linked and linked != order_pk:
+            # 复制建单：克隆附件行，保留源单资料
+            try:
+                new_id = accessory_repo.insert_accessory(
+                    add_time=datetime.now(),
+                    name=str(row.get("name") or ""),
+                    path=str(row.get("path") or ""),
+                    ext=str(row.get("ext") or "")[:64],
+                    info=str(row.get("info") or row.get("name") or "upload")[:255],
+                    acc_type=int(row.get("type") or 3) or 3,
+                    exp_of_id=order_pk,
+                )
+                if new_id:
+                    try:
+                        execute(
+                            "UPDATE accessory SET of_id = %(oid)s WHERE id = %(id)s",
+                            {"oid": order_pk, "id": int(new_id)},
+                        )
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            continue
+        # 新建上传未绑定：挂到本单（兼容 of_id / exp_of_id）
+        try:
+            execute(
+                """
+                UPDATE accessory
+                SET exp_of_id = %(oid)s,
+                    of_id = %(oid)s,
+                    type = IFNULL(NULLIF(type, 0), 3)
+                WHERE id = %(aid)s AND IFNULL(deleteStatus, 0) = 0
+                """,
+                {"oid": order_pk, "aid": acc_id},
+            )
+        except Exception:
+            try:
+                execute(
+                    """
+                    UPDATE accessory
+                    SET exp_of_id = %(oid)s, type = IFNULL(NULLIF(type, 0), 3)
+                    WHERE id = %(aid)s AND IFNULL(deleteStatus, 0) = 0
+                    """,
+                    {"oid": order_pk, "aid": acc_id},
+                )
+            except Exception:
+                pass
+
+
 # 对齐 Java excel-config.xml id=experimentOrder 的订单状态 format
+# （导出用库内原始 order_status，勿用列表页派生的 41/42）
 _EXPORT_ORDER_STATUS_LABEL = {
     0: "已取消",
     5: "待提交审核",
@@ -5125,6 +5490,7 @@ _EXPORT_ORDER_STATUS_LABEL = {
     20: "待审核",
     30: "已审核",
     40: "已确认",
+    49: "已付款",
     50: "已完成",
     60: "已评价",
     66: "待平台确认",
@@ -5185,13 +5551,28 @@ def _to_decimal(value: Any):
         return None
 
 
+def _fmt_export_money(value: Any) -> str:
+    d = _to_decimal(value)
+    if d is None:
+        return ""
+    text = format(d, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text
+
+
 def build_experiment_order_export_matrix(
     *,
     limit: int = 5000,
     scope: dict[str, Any] | None = None,
     **filters: Any,
 ) -> tuple[list[str], list[list]]:
-    """对齐 Java experimentOrder/export.htm：按子单展开行，首行保留主单字段。"""
+    """对齐 Java UTExperimentOrderController.exportExcel + excel-config experimentOrder。
+
+    - 按子单展开；同一主单后续行清空主单字段（序号/下单时间/订单号/客户/总金额/开票付款/状态）
+    - 订单状态用库内原始值 + excel format（含 49:已付款），不用列表页派生状态
+    - 下单时间保留 yyyy-MM-dd HH:mm:ss
+    """
     orders, _ = list_orders(
         order_type="6",
         order_id=str(filters.get("order_id") or ""),
@@ -5216,6 +5597,33 @@ def build_experiment_order_export_matrix(
 
     placeholders = ", ".join(f"%(oid{i})s" for i in range(len(order_ids)))
     oid_params = {f"oid{i}": oid for i, oid in enumerate(order_ids)}
+    order_id_set = set(order_ids)
+
+    # 列表接口会改写 orderStatus / 截断 orderTime，导出重新取库内原始字段
+    raw_rows = fetch_all(
+        f"""
+        SELECT
+            t.id,
+            t.order_id AS orderId,
+            t.order_status AS orderStatus,
+            t.order_time AS orderTime,
+            t.addTime,
+            t.totalPrice AS totalPrice,
+            q.name AS customerName
+        FROM experiment_order t
+        LEFT JOIN qd_user_company q ON t.customer_name = q.id
+        WHERE t.id IN ({placeholders})
+        """,
+        oid_params,
+    )
+    raw_by_id: dict[int, dict[str, Any]] = {}
+    for r in raw_rows:
+        try:
+            raw_by_id[int(r["id"])] = r
+        except (TypeError, ValueError, KeyError):
+            continue
+
+    # 对齐 Java getChildsByOfIdHt：delete_status=2 AND order_status > 0
     child_rows = fetch_all(
         f"""
         SELECT
@@ -5243,32 +5651,59 @@ def build_experiment_order_export_matrix(
             continue
         children_by_of.setdefault(of_id, []).append(ch)
 
+    # 开票/收款：UT 列表用 exp_of_id；Java export 写的是 of_id，两边都收以免漏单
     bill_rows = fetch_all(
         f"""
         SELECT
-            exp_of_id AS ofId,
+            exp_of_id AS expOfId,
+            of_id AS ofId,
             type AS billType,
             money,
-            bill_date AS billDate
+            bill_date AS billDate,
+            add_time AS addTime
         FROM qd_bill
         WHERE exp_of_id IN ({placeholders})
-        ORDER BY bill_date ASC, id ASC
+           OR of_id IN ({placeholders})
+        ORDER BY add_time ASC, id ASC
         """,
         oid_params,
     )
     first_kp: dict[int, str] = {}
     first_sk: dict[int, str] = {}
+    kp_sum: dict[int, Any] = {}
+    sk_sum: dict[int, Any] = {}
+    from decimal import Decimal
+
     for b in bill_rows:
+        mapped: int | None = None
         try:
-            of_id = int(b.get("ofId"))
+            exp_id = int(b["expOfId"]) if b.get("expOfId") is not None else None
+        except (TypeError, ValueError):
+            exp_id = None
+        try:
+            plain_id = int(b["ofId"]) if b.get("ofId") is not None else None
+        except (TypeError, ValueError):
+            plain_id = None
+        if exp_id in order_id_set:
+            mapped = exp_id
+        elif plain_id in order_id_set:
+            mapped = plain_id
+        if mapped is None:
+            continue
+        try:
             btype = int(b.get("billType"))
         except (TypeError, ValueError):
             continue
-        dt = _fmt_export_dt(b.get("billDate"), date_only=True)
-        if btype == 1 and of_id not in first_kp:
-            first_kp[of_id] = dt
-        elif btype == 2 and of_id not in first_sk:
-            first_sk[of_id] = dt
+        money = _to_decimal(b.get("money")) or Decimal("0")
+        dt = _fmt_export_dt(b.get("billDate") or b.get("addTime"), date_only=True)
+        if btype == 1:
+            kp_sum[mapped] = kp_sum.get(mapped, Decimal("0")) + money
+            if mapped not in first_kp:
+                first_kp[mapped] = dt
+        elif btype == 2:
+            sk_sum[mapped] = sk_sum.get(mapped, Decimal("0")) + money
+            if mapped not in first_sk:
+                first_sk[mapped] = dt
 
     matrix: list[list] = []
     nums = 0
@@ -5281,26 +5716,25 @@ def build_experiment_order_export_matrix(
         if not kids:
             continue
         nums += 1
-        kp_cnt = int(of.get("kpCount") or 0)
-        sk_cnt = int(of.get("skCount") or 0)
-        iskp = "已开票" if kp_cnt > 0 else "未开票"
-        isfk = "已付款" if sk_cnt > 0 else "未付款"
-        kpje = of.get("invoiceAmount")
-        skje = of.get("receiveAmount")
-        order_time = _fmt_export_dt(of.get("orderTime") or of.get("addTime"))
-        order_id = of.get("orderId") or ""
-        company = of.get("customerName") or ""
-        total_price = of.get("totalPrice")
-        status_label = _export_order_status_label(of.get("orderStatus"))
+        raw = raw_by_id.get(of_id) or {}
+        iskp = "已开票" if of_id in kp_sum else "未开票"
+        isfk = "已付款" if of_id in sk_sum else "未付款"
+        kpje = _fmt_export_money(kp_sum.get(of_id))
+        skje = _fmt_export_money(sk_sum.get(of_id))
+        order_time = _fmt_export_dt(raw.get("orderTime") or raw.get("addTime") or of.get("addTime"))
+        order_id = raw.get("orderId") or of.get("orderId") or ""
+        company = raw.get("customerName") or of.get("customerName") or ""
+        total_price = _fmt_export_money(raw.get("totalPrice") if raw else of.get("totalPrice"))
+        status_label = _export_order_status_label(raw.get("orderStatus"))
         xskprq = first_kp.get(of_id, "")
         xsskrq = first_sk.get(of_id, "")
 
         for i, ch in enumerate(kids):
-            goods_total = None
+            goods_total = ""
             child_price = _to_decimal(ch.get("goodsPrice"))
             child_nums = _to_decimal(ch.get("goodsNums"))
             if child_price is not None and child_nums is not None:
-                goods_total = child_price * child_nums
+                goods_total = _fmt_export_money(child_price * child_nums)
             if i == 0:
                 row = [
                     str(nums),
@@ -5311,17 +5745,18 @@ def build_experiment_order_export_matrix(
                     ch.get("goodsSpec") or "",
                     ch.get("projectName") or "",
                     ch.get("country") or "",
-                    total_price if total_price is not None else "",
-                    goods_total if goods_total is not None else "",
+                    total_price,
+                    goods_total,
                     iskp,
                     xskprq,
-                    kpje if kpje is not None else "",
+                    kpje,
                     isfk,
                     xsskrq,
-                    skje if skje is not None else "",
+                    skje,
                     status_label,
                 ]
             else:
+                # 对齐 Java：同单后续行清空主单展示字段
                 row = [
                     "",
                     "",
@@ -5332,7 +5767,7 @@ def build_experiment_order_export_matrix(
                     ch.get("projectName") or "",
                     ch.get("country") or "",
                     "",
-                    goods_total if goods_total is not None else "",
+                    goods_total,
                     "",
                     "",
                     "",

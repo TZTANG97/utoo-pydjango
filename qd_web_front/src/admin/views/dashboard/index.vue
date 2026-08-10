@@ -297,8 +297,8 @@ const logs = computed<WelcomeLogItem[]>(() => welcome.value?.newlogs || [])
 const showLogs = computed(() => welcomeUserType.value === 1)
 const showAssets = computed(() => {
   if (welcome.value?.showAssets != null) return Boolean(welcome.value.showAssets)
-  // 对齐 Java welcome.htm：2/3/4/6/7/14；不含 0（公共账号/外部合作空白页）
-  return [2, 3, 4, 6, 7, 14].includes(welcomeUserType.value)
+  // 2/3/4/5/6/7/14；不含 0（公共账号/外部合作空白页）；5=制单员
+  return [2, 3, 4, 5, 6, 7, 14].includes(welcomeUserType.value)
 })
 /** Java userType3==2（仅销售主管/销售人员）；C类等强制关闭 */
 const showSaleChart = computed(() => {
@@ -476,6 +476,17 @@ const actionCards = computed<Card[]>(() => {
       onClick: () => router.push({ name: 'FundPersonalPay' }),
     })
   }
+  // 制单员(userType=5)：新增商品 + 新增实验订单（对齐 Java welcome.html）
+  if (t === 5) {
+    cards.push({
+      key: 'goods',
+      title: '新增商品',
+      desc: lite ? undefined : '录入商品资料',
+      icon: '品',
+      tone: 'action-card--order',
+      onClick: () => router.push({ name: 'OpsGoods' }),
+    })
+  }
   if ([3, 4, 5, 7].includes(t)) {
     cards.push({
       key: 'create',
@@ -512,6 +523,8 @@ const bannerHint = computed(() => {
   const t = welcomeUserType.value
   if (t === 0) return '当前账号类型在欢迎页无图表与快捷入口，请从左侧菜单进入业务模块'
   if (t === 1) return '查看近期交易与系统动态，或从下方快捷入口进入常用模块'
+  if (t === 2) return '查看账户资产，或从下方快捷入口进入资金与数字化模块'
+  if (t === 5) return '从下方快捷入口新增商品或实验订单，查看测试订单与账户资产'
   // 测试主管(ut2=5) / 测试人员(ut2=3)
   if (t === 3 && welcomeUserType2.value === 5) {
     return '处理待审核订单，查看测试数量与账户资产'

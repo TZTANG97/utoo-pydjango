@@ -10,28 +10,39 @@ from apps.core.db_utils import fetch_all, scalar
 
 
 def _resolve_welcome_user_type(utoo_type: str | None) -> int:
-    """对齐 Java IndexViewController.indexHtml（welcome.htm）的 userType。
+    """对齐 Java welcome 角色分流（精确 type 名优先，兼顾 indexHtmlAjax）。
 
-    Java 用 compareRole 比「一级权限 roleName」，不是精确 type 名：
-    - 制单员 / 公司基金 / 仓库管理 / 外部投资 / 销售人员… 的 roleName 均为「A类销售人员」
-      → 在 A_SALESPERSON 分支命中 → userType=4（后续 5/6/7 分支实际不可达）
-    - 仅「公司账号」→ 2（公司基金不是公司账号）
-    - 公共账号 / 外部合作公司 / 外部公司 → 0（空白欢迎页，无图表）
+    新系统走 /vue/welcome.ajax，公司基金需与公司账号同为 userType=2（资金支出入口）。
+    制单员按枚举分支为 userType=5（入口：新增商品/新增实验订单；资产图见 show_assets）。
+    公共账号 / 外部合作* → 0（空白页，无图表）。
     """
     role = (utoo_type or "").strip()
     if not role:
         return 0
     upper = role.upper()
 
+    # 0 公共 / 外部合作：尽早返回，避免被「销售」等泛匹配误伤
+    if role in ("公共账号", "外部合作公司", "外部合作账号", "外部公司") or any(
+        key in role for key in ("公共账号", "外部合作", "外部公司")
+    ):
+        return 0
+    if upper in ("PUBLIC", "OUT_COOPERATE_COMPANY", "OUT_COMPANY"):
+        return 0
+
     # 1 系统管理员
     if role == "系统管理员" or "系统管理员" in role or upper == "ADMIN" or role == "admin":
         return 1
 
-    # 2 仅公司账号（不可把「公司基金」算进来）
-    if role == "公司账号" or role == "公司" or upper == "COMPANY":
+    # 2 公司基金 / 公司账号（对齐 indexHtmlAjax：A_COMPANY_FUND || COMPANY）
+    if (
+        role in ("公司基金", "公司账号", "公司")
+        or "公司基金" in role
+        or "公司账号" in role
+        or upper in ("COMPANY", "A_COMPANY_FUND")
+    ):
         return 2
 
-    # 3 销售主管 / 测试主管（TEST_MANAGER.roleName=销售主管）
+    # 3 销售主管 / 测试主管
     if (
         role in ("销售主管", "测试主管")
         or "销售主管" in role
@@ -40,49 +51,41 @@ def _resolve_welcome_user_type(utoo_type: str | None) -> int:
     ):
         return 3
 
-    # 4 A类销售人员族 + C/R 类 + 测试人员
-    # 含：销售人员、制单员、公司基金、仓库管理、外部投资、原厂、内勤、C类、R类…
-    a_sale_exact = {
-        "销售人员",
-        "制单员",
-        "公司基金",
-        "仓库管理",
-        "外部投资",
-        "原厂销售人员",
-        "内勤主管",
-        "A类销售人员",
-        "测试人员",
-    }
-    if role in a_sale_exact:
-        return 4
-    if any(
-        key in role
-        for key in (
-            "制单",
-            "公司基金",
-            "仓库",
-            "外部投资",
-            "原厂",
-            "内勤",
-            "C类",
-            "R类",
-            "A类销售",
-        )
-    ):
-        return 4
-    if role == "测试人员" or (
-        "测试人员" in role and "测试主管" not in role
-    ) or upper == "TEST_USER":
-        return 4
-    # 泛匹配「销售人员」类（已排除销售主管）
-    if "销售" in role and "销售主管" not in role:
-        return 4
+    # 5 制单员（精确分支；勿并入销售人员=4，否则入口卡与旧「制单」页不一致）
+    if role == "制单员" or "制单" in role or upper == "A_ORDER_ADDER":
+        return 5
+
+    # 6 外部投资
+    if role == "外部投资" or "外部投资" in role or upper == "A_OUT_INVEST":
+        return 6
+
+    # 7 仓库管理
+    if role == "仓库管理" or "仓库" in role or upper == "A_STORE_MANAGER":
+        return 7
 
     # 14 H类用户
     if "H类" in role or role.startswith("H类") or upper.startswith("H_"):
         return 14
 
-    # 0 公共账号 / 外部合作公司 / 外部公司 等
+    # 4 销售人员 / 测试人员 / C·R·原厂·内勤 等
+    if role == "测试人员" or (
+        "测试人员" in role and "测试主管" not in role
+    ) or upper == "TEST_USER":
+        return 4
+    if role in (
+        "销售人员",
+        "原厂销售人员",
+        "内勤主管",
+        "A类销售人员",
+        "C类销售人员",
+        "R类人员",
+    ):
+        return 4
+    if any(key in role for key in ("原厂", "内勤", "C类", "R类", "A类销售")):
+        return 4
+    if "销售" in role and "销售主管" not in role:
+        return 4
+
     return 0
 
 
@@ -90,7 +93,7 @@ def _resolve_welcome_user_type2(utoo_type: str | None, user_type: int) -> int:
     """对齐 Java IndexViewController userType2（精确名称判断）。
 
     1=管理员交易图；3=测试人员测试数量；4=销售人员测试年/月图；5=测试主管测试数量。
-    C类/原厂/R类/制单员/公司基金等 → 0（无额外图表，仅资产+运营卡）。
+    C类/原厂/R类/制单员/公司基金等 → 0（无额外业绩图，仅资产+运营/入口卡）。
     """
     role = (utoo_type or "").strip()
     upper = role.upper()
@@ -923,9 +926,10 @@ def build_welcome_payload(
     )
 
     account_rmb, account_us = _user_available_balances(user_id)
-    # Java welcome.html：资产饼图 DOM 在 userType 2/3/4/7/14（及不可达的 6）；
-    # userType=0（公共账号/外部合作）为空白页，不得展示图表。
-    show_assets = user_type in (2, 3, 4, 6, 7, 14)
+    # 资产饼图：公司基金/主管/销售/制单员/投资/仓库/H类；
+    # userType=0（公共账号/外部合作）空白页，不得展示图表（旧 show_assets 含 0 是错误）。
+    # 制单员=5：Java 模板因 compareRole 常落成 4 才有资产图，精确分支 5 时需显式开启。
+    show_assets = user_type in (2, 3, 4, 5, 6, 7, 14)
     show_logs = user_type == 1
 
     pending = (

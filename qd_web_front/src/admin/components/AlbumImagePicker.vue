@@ -15,7 +15,7 @@
         :class="{ active: selectedId === Number(img.id) }"
         @click="selectImage(img)"
       >
-        <img :src="imageUrl(img)" :alt="String(img.name || '')" />
+        <img :src="imageUrl(img)" :alt="String(img.name || '')" referrerpolicy="no-referrer" />
       </button>
       <div v-if="!loading && !images.length" class="empty">暂无图片</div>
     </div>

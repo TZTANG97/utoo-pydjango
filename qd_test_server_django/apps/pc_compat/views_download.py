@@ -9,7 +9,7 @@ from rest_framework.response import Response
 
 from apps.core.order_forward import forward_order_first
 from apps.core.responses import api_fail
-from apps.orders.services.file_download import load_accessory_bytes
+from apps.orders.services.file_download import content_disposition, load_accessory_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -22,13 +22,14 @@ def download_file(request: Request):
     raw_id = str(request.query_params.get("id") or "").strip()
     if not raw_id.isdigit():
         return Response(api_fail(400, "参数错误"))
+    name_hint = str(request.query_params.get("name") or "").strip()
     try:
-        data, filename = load_accessory_bytes(int(raw_id))
+        data, filename = load_accessory_bytes(int(raw_id), name_hint=name_hint)
     except DatabaseError as exc:
         logger.exception("downloadFile db error: %s", exc)
         return Response(api_fail(503, "数据库不可用，请检查 DB 配置与连接"))
     if not data:
         return Response(api_fail(404, "文件不存在"))
     response = HttpResponse(data, content_type="application/octet-stream")
-    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response["Content-Disposition"] = content_disposition(filename or "download")
     return response
