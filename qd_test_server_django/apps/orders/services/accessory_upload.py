@@ -14,7 +14,12 @@ from apps.orders.repositories import accessory as accessory_repo
 
 logger = logging.getLogger(__name__)
 
-MAX_BYTES = 10 * 1024 * 1024
+# 与 settings.MAX_UPLOAD_SIZE 对齐；缺省 50MB（发票 PDF 常大于旧默认 10MB）
+def _max_upload_bytes() -> int:
+    try:
+        return int(getattr(settings, "MAX_UPLOAD_SIZE", 50 * 1024 * 1024) or (50 * 1024 * 1024))
+    except (TypeError, ValueError):
+        return 50 * 1024 * 1024
 
 
 def save_order_attachment(
@@ -28,14 +33,17 @@ def save_order_attachment(
 ) -> tuple[bool, str, dict[str, Any]]:
     if not data:
         return False, "文件为空", {}
-    if len(data) > MAX_BYTES:
-        return False, "文件大小不能超过10MB", {}
+    max_bytes = _max_upload_bytes()
+    if len(data) > max_bytes:
+        mb = max(1, max_bytes // (1024 * 1024))
+        return False, f"文件大小不能超过{mb}MB", {}
 
     file_ext = Path(orig_name or "upload").suffix.lower() or ".bin"
     filename = f"{uuid.uuid4().hex}{file_ext}"
-    upload_root = Path(settings.UPLOAD_DIR)
+    upload_root = Path(getattr(settings, "UPLOAD_DIR", None) or "upload")
     if not upload_root.is_absolute():
-        upload_root = Path(settings.BASE_DIR) / upload_root
+        base = Path(getattr(settings, "BASE_DIR", Path.cwd()))
+        upload_root = base / upload_root
     target_dir = upload_root / "order"
     try:
         target_dir.mkdir(parents=True, exist_ok=True)

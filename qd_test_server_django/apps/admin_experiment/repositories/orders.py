@@ -4368,7 +4368,7 @@ def create_sub_order_from_parent(
                     pay_way = NULLIF(%(pw)s, ''),
                     taxes = NULLIF(%(tx)s, ''),
                     collection_time = NULLIF(%(ctm)s, ''),
-                    mark = NULLIF(%(mk)s, '')
+                    msg = NULLIF(%(mk)s, '')
                 WHERE id = %(id)s
                 """,
                 {
@@ -4378,10 +4378,10 @@ def create_sub_order_from_parent(
                     "ibt": int(in_bill_type_id) if in_bill_type_id.isdigit() else None,
                     "otm": order_time[:19] if order_time else "",
                     "dt": delivery_time[:19] if delivery_time else "",
-                    "pw": pay_way if pay_way.isdigit() else None,
+                    "pw": int(pay_way) if pay_way.isdigit() else None,
                     "tx": taxes or None,
-                    "ctm": collection_time or None,
-                    "mk": msg[:500] if msg else None,
+                    "ctm": collection_time[:500] if collection_time else None,
+                    "mk": msg[:1000] if msg else None,
                 },
             )
         except Exception:
@@ -4392,7 +4392,7 @@ def create_sub_order_from_parent(
                     SET stock_company_name = %(scn)s,
                         order_time = NULLIF(%(otm)s, ''),
                         delivery_time = NULLIF(%(dt)s, ''),
-                        mark = NULLIF(%(mk)s, '')
+                        msg = NULLIF(%(mk)s, '')
                     WHERE id = %(id)s
                     """,
                     {
@@ -4400,7 +4400,7 @@ def create_sub_order_from_parent(
                         "scn": stock_company or None,
                         "otm": order_time[:19] if order_time else "",
                         "dt": delivery_time[:19] if delivery_time else "",
-                        "mk": msg[:500] if msg else None,
+                        "mk": msg[:1000] if msg else None,
                     },
                 )
             except Exception:
@@ -4447,7 +4447,6 @@ def create_sub_order_from_parent(
                     custom_user_id = COALESCE(NULLIF(%(cu)s, ''), custom_user_id),
                     order_time = NULLIF(%(otm)s, ''),
                     delivery_time = NULLIF(%(dt)s, ''),
-                    mark = NULLIF(%(mk)s, ''),
                     msg = NULLIF(%(mk)s, '')
                 WHERE id = %(id)s
                 """,
@@ -4461,7 +4460,7 @@ def create_sub_order_from_parent(
                     "cu": custom_user_id if custom_user_id.isdigit() else "",
                     "otm": order_time[:19] if order_time else "",
                     "dt": delivery_time[:19] if delivery_time else "",
-                    "mk": msg[:500] if msg else None,
+                    "mk": msg[:1000] if msg else None,
                 },
             )
         except Exception:
@@ -4473,7 +4472,6 @@ def create_sub_order_from_parent(
                         sale_user = COALESCE(NULLIF(%(su)s, ''), sale_user),
                         order_time = NULLIF(%(otm)s, ''),
                         delivery_time = NULLIF(%(dt)s, ''),
-                        mark = NULLIF(%(mk)s, ''),
                         msg = NULLIF(%(mk)s, '')
                     WHERE id = %(id)s
                     """,
@@ -4483,7 +4481,7 @@ def create_sub_order_from_parent(
                         "su": sale_user or "",
                         "otm": order_time[:19] if order_time else "",
                         "dt": delivery_time[:19] if delivery_time else "",
-                        "mk": msg[:500] if msg else None,
+                        "mk": msg[:1000] if msg else None,
                     },
                 )
             except Exception:
@@ -4698,11 +4696,14 @@ def create_exp_order(
     accessory_ids: list[Any] | None = None,
 ) -> tuple[bool, str, int | None]:
     """
-    创建实验主单（order_type=6），对齐 Java submitExpOrder / saveExpOrders。
+    创建实验主单（order_type=6）或实验分包主单（order_type=8），
+    对齐 Java submitExpOrder / saveExpOrders。
     成功返回 (True, 新订单数字 id 字符串, id)。
     """
     header = header or {}
     children = [c for c in (children or []) if isinstance(c, dict)]
+    raw_ot = str(_pick(header, "order_type", "orderType", default="6") or "6").strip()
+    order_type = raw_ot if raw_ot in ("6", "8") else "6"
     customer_name = str(
         _pick(header, "customer_name", "customerName", "customerId", default="")
     ).strip()
@@ -4712,7 +4713,8 @@ def create_exp_order(
     if not customer_name and not custom_user_id:
         return False, "提交订单失败,客户名称和客户账号不能同时为空!", None
     if not children:
-        return False, "实验订单至少选择一个产品才可提交!", None
+        label = "实验分包订单" if order_type == "8" else "实验订单"
+        return False, f"{label}至少选择一个产品才可提交!", None
 
     class_id = _pick(header, "class_id", "classId", default="")
     supplier_name = str(
@@ -4807,31 +4809,44 @@ def create_exp_order(
     add_uid = str(user_id or "").strip()
 
     mobile = ""
+    # 客户公司电话：库列为 contract_phone（勿用 camelCase contractPhone）
     if customer_name and str(customer_name).isdigit():
-        crow = fetch_one(
-            "SELECT contract_phone AS contractPhone FROM qd_user_company WHERE id = %(id)s LIMIT 1",
-            {"id": int(customer_name)},
-        )
-        if crow and crow.get("contractPhone"):
-            mobile = str(crow["contractPhone"])
+        try:
+            crow = fetch_one(
+                "SELECT contract_phone AS contractPhone FROM qd_user_company WHERE id = %(id)s LIMIT 1",
+                {"id": int(customer_name)},
+            )
+            if crow and crow.get("contractPhone"):
+                mobile = str(crow["contractPhone"])
+        except Exception:
+            try:
+                crow = fetch_one(
+                    "SELECT contractPhone FROM qd_user_company WHERE id = %(id)s LIMIT 1",
+                    {"id": int(customer_name)},
+                )
+                if crow and crow.get("contractPhone"):
+                    mobile = str(crow["contractPhone"])
+            except Exception:
+                pass
     if custom_user_id and str(custom_user_id).isdigit():
-        urow = fetch_one(
-            """
-            SELECT mobile FROM exp_user WHERE id = %(id)s LIMIT 1
-            """,
-            {"id": int(custom_user_id)},
-        )
-        if not urow or not urow.get("mobile"):
+        try:
             urow = fetch_one(
-                "SELECT mobile FROM `user` WHERE id = %(id)s LIMIT 1",
+                "SELECT mobile FROM exp_user WHERE id = %(id)s LIMIT 1",
                 {"id": int(custom_user_id)},
             )
-        if urow and urow.get("mobile"):
-            mobile = str(urow["mobile"])
+            if not urow or not urow.get("mobile"):
+                urow = fetch_one(
+                    "SELECT mobile FROM `user` WHERE id = %(id)s LIMIT 1",
+                    {"id": int(custom_user_id)},
+                )
+            if urow and urow.get("mobile"):
+                mobile = str(urow["mobile"])
+        except Exception:
+            pass
 
     params = {
         "ono": order_no[:80],
-        "ot": "6",
+        "ot": order_type,
         "st": 5,
         "mobile": mobile[:50] if mobile else None,
         "rev": reverso_context,
@@ -4840,6 +4855,7 @@ def create_exp_order(
         "am": addressee_mobile[:50] if addressee_mobile else None,
         "inv": invoice_type,
         "msg": msg[:1000] if msg else None,
+        "mark": None,
         "otm": order_time[:19],
         "sm": sale_manager or None,
         "su": sale_user or None,
@@ -4847,18 +4863,18 @@ def create_exp_order(
         "cust": int(customer_name) if str(customer_name).isdigit() else None,
         "sup": supplier_name if str(supplier_name).isdigit() else None,
         "ct": int(currency_type) if str(currency_type).isdigit() else 1,
-        "pw": pay_way or None,
+        "pw": int(pay_way) if str(pay_way).isdigit() else None,
         "ga": goods_amount,
         "delv": delivery_time[:19] if delivery_time else None,
-        "tx": taxes or None,
+        "tx": taxes if taxes not in (None, "") else None,
         "tp": total_price,
         "class_id": class_id_int,
         "obt": out_bill_type_id if str(out_bill_type_id).isdigit() else None,
         "add_uid": add_uid or None,
         "exp_type": exp_type_id,
         "ctm": collection_time[:500] if collection_time else None,
-        "usi": user_scale_info[:2000] if user_scale_info else None,
-        "scsi": salecb_user_scale_info[:2000] if salecb_user_scale_info else None,
+        "usi": (user_scale_info[:500] if user_scale_info else None),
+        "scsi": (salecb_user_scale_info[:255] if salecb_user_scale_info else None),
         "online": is_online,
     }
 
@@ -4878,7 +4894,7 @@ def create_exp_order(
             VALUES
                 (NOW(), 0, %(ono)s, %(ot)s, %(st)s,
                  %(mobile)s, %(rev)s, %(addr)s, %(an)s, %(am)s,
-                 0, 0, %(inv)s, %(msg)s, %(msg)s,
+                 0, 0, %(inv)s, %(msg)s, %(mark)s,
                  %(otm)s, %(sm)s, %(su)s, %(cuid)s, %(cust)s,
                  %(sup)s, %(ct)s, %(pw)s, %(ga)s,
                  %(delv)s, %(tx)s, %(tp)s, %(class_id)s, %(obt)s,
@@ -4898,7 +4914,7 @@ def create_exp_order(
                 VALUES
                     (NOW(), 0, %(ono)s, %(ot)s, %(st)s,
                      %(tp)s, %(sm)s, %(su)s, %(cust)s, %(sup)s,
-                     %(ct)s, %(inv)s, %(class_id)s, %(msg)s, %(msg)s)
+                     %(ct)s, %(inv)s, %(class_id)s, %(msg)s, %(mark)s)
                 """,
                 params,
             )

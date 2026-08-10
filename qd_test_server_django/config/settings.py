@@ -220,7 +220,10 @@ OSS_ACCESS_KEY_SECRET = env("OSS_ACCESS_KEY_SECRET", default="")
 OSS_PUBLIC_BASE_URL = env("OSS_PUBLIC_BASE_URL", default="")
 IMAGE_WEB_SERVER = env("IMAGE_WEB_SERVER", default="")
 UPLOAD_DIR = env("UPLOAD_DIR", default="upload")
-MAX_UPLOAD_SIZE = env.int("MAX_UPLOAD_SIZE", default=10 * 1024 * 1024)
+MAX_UPLOAD_SIZE = env.int("MAX_UPLOAD_SIZE", default=50 * 1024 * 1024)
+# 网关转发 multipart 前也会解析 body；默认 2.5MB 会导致大文件 413
+DATA_UPLOAD_MAX_MEMORY_SIZE = env.int("DATA_UPLOAD_MAX_MEMORY_SIZE", default=MAX_UPLOAD_SIZE)
+FILE_UPLOAD_MAX_MEMORY_SIZE = env.int("FILE_UPLOAD_MAX_MEMORY_SIZE", default=MAX_UPLOAD_SIZE)
 
 WEIXIN_APPID = env("WEIXIN_APPID", default="")
 WEIXIN_SECRET = env("WEIXIN_SECRET", default="")

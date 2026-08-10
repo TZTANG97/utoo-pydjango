@@ -28,6 +28,10 @@ def admin_ajax_view(*, require_staff: bool = True):
                 return fn(request, *args, **kwargs)
             except DatabaseError as exc:
                 logger.exception("%s db error: %s", fn.__name__, exc)
+                # 把常见列名/SQL 错误透出，避免一律显示「数据库不可用」难排查
+                detail = str(exc).strip()
+                if "Unknown column" in detail or "1054" in detail:
+                    return Response(ajax_fail(f"数据库字段异常：{detail}"))
                 return Response(ajax_fail("数据库不可用，请检查 DB 配置与连接"))
             except Exception as exc:
                 logger.exception("%s failed: %s", fn.__name__, exc)

@@ -67,7 +67,9 @@ def forward_request(
     params = dict(request.query_params)
     try:
         # 本机微服务转发禁止走系统 HTTP_PROXY，否则上游宕机会变成空 502 被误报为「非 JSON」
-        with httpx.Client(timeout=30.0, trust_env=False) as client:
+        # 大文件上传（订单/发票资料）需要更长超时
+        timeout = 120.0 if request.method.upper() == "POST" else 30.0
+        with httpx.Client(timeout=timeout, trust_env=False) as client:
             if request.method.upper() == "GET":
                 upstream = client.get(url, params=params, headers=headers)
             elif request.method.upper() == "POST":
@@ -112,6 +114,15 @@ def forward_request(
     except json.JSONDecodeError:
         body = (upstream.content or b"").decode("utf-8", errors="replace").strip()
         host = base_url.rstrip("/")
+        if upstream.status_code == 413:
+            return Response(
+                {
+                    "code": 413,
+                    "message": f"{service_name}拒绝：上传文件过大（HTTP 413），请压缩后重试或联系管理员提高上限",
+                    "data": None,
+                },
+                status=413,
+            )
         if upstream.status_code >= 500 or not body:
             return Response(
                 {

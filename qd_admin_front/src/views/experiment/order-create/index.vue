@@ -526,12 +526,12 @@ import {
   getExpOrderDetail,
   submitExpOrder,
   uploadExpOrderFile,
-} from '@/api/experiment'
-import { fetchCustomerAccounts, fetchCustomerNamesExp } from '@/api/member'
-import { fetchBillTypeAll, fetchPaytypeAll, fetchTaxAll } from '@/api/order-settings'
-import { fetchSupplierAll, fetchUserList } from '@/api/system'
-import { useTagsViewStore } from '@/stores/tags-view'
-import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
+} from '@admin/api/experiment'
+import { fetchCustomerAccounts, fetchCustomerNamesExp } from '@admin/api/member'
+import { fetchBillTypeAll, fetchPaytypeAll, fetchTaxAll } from '@admin/api/order-settings'
+import { fetchSupplierAll, fetchUserList } from '@admin/api/system'
+import { useTagsViewStore } from '@admin/stores/tags-view'
+import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
 type Opt = { value: string | number; label: string; nums?: number; scaleVal?: string }
 type ShareRow = { userId: string; value: string }
