@@ -1083,7 +1083,7 @@ def order_export(request: Request, user=None):
             or data.get("finished_only")
             or ""
         ).lower() in ("1", "true", "yes")
-        headers, matrix = order_repo.build_sub_order_export_matrix(
+        headers, matrix, merges = order_repo.build_sub_order_export_matrix(
             order_type=order_type,
             finished_only=finished_only,
             limit=5000,
@@ -1095,7 +1095,7 @@ def order_export(request: Request, user=None):
         else:
             sheet = "实验子订单测试完成" if finished_only else "实验子订单"
             file_name = "实验子订单测试完成.xlsx" if finished_only else "实验子订单.xlsx"
-        raw = excel_util.rows_to_xlsx(headers, matrix, sheet_name=sheet)
+        raw = excel_util.rows_to_xlsx(headers, matrix, sheet_name=sheet, merges=merges)
         return ok(
             {
                 "fileName": file_name,

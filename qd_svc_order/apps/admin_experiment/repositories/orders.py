@@ -5663,14 +5663,64 @@ def _load_pay_bill_summary(order_ids: list[int]) -> dict[int, tuple[str, str]]:
     }
 
 
+def _load_sub_order_export_customer_meta(order_ids: list[int]) -> dict[int, dict[str, str]]:
+    """bjexport 客户名称/客户账号：子单自身 + 父单，账号优先 mobile（对齐 Java customUser）。"""
+    if not order_ids:
+        return {}
+    placeholders = ", ".join(f"%(oid{i})s" for i in range(len(order_ids)))
+    params = {f"oid{i}": oid for i, oid in enumerate(order_ids)}
+    rows = fetch_all(
+        f"""
+        SELECT
+            t.id AS oid,
+            COALESCE(NULLIF(q.name, ''), NULLIF(pq.name, '')) AS customerName,
+            COALESCE(
+                NULLIF(cu.mobile, ''),
+                NULLIF(cu2.mobile, ''),
+                NULLIF(pcu.mobile, ''),
+                NULLIF(pcu2.mobile, ''),
+                NULLIF(cu.userName, ''),
+                NULLIF(cu2.userName, ''),
+                NULLIF(pcu.userName, ''),
+                NULLIF(pcu2.userName, '')
+            ) AS customMobile
+        FROM experiment_order t
+        LEFT JOIN experiment_order p ON t.parent_id = p.id
+        LEFT JOIN qd_user_company q ON t.customer_name = q.id
+        LEFT JOIN qd_user_company pq ON p.customer_name = pq.id
+        LEFT JOIN exp_user cu ON CAST(t.custom_user_id AS CHAR) = CAST(cu.id AS CHAR)
+        LEFT JOIN `user` cu2 ON CAST(t.custom_user_id AS CHAR) = CAST(cu2.id AS CHAR)
+        LEFT JOIN exp_user pcu ON CAST(p.custom_user_id AS CHAR) = CAST(pcu.id AS CHAR)
+        LEFT JOIN `user` pcu2 ON CAST(p.custom_user_id AS CHAR) = CAST(pcu2.id AS CHAR)
+        WHERE t.id IN ({placeholders})
+        """,
+        params,
+    )
+    out: dict[int, dict[str, str]] = {}
+    for r in rows:
+        try:
+            oid = int(r.get("oid"))
+        except (TypeError, ValueError):
+            continue
+        name = str(r.get("customerName") or "").strip()
+        mobile = str(r.get("customMobile") or "").strip()
+        if mobile == "-":
+            mobile = ""
+        out[oid] = {"customerName": name, "customMobile": mobile}
+    return out
+
+
 def build_sub_order_export_matrix(
     *,
     order_type: str = "10",
     finished_only: bool = False,
     limit: int = 5000,
     **filters: Any,
-) -> tuple[list[str], list[list]]:
-    """对齐 Java experimentChildOrder/export.htm 与 bjexport.htm。"""
+) -> tuple[list[str], list[list], list[str]]:
+    """对齐 Java experimentChildOrder/export.htm 与 bjexport.htm。
+
+    返回 (headers, matrix, merges)；merges 为 Excel A1 引用（含表头行）。
+    """
     ot = str(order_type or "10")
     if ot not in ("9", "10"):
         ot = "10"
@@ -5701,39 +5751,16 @@ def build_sub_order_export_matrix(
 
     orders, _ = list_sub_orders(**list_kwargs)
     if not orders:
-        return headers, []
+        return headers, [], []
 
     order_ids = [int(o["id"]) for o in orders if o.get("id") is not None]
     children_by_of = _load_sub_order_child_lines(order_ids)
     pay_by_of = {} if finished_only else _load_pay_bill_summary(order_ids)
-
-    parent_meta: dict[str, dict[str, Any]] = {}
-    if finished_only:
-        parent_nos = [
-            str(o.get("parentOrderId") or "").strip()
-            for o in orders
-            if o.get("parentOrderId")
-            and str(o.get("parentOrderId")) not in ("自主发起", "自主发起配件采购")
-        ]
-        uniq = list(dict.fromkeys(parent_nos))
-        if uniq:
-            pph = ", ".join(f"%(pn{i})s" for i in range(len(uniq)))
-            pparams = {f"pn{i}": n for i, n in enumerate(uniq)}
-            prows = fetch_all(
-                f"""
-                SELECT t.order_id AS orderId, q.name AS customerName, u.mobile AS customMobile
-                FROM experiment_order t
-                LEFT JOIN qd_user_company q ON t.customer_name = q.id
-                LEFT JOIN `user` u ON t.custom_user_id = u.id
-                WHERE t.order_id IN ({pph})
-                """,
-                pparams,
-            )
-            for pr in prows:
-                parent_meta[str(pr.get("orderId") or "")] = pr
+    cust_meta = _load_sub_order_export_customer_meta(order_ids) if finished_only else {}
 
     type_name = "实验子订单" if ot == "10" else "实验分包子订单"
     matrix: list[list] = []
+    merges: list[str] = []
     nums = 1
     for o in orders:
         try:
@@ -5752,9 +5779,14 @@ def build_sub_order_export_matrix(
             continue
         sk_dates, sk_money = pay_by_of.get(oid, ("", ""))
         parent_no = str(o.get("parentOrderId") or "")
-        pm = parent_meta.get(parent_no) or {}
+        cm = cust_meta.get(oid) or {}
+        cust_name = str(cm.get("customerName") or o.get("customerName") or "").strip()
+        cust_account = str(cm.get("customMobile") or "").strip()
+        if cust_account == "-":
+            cust_account = ""
         stock_name = str(o.get("stockCompanyName") or "")
         pay_label = _export_sub_pay_status_label(o.get("payStatus"))
+        group_start = len(matrix)  # 0-based matrix index
         for i, ch in enumerate(kids):
             if finished_only:
                 if i == 0:
@@ -5762,8 +5794,8 @@ def build_sub_order_export_matrix(
                         str(nums),
                         _fmt_export_dt_slash(o.get("orderTime"), date_only=True),
                         parent_no,
-                        str(pm.get("customerName") or o.get("customerName") or ""),
-                        str(pm.get("customMobile") or ""),
+                        cust_name,
+                        cust_account,
                         str(o.get("orderId") or ""),
                         str(o.get("orderStatusLabel") or ""),
                         str(o.get("confirmLabel") or ""),
@@ -5780,16 +5812,16 @@ def build_sub_order_export_matrix(
                         str(ch.get("sjdate") or ""),
                     ]
                 else:
-                    # 对齐 Java：后续行清空主单部分字段（保留父单客户信息）
+                    # 对齐 Java：多测项续行主单列留空，由单元格合并展示
                     row = [
                         "",
                         "",
-                        parent_no,
-                        str(pm.get("customerName") or o.get("customerName") or ""),
-                        str(pm.get("customMobile") or ""),
                         "",
                         "",
-                        str(o.get("confirmLabel") or ""),
+                        "",
+                        "",
+                        "",
+                        "",
                         "",
                         str(ch.get("goodsName") or ""),
                         str(ch.get("goodsSpec") or ""),
@@ -5852,5 +5884,21 @@ def build_sub_order_export_matrix(
                         str(ch.get("sjdate") or ""),
                     ]
             matrix.append(row)
+        if finished_only and len(kids) > 1:
+            # 表头占第 1 行，数据从第 2 行；合并序号~确认状态（A-H）
+            excel_start = group_start + 2
+            excel_end = group_start + len(kids) + 1
+            for col_idx in range(8):  # A..H
+                col = _excel_col_letter(col_idx)
+                merges.append(f"{col}{excel_start}:{col}{excel_end}")
         nums += 1
-    return headers, matrix
+    return headers, matrix, merges
+
+
+def _excel_col_letter(idx: int) -> str:
+    n = idx + 1
+    letters: list[str] = []
+    while n:
+        n, rem = divmod(n - 1, 26)
+        letters.append(chr(65 + rem))
+    return "".join(reversed(letters))

@@ -44,8 +44,12 @@ def rows_to_xlsx(
     rows: list[list],
     *,
     sheet_name: str = "Sheet1",
+    merges: list[str] | None = None,
 ) -> bytes:
-    """生成可被 Excel 打开的 .xlsx 字节流。"""
+    """生成可被 Excel 打开的 .xlsx 字节流。
+
+    merges: 可选，形如 ["A2:A5", "B2:B5"]（Excel A1 引用，含表头行号）。
+    """
     sheet_safe = re.sub(r"[\\/*?:\[\]]", "_", (sheet_name or "Sheet1")[:31]) or "Sheet1"
     max_row = 1 + len(rows)
     max_col = max(len(headers), 1)
@@ -62,9 +66,17 @@ def rows_to_xlsx(
     sheet_parts.append(f'<row r="1">{cells}</row>')
     for r_idx, row in enumerate(rows, start=2):
         padded = list(row) + [""] * max(0, len(headers) - len(row))
-        cells = "".join(_cell_xml(r_idx, i, padded[i]) for i in range(len(headers)))
+        cells = "".join(_cell_xml(r_idx, i, padded[i]) for i, _ in enumerate(headers))
         sheet_parts.append(f'<row r="{r_idx}">{cells}</row>')
-    sheet_parts.append("</sheetData></worksheet>")
+    sheet_parts.append("</sheetData>")
+
+    merge_refs = [str(m).strip() for m in (merges or []) if str(m).strip()]
+    if merge_refs:
+        sheet_parts.append(f'<mergeCells count="{len(merge_refs)}">')
+        for ref in merge_refs:
+            sheet_parts.append(f'<mergeCell ref="{escape(ref)}"/>')
+        sheet_parts.append("</mergeCells>")
+    sheet_parts.append("</worksheet>")
     sheet_xml = "".join(sheet_parts)
 
     content_types = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
