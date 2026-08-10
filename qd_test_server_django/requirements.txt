@@ -13,6 +13,8 @@ pytest-django>=4.9,<5
 httpx>=0.27,<0.28
 PyJWT>=2.8,<3
 reportlab>=4.0,<5
+# reportlab 会拉 pillow；12.x 在发版机常落到源码编译且旧 gcc 失败，钉 10.4 走 manylinux wheel
+Pillow>=10.4.0,<11
 
 wechatpayv3>=1.2.0,<2
 cryptography>=41.0.0,<44
