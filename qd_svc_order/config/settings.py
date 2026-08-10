@@ -88,6 +88,9 @@ OSS_ENDPOINT = env("OSS_ENDPOINT", default="")
 OSS_BUCKET = env("OSS_BUCKET", default="qgongye")
 OSS_PUBLIC_BASE_URL = env("OSS_PUBLIC_BASE_URL", default="")
 IMAGE_WEB_SERVER = env("IMAGE_WEB_SERVER", default="")
+# 订单资料等本地落盘目录（相对路径相对本服务 BASE_DIR）
+UPLOAD_DIR = env("UPLOAD_DIR", default="upload")
+MAX_UPLOAD_SIZE = env.int("MAX_UPLOAD_SIZE", default=10 * 1024 * 1024)
 
 # 公众号模板消息（对齐 Java gzh.appid / gzh.secret / gzh.send）
 WEIXIN_APPID = env("WEIXIN_APPID", default="")
