@@ -334,11 +334,17 @@ function openDetail(row: Record<string, unknown>) {
 }
 
 function onCreate() {
-  ElMessage.info('创建实验分包订单功能将在后续批次完善')
+  router.push({
+    name: 'ExperimentOrderCreate',
+    query: { orderType: '8' },
+  })
 }
 
-function onCopy(_row: Record<string, unknown>) {
-  ElMessage.info('复制建单功能后续完善')
+function onCopy(row: Record<string, unknown>) {
+  router.push({
+    name: 'ExperimentOrderCreate',
+    query: { orderType: '8', copyFrom: String(row.id) },
+  })
 }
 
 function downloadCsv(filename: string, dataRows: Record<string, unknown>[]) {

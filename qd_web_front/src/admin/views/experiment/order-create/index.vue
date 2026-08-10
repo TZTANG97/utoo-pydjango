@@ -568,7 +568,18 @@ const copyFromId = computed(() => {
   return s && s !== '0' ? s : ''
 })
 const isCopyMode = computed(() => Boolean(copyFromId.value))
-const pageTitle = computed(() => (isCopyMode.value ? '复制订单' : '新增实验订单'))
+/** 6=实验订单，8=实验分包订单 */
+const createOrderType = computed(() => {
+  const raw = String(route.query.orderType || route.query.type || '6').trim()
+  return raw === '8' ? '8' : '6'
+})
+const isSubcontractCreate = computed(() => createOrderType.value === '8')
+const pageTitle = computed(() => {
+  if (isSubcontractCreate.value) {
+    return isCopyMode.value ? '复制实验分包订单' : '新增实验分包订单'
+  }
+  return isCopyMode.value ? '复制订单' : '新增实验订单'
+})
 /** Java 复制页：线上订单 is_online=1 时付款方式不可改 */
 const isOnlineOrder = ref(false)
 
@@ -989,7 +1000,9 @@ async function loadOptions() {
     ])
     if (copyFromId.value) {
       await fillFromCopy(copyFromId.value)
-      tagsView.updateViewTitle(route.path, '复制订单')
+      tagsView.updateViewTitle(route.path, pageTitle.value)
+    } else {
+      tagsView.updateViewTitle(route.path, pageTitle.value)
     }
   } finally {
     loading.value = false
@@ -1254,7 +1267,7 @@ async function onSave() {
   }
   syncTotalPrice()
   const header: Record<string, unknown> = {
-    order_type: '6',
+    order_type: createOrderType.value,
     order_time: form.orderTime,
     class_id: form.classId,
     sale_manager: form.saleManager,
@@ -1307,9 +1320,17 @@ async function onSave() {
     const newId = res.resMsg || res.obj
     ElMessage.success('保存成功')
     if (newId) {
-      router.push({ name: 'ExperimentOrderDetail', params: { id: String(newId) } })
+      router.push({
+        name: 'ExperimentOrderDetail',
+        params: { id: String(newId) },
+        query: {
+          from: isSubcontractCreate.value ? 'subcontract-orders' : 'orders',
+        },
+      })
     } else {
-      router.push({ name: 'ExperimentOrders' })
+      router.push({
+        name: isSubcontractCreate.value ? 'ExperimentSubcontractOrders' : 'ExperimentOrders',
+      })
     }
   } finally {
     saving.value = false
