@@ -261,15 +261,32 @@
         <template v-if="form.invoiceType && !isExpSub">
           <el-col :span="12">
             <el-form-item :label="isSubcontractSub ? '进项开票类型' : '出项开票类型'" required>
+              <!-- v-model 必须是成员表达式，不能写三元（否则 vite:vue 构建失败） -->
               <el-select
-                v-model="isSubcontractSub ? form.inBillTypeId : form.outBillTypeId"
+                v-if="isSubcontractSub"
+                v-model="form.inBillTypeId"
                 filterable
                 clearable
                 placeholder="请选择"
                 style="width: 100%"
               >
                 <el-option
-                  v-for="o in isSubcontractSub ? inBillOpts : outBillOpts"
+                  v-for="o in inBillOpts"
+                  :key="String(o.value)"
+                  :label="o.label"
+                  :value="o.value"
+                />
+              </el-select>
+              <el-select
+                v-else
+                v-model="form.outBillTypeId"
+                filterable
+                clearable
+                placeholder="请选择"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="o in outBillOpts"
                   :key="String(o.value)"
                   :label="o.label"
                   :value="o.value"
