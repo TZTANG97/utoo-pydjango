@@ -224,6 +224,27 @@ export async function downloadExpOrderFile(
   id: string | number,
   displayName?: string
 ): Promise<{ ok: boolean; message?: string }> {
+  const result = await fetchExpOrderFileBlob(id, displayName)
+  if (!result.ok || !result.blob) {
+    return { ok: false, message: result.message || '下载失败' }
+  }
+  const objUrl = URL.createObjectURL(result.blob)
+  const a = document.createElement('a')
+  a.href = objUrl
+  a.download = result.filename || displayName || `file-${id}`
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(objUrl)
+  return { ok: true }
+}
+
+/** 拉取附件字节（本地盘 / OSS），供下载与预览共用 */
+export async function fetchExpOrderFileBlob(
+  id: string | number,
+  displayName?: string
+): Promise<{ ok: boolean; blob?: Blob; filename?: string; message?: string }> {
   const { getToken } = await import('@admin/utils/auth')
   const token = getToken() || ''
   const base = (import.meta.env.VITE_APP_BASE_API as string) || '/api'
@@ -270,21 +291,41 @@ export async function downloadExpOrderFile(
       if (m) {
         filename = decodeURIComponent((m[1] || m[2] || filename).trim())
       }
-      const objUrl = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = objUrl
-      a.download = filename
-      a.style.display = 'none'
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(objUrl)
-      return { ok: true }
+      const lower = filename.toLowerCase()
+      let mime = blob.type || 'application/octet-stream'
+      if (lower.endsWith('.pdf')) mime = 'application/pdf'
+      else if (lower.endsWith('.png')) mime = 'image/png'
+      else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) mime = 'image/jpeg'
+      const typed =
+        mime && mime !== blob.type
+          ? new Blob([blob], { type: mime })
+          : blob
+      return { ok: true, blob: typed, filename }
     } catch (e) {
       lastErr = e instanceof Error ? e.message : lastErr
     }
   }
   return { ok: false, message: lastErr }
+}
+
+/** 预览附件：经后端取流后新开页，避免直链 OSS NoSuchKey */
+export async function previewExpOrderFile(
+  id: string | number,
+  displayName?: string
+): Promise<{ ok: boolean; message?: string }> {
+  const result = await fetchExpOrderFileBlob(id, displayName)
+  if (!result.ok || !result.blob) {
+    return { ok: false, message: result.message || '预览失败' }
+  }
+  const objUrl = URL.createObjectURL(result.blob)
+  const win = window.open(objUrl, '_blank')
+  if (!win) {
+    URL.revokeObjectURL(objUrl)
+    return { ok: false, message: '浏览器拦截了预览窗口，请允许弹窗后重试' }
+  }
+  // 延迟释放，给新标签加载时间
+  window.setTimeout(() => URL.revokeObjectURL(objUrl), 60_000)
+  return { ok: true }
 }
 
 export const updateExpOrderMsg = (id: string | number, msg: string) =>

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -109,6 +108,34 @@ def _try_http_download(url: str) -> Optional[bytes]:
         return None
 
 
+def _local_file_candidates(upload_root: Path, path: str, name: str) -> list[Path]:
+    """兼容 path=upload/order + UPLOAD_DIR=.../upload 与 path=order 等历史写法。"""
+    filename = (name or "").strip().lstrip("/")
+    path_norm = (path or "").strip().replace("\\", "/").strip("/")
+    key = f"{path_norm}/{filename}" if path_norm and filename else (path_norm or filename)
+    out: list[Path] = []
+    if filename:
+        out.append(upload_root / "order" / filename)
+        out.append(upload_root / filename)
+    if key:
+        out.append(upload_root / Path(*key.split("/")))
+        parts = key.split("/")
+        if len(parts) >= 2 and parts[0] == "upload":
+            out.append(upload_root / Path(*parts[1:]))
+        if upload_root.name == "upload" and parts and parts[0] == "upload":
+            out.append(upload_root.parent / Path(*parts))
+    # de-dupe preserve order
+    seen: set[str] = set()
+    uniq: list[Path] = []
+    for p in out:
+        s = str(p)
+        if s in seen:
+            continue
+        seen.add(s)
+        uniq.append(p)
+    return uniq
+
+
 def load_accessory_bytes(
     accessory_id: int, *, name_hint: str = ""
 ) -> tuple[Optional[bytes], str]:
@@ -125,8 +152,9 @@ def load_accessory_bytes(
     upload_root = Path(getattr(settings, "UPLOAD_DIR", None) or "upload")
     if not upload_root.is_absolute():
         upload_root = Path(getattr(settings, "BASE_DIR", Path.cwd())) / upload_root
-    if key:
-        local_path = upload_root / key.replace("/", os.sep)
+    for local_path in _local_file_candidates(
+        upload_root, str(acc.get("path") or ""), str(acc.get("name") or "")
+    ):
         if local_path.is_file():
             return local_path.read_bytes(), download_name
 

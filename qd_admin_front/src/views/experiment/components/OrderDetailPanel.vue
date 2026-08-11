@@ -618,9 +618,8 @@
                 <div v-for="f in orderFiles" :key="'of-' + String(f.id)" class="file-item">
                   <a
                     class="file-name"
-                    :href="fileUrl(f)"
-                    target="_blank"
-                    rel="noopener"
+                    href="#"
+                    @click.prevent="onPreviewFile(f)"
                   >{{ fileLabel(f) }}</a>
                   <el-button type="success" size="small" @click="onDownloadFile(f)">下载</el-button>
                   <el-button type="danger" size="small" :loading="acting" @click="onDeleteFile(f)">
@@ -643,9 +642,8 @@
                 <div v-for="f in invoiceFiles" :key="'inv-' + String(f.id)" class="file-item">
                   <a
                     class="file-name"
-                    :href="fileUrl(f)"
-                    target="_blank"
-                    rel="noopener"
+                    href="#"
+                    @click.prevent="onPreviewFile(f)"
                   >{{ fileLabel(f) }}</a>
                   <el-button type="success" size="small" @click="onDownloadFile(f)">下载</el-button>
                   <el-button type="danger" size="small" :loading="acting" @click="onDeleteFile(f)">
@@ -799,7 +797,7 @@
             <template #default="{ row }">
               <template v-if="Array.isArray(row.accessoryList) && row.accessoryList.length">
                 <div v-for="f in row.accessoryList" :key="'cf-' + String(f.id)" class="inline-file">
-                  <a :href="fileUrl(f)" target="_blank" rel="noopener">{{ fileLabel(f) }}</a>
+                  <a href="#" @click.prevent="onPreviewFile(f)">{{ fileLabel(f) }}</a>
                 </div>
               </template>
               <span v-else>-</span>
@@ -904,7 +902,7 @@
             <template #default="{ row }">
               <template v-if="Array.isArray(row.testFiles) && row.testFiles.length">
                 <div v-for="f in row.testFiles" :key="'tf-' + String(f.id)" class="inline-file">
-                  <a :href="fileUrl(f)" target="_blank" rel="noopener">{{ fileLabel(f) }}</a>
+                  <a href="#" @click.prevent="onPreviewFile(f)">{{ fileLabel(f) }}</a>
                 </div>
               </template>
               <el-upload
@@ -1479,6 +1477,7 @@ import {
   uploadExpOrderFile,
   deleteExpOrderFile,
   downloadExpOrderFile,
+  previewExpOrderFile,
   updateExpOrderMsg,
   withdrawExpOrderAudit,
 } from '@admin/api/experiment'
@@ -1820,6 +1819,19 @@ function fileUrl(f: Record<string, unknown>) {
   const name = String(f.name || '')
   if (path && name) return `${path}/${name}`
   return path || name || '#'
+}
+
+async function onPreviewFile(f: Record<string, unknown>) {
+  const id = Number(f.id)
+  if (!id) {
+    ElMessage.warning('文件无效')
+    return
+  }
+  const name = fileLabel(f)
+  const result = await previewExpOrderFile(id, name)
+  if (!result.ok) {
+    ElMessage.error(result.message || '预览失败')
+  }
 }
 
 async function onDownloadFile(f: Record<string, unknown>) {
