@@ -51,11 +51,13 @@ def _register_payload(
     child: dict[str, Any],
     order: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    project = ""
-    if order:
-        project = str(order.get("projectName") or order.get("goodsName") or "")
-    if not project:
-        project = str(child.get("goodsName") or "")
+    project = str(
+        child.get("projectName")
+        or child.get("goodsName")
+        or (order or {}).get("projectName")
+        or (order or {}).get("goodsName")
+        or ""
+    )
     sample = str(child.get("sampleId") or child.get("goodsName") or "")[:500]
     callback = ""
     # 可选：由环境拼回调；IOT 也可用自身 UTOO_CALLBACK_URL

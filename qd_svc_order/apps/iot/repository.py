@@ -63,6 +63,7 @@ def get_child(child_id: int) -> dict[str, Any] | None:
             c.line_id AS lineId,
             c.order_status AS orderStatus,
             c.goods_name AS goodsName,
+            c.experiment_project_name AS projectName,
             c.sample_id AS sampleId
         FROM experiment_order_child c
         WHERE c.id = %(id)s AND IFNULL(c.delete_status, 2) <> 1
@@ -93,11 +94,11 @@ def resolve_order_pk(child: dict[str, Any] | None) -> int | None:
 
 
 def load_order_brief(order_pk: int | None = None, business_order_id: str = "") -> dict[str, Any] | None:
+    # 主单无 goods_name/project_name；品名在 experiment_order_child
     if order_pk:
         row = fetch_one(
             """
-            SELECT id, order_id AS orderId, custom_user_id AS customUserId,
-                   mobile, goods_name AS goodsName, project_name AS projectName
+            SELECT id, order_id AS orderId, custom_user_id AS customUserId, mobile
             FROM experiment_order
             WHERE id = %(id)s
             LIMIT 1
@@ -111,8 +112,7 @@ def load_order_brief(order_pk: int | None = None, business_order_id: str = "") -
         return None
     return fetch_one(
         """
-        SELECT id, order_id AS orderId, custom_user_id AS customUserId,
-               mobile, goods_name AS goodsName, project_name AS projectName
+        SELECT id, order_id AS orderId, custom_user_id AS customUserId, mobile
         FROM experiment_order
         WHERE order_id = %(oid)s
         LIMIT 1
