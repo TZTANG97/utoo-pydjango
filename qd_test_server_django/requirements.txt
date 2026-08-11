@@ -18,4 +18,4 @@ Pillow>=10.4.0,<11
 
 wechatpayv3>=1.2.0,<2
 cryptography>=41.0.0,<44
-# D1+: oss2
+oss2>=2.18.0,<3
