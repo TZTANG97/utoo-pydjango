@@ -858,7 +858,7 @@
         <el-table v-else :data="editChildren" border stripe class="detail-table">
           <el-table-column type="index" width="50" label="#" align="center" />
           <el-table-column prop="childOrderId" label="子单号" min-width="130" show-overflow-tooltip />
-          <el-table-column prop="goodsName" label="产品名称" min-width="120" show-overflow-tooltip />
+          <el-table-column prop="goodsName" label="产品名称" min-width="120" show-overflow-tooltip fixed="left" />
           <el-table-column prop="goodsSpec" label="型号" min-width="100" show-overflow-tooltip />
           <el-table-column prop="goodsBrand" label="品牌" min-width="90" show-overflow-tooltip />
           <el-table-column prop="goodsCount" label="数量" width="70" align="center" />
@@ -892,39 +892,188 @@
               }}
             </template>
           </el-table-column>
-          <el-table-column v-if="isChildKind" prop="price" label="单价" width="90" align="right" />
+          <!-- type=10 实验子订单产品列：对齐 Java / admin 详情 -->
+          <el-table-column v-if="orderType === '10'" prop="price" label="单价" width="90" align="right" />
           <el-table-column
-            v-if="isChildKind"
+            v-if="orderType === '10'"
             prop="referencePrice"
             label="测试金额"
+            width="100"
+            align="right"
+          >
+            <template #default="{ row }">
+              <el-input
+                v-if="detail.canEditReferencePrice"
+                v-model="row.referencePrice"
+                size="small"
+                @blur="onSaveReferencePrice(row)"
+              />
+              <span v-else>{{ row.referencePrice ?? '-' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column
+            v-if="isChildKind"
+            prop="testUserName"
+            :label="orderType === '9' ? '测试人员' : '测试员'"
+            width="100"
+          />
+          <el-table-column v-if="orderType === '10'" prop="deviceName" label="设备名称" min-width="100" show-overflow-tooltip />
+          <el-table-column v-if="orderType === '10'" label="实验平台" min-width="100" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{
+                row.platformName && String(row.platformName) !== '-1'
+                  ? row.platformName
+                  : '-'
+              }}
+            </template>
+          </el-table-column>
+          <el-table-column v-if="orderType === '10'" prop="confirmLabel" label="是否确认" width="90" align="center" />
+          <el-table-column
+            v-if="orderType === '10'"
+            prop="confirmMark"
+            label="确认描述"
+            min-width="100"
+            show-overflow-tooltip
+          />
+          <el-table-column v-if="orderType === '10'" label="确认文件" min-width="140">
+            <template #default="{ row }">
+              <template v-if="Array.isArray(row.accessoryList) && row.accessoryList.length">
+                <div v-for="f in row.accessoryList" :key="'cf-' + String(f.id)" class="inline-file">
+                  <a href="#" @click.prevent="onPreviewFile(f)">{{ fileLabel(f) }}</a>
+                </div>
+              </template>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
+          <el-table-column
+            v-if="orderType === '9'"
+            prop="costPrice"
+            label="分包单价"
             width="90"
             align="right"
           />
           <el-table-column
             v-if="isChildKind"
-            prop="testUserName"
-            label="测试员"
+            prop="orderStatusLabel"
+            label="状态"
             width="100"
           />
-          <el-table-column v-if="orderType === '10'" prop="deviceName" label="设备名称" min-width="100" show-overflow-tooltip />
-          <el-table-column v-if="orderType === '10'" prop="platformName" label="实验平台" min-width="100" show-overflow-tooltip />
-          <el-table-column v-if="orderType === '10'" prop="storePosition" label="仓库位置" min-width="120" show-overflow-tooltip />
-          <el-table-column v-if="orderType === '10'" label="样品管理单" min-width="110" show-overflow-tooltip>
+          <el-table-column
+            v-if="orderType === '9' || orderType === '10'"
+            prop="jtTime"
+            label="具体完成时间"
+            width="160"
+            show-overflow-tooltip
+          />
+          <el-table-column
+            v-if="orderType === '9'"
+            label="预估完成时间"
+            width="120"
+          >
             <template #default="{ row }">
-              {{
-                row.sampleShow
-                  ? [row.sampleInfo?.sampleName, row.sampleInfo?.sampleNum].filter(Boolean).join(' / ') || '有'
-                  : '-'
-              }}
+              {{ row.estimateFinish ?? '0' }}{{ row.timeTypeLabel ? ` ${row.timeTypeLabel}` : '' }}
             </template>
           </el-table-column>
-          <el-table-column v-if="orderType === '10'" prop="retestOrderNo" label="关联复测编号" min-width="120" show-overflow-tooltip />
+          <el-table-column v-if="orderType === '10'" prop="expectFinishTime" label="预计完成时间" width="160" show-overflow-tooltip />
+          <el-table-column v-if="orderType === '10'" label="预估完成时间" width="120">
+            <template #default="{ row }">
+              {{ row.estimateFinish ?? '0' }}{{ row.timeTypeLabel ? ` ${row.timeTypeLabel}` : '' }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            v-if="orderType === '9' || orderType === '10'"
+            label="实际完成时间"
+            width="140"
+          >
+            <template #default="{ row }">
+              <span>{{ row.sjsj ?? row.actualFinish ?? '-' }}</span>
+              <el-select
+                v-if="detail.canSaveFinish"
+                :model-value="String(row.timeType || '')"
+                size="small"
+                style="width: 72px; margin-left: 4px"
+                @change="(v) => onSaveTimeType(row, String(v))"
+              >
+                <el-option label="分钟" value="3" />
+                <el-option label="小时" value="1" />
+                <el-option label="天" value="2" />
+              </el-select>
+              <span v-else-if="row.timeTypeLabel"> {{ row.timeTypeLabel }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column
+            v-if="orderType === '9' || orderType === '10'"
+            prop="storePosition"
+            label="仓库位置"
+            min-width="120"
+            show-overflow-tooltip
+          />
+          <el-table-column
+            v-if="orderType === '9' || orderType === '10'"
+            label="样品管理单"
+            min-width="130"
+            show-overflow-tooltip
+          >
+            <template #default="{ row }">
+              <el-button
+                v-if="row.outNum"
+                link
+                type="primary"
+                @click="onOpenSampleOrder(row)"
+              >
+                {{ row.outNum }}
+              </el-button>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
+          <el-table-column
+            v-if="orderType === '9' || orderType === '10'"
+            prop="retestOrderNo"
+            label="关联复测编号"
+            min-width="120"
+            show-overflow-tooltip
+          />
           <el-table-column v-if="orderType === '10'" prop="settingTime" label="预约云视频时间" width="160" show-overflow-tooltip />
           <el-table-column v-if="orderType === '10'" prop="meetingNum" label="腾讯会议号" width="110" show-overflow-tooltip />
-          <el-table-column v-if="orderType === '10'" prop="jtTime" label="具体完成时间" width="160" show-overflow-tooltip />
-          <el-table-column v-if="orderType === '9'" prop="costPrice" label="分包单价" width="90" align="right" />
-          <el-table-column v-if="isChildKind" prop="confirmLabel" label="确认" width="80" align="center" />
-          <el-table-column v-if="isChildKind && orderType === '10'" label="预计完成时间" width="170">
+          <el-table-column
+            v-if="orderType === '9' || orderType === '10'"
+            label="测试数据"
+            min-width="160"
+          >
+            <template #default="{ row }">
+              <template v-if="Array.isArray(row.testFiles) && row.testFiles.length">
+                <div v-for="f in row.testFiles" :key="'tf-' + String(f.id)" class="inline-file">
+                  <a href="#" @click.prevent="onPreviewFile(f)">{{ fileLabel(f) }}</a>
+                </div>
+              </template>
+              <el-upload
+                :show-file-list="false"
+                :http-request="(opt) => onUploadChildTestFile(opt, row)"
+                accept="*/*"
+              >
+                <el-button link type="primary" size="small">上传</el-button>
+              </el-upload>
+            </template>
+          </el-table-column>
+          <el-table-column
+            v-if="orderType === '9' || orderType === '10'"
+            label="样品信息"
+            width="90"
+            align="center"
+          >
+            <template #default="{ row }">
+              <el-button
+                v-if="row.sampleShow"
+                link
+                type="warning"
+                @click="onViewSampleInfo(row)"
+              >
+                查看
+              </el-button>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
+          <el-table-column v-if="orderType === '10'" label="保存预计完成" width="170">
             <template #default="{ row }">
               <el-date-picker
                 v-if="detail.canSaveFinish"
@@ -938,16 +1087,10 @@
             </template>
           </el-table-column>
           <el-table-column
-            v-else-if="isChildKind"
+            v-else-if="orderType === '9'"
             prop="finishTime"
             label="完成时间"
             width="170"
-          />
-          <el-table-column
-            v-if="isChildKind"
-            prop="orderStatusLabel"
-            label="状态"
-            width="100"
           />
         </el-table>
       </section>
@@ -1466,6 +1609,8 @@ import {
   sampleReturnExpOrder,
   sampleShipExpOrder,
   saveExpOrderFinish,
+  saveExpChildReferencePrice,
+  updateExpChildTimeType,
   saveExpOrderInvoiceBill,
   saveExpOrderReceiveBill,
   submitExpOrderAudit,
@@ -2609,6 +2754,87 @@ async function onSaveReceive() {
   })
 }
 
+async function onSaveReferencePrice(row: Record<string, unknown>) {
+  const childId = Number(row.id)
+  if (!childId) return
+  await runAction(async () => {
+    const res = await saveExpChildReferencePrice({
+      id: childId,
+      referencePrice: row.referencePrice,
+    })
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '保存测试金额失败'))
+      return
+    }
+    ElMessage.success(String(res.resMsg || '已保存'))
+    await load()
+  })
+}
+
+async function onSaveTimeType(row: Record<string, unknown>, timeType: string) {
+  const childId = Number(row.id)
+  if (!childId) return
+  await runAction(async () => {
+    const res = await updateExpChildTimeType({ id: childId, timeType })
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '保存时间单位失败'))
+      return
+    }
+    row.timeType = timeType
+    ElMessage.success(String(res.resMsg || '已保存'))
+    await load()
+  })
+}
+
+function onOpenSampleOrder(row: Record<string, unknown>) {
+  const gotId = row.gotId
+  const outNum = String(row.outNum || '').trim()
+  if (!gotId && !outNum) {
+    ElMessage.warning('无样品单号')
+    return
+  }
+  router.push({
+    name: 'InventorySampleOrders',
+    query: {
+      ...(gotId ? { id: String(gotId) } : {}),
+      ...(outNum ? { outNum } : {}),
+    },
+  })
+}
+
+function onViewSampleInfo(row: Record<string, unknown>) {
+  const info = (row.sampleInfo || {}) as Record<string, unknown>
+  const name = String(info.sampleName || row.sampleName || '-')
+  const num = String(info.sampleNum || row.sampleNum || '-')
+  ElMessageBox.alert(
+    `<div>样品名称：${name}</div><div>样品数量：${num}</div>`,
+    '样品信息',
+    { dangerouslyUseHTMLString: true, confirmButtonText: '关闭' }
+  )
+}
+
+async function onUploadChildTestFile(
+  options: { file: File },
+  row: Record<string, unknown>
+) {
+  const childId = Number(row.id)
+  if (!childId) return
+  const fd = new FormData()
+  fd.append('orderdata', options.file)
+  fd.append('id', String(props.orderId))
+  fd.append('childId', String(childId))
+  fd.append('type', '4')
+  await runAction(async () => {
+    const res = await uploadExpOrderFile(fd)
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '上传失败'))
+      return
+    }
+    ElMessage.success(String(res.resMsg || '上传成功'))
+    await load()
+  })
+}
+
 async function onSaveFinish() {
   await runAction(async () => {
     const items = editChildren.value.map((c) => ({
@@ -3370,6 +3596,12 @@ defineExpose({ reload: load })
 }
 .file-name:hover {
   text-decoration: underline;
+}
+.inline-file {
+  line-height: 1.5;
+  a {
+    color: var(--sea);
+  }
 }
 .remark-row :deep(.el-textarea) {
   flex: 1;

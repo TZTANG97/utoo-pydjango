@@ -784,7 +784,15 @@
             width="100"
           />
           <el-table-column v-if="orderType === '10'" prop="deviceName" label="设备名称" min-width="100" show-overflow-tooltip />
-          <el-table-column v-if="orderType === '10'" prop="platformName" label="实验平台" min-width="100" show-overflow-tooltip />
+          <el-table-column v-if="orderType === '10'" label="实验平台" min-width="100" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{
+                row.platformName && String(row.platformName) !== '-1'
+                  ? row.platformName
+                  : '-'
+              }}
+            </template>
+          </el-table-column>
           <el-table-column v-if="orderType === '10'" prop="confirmLabel" label="是否确认" width="90" align="center" />
           <el-table-column
             v-if="orderType === '10'"
