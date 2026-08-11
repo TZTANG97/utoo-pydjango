@@ -37,7 +37,8 @@ def fetch_print_pdf_rows(order_id: int) -> list[dict[str, Any]]:
             osi.gold_desc
         FROM experiment_order eo
         LEFT JOIN service_consult sc ON eo.id = sc.order_id
-        LEFT JOIN experiment_order_child eoc ON eo.id = eoc.order_form_id
+        LEFT JOIN experiment_order_child eoc
+          ON eo.id = eoc.order_form_id AND IFNULL(eoc.delete_status, 2) <> 1
         LEFT JOIN order_sample_information osi ON eoc.sample_id = osi.id
         WHERE eo.id = %(oid)s
         """,

@@ -3839,13 +3839,25 @@ def _resolve_pdf_font() -> str:
 def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool, str]:
     """生成预约单 PDF 并写入 accessory type=6。
 
-    收件人/电话/寄送地址优先取所选 test_address，其次咨询单/订单收件字段。
+    版式对齐 C 端 /make（Java printpdf.ajax）：标题+二维码+边框表格，
+    含实验项目/订单编号/下单时间/寄送地址/是否回收/样品明细。
     """
     try:
         from io import BytesIO
 
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT
         from reportlab.lib.pagesizes import A4
-        from reportlab.pdfgen import canvas
+        from reportlab.lib.styles import ParagraphStyle
+        from reportlab.lib.units import mm
+        from reportlab.platypus import (
+            Image,
+            Paragraph,
+            SimpleDocTemplate,
+            Spacer,
+            Table,
+            TableStyle,
+        )
 
         from apps.orders.repositories import accessory as accessory_repo
         from apps.orders.repositories import print_pdf as print_pdf_repo
@@ -3853,112 +3865,241 @@ def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool
     except Exception as exc:
         return False, f"缺少 PDF 依赖: {exc}"
 
-    order = fetch_one(
-        """
-        SELECT
-            t.id, t.order_id AS orderNo,
-            q.name AS customerName, u.company_name AS supplierName,
-            t.addTime, t.send_address AS sendAddress,
-            t.addressee_name AS shipUser, t.addressee_mobile AS shipPhone,
-            sc.userName AS consultUser, sc.mobile AS consultMobile,
-            sc.send_address AS consultSendAddress
-        FROM experiment_order t
-        LEFT JOIN qd_user_company q ON t.customer_name = q.id
-        LEFT JOIN `user` u ON t.supplier_name = u.id
-        LEFT JOIN service_consult sc ON sc.order_id = t.id
-        WHERE t.id = %(id)s
-        LIMIT 1
-        """,
-        {"id": order_id},
-    )
-    if not order:
-        return False, "订单不存在"
-    addr_row = print_pdf_repo.get_test_address(test_address_id) or {} if test_address_id else {}
-    ship_user = (
-        str(addr_row.get("trueName") or "").strip()
-        or str(order.get("consultUser") or "").strip()
-        or str(order.get("shipUser") or "").strip()
-    )
-    ship_phone = (
-        str(addr_row.get("mobile") or "").strip()
-        or str(order.get("consultMobile") or "").strip()
-        or str(order.get("shipPhone") or "").strip()
-    )
+    rows = print_pdf_repo.fetch_print_pdf_rows(order_id)
+    if not rows:
+        # 兜底：无 join 明细时至少拉主单
+        order = fetch_one(
+            """
+            SELECT
+                t.id AS eid, t.order_id AS ord_id, t.addTime,
+                t.test_address_id, t.reverso_context,
+                t.send_address, t.addressee_name, t.addressee_mobile
+            FROM experiment_order t
+            WHERE t.id = %(id)s
+            LIMIT 1
+            """,
+            {"id": order_id},
+        )
+        if not order:
+            return False, "订单不存在"
+        rows = [order]
+
+    first = dict(rows[0])
+    addr_id = test_address_id or first.get("test_address_id") or 0
+    try:
+        addr_id = int(addr_id or 0)
+    except (TypeError, ValueError):
+        addr_id = 0
+    addr_row = print_pdf_repo.get_test_address(addr_id) or {} if addr_id else {}
+
+    order_no = str(first.get("ord_id") or order_id)
+    add_time = str(first.get("addTime") or "")[:19]
     address_text = (
         str(addr_row.get("address") or "").strip()
-        or str(order.get("consultSendAddress") or "").strip()
-        or str(order.get("sendAddress") or "").strip()
+        or str(first.get("sc_send_address") or "").strip()
+        or str(first.get("send_address") or "").strip()
+        or "-"
     )
-    children = fetch_all(
-        """
-        SELECT
-            order_id AS childOrderId, goods_name AS goodsName, goods_spec AS goodsSpec,
-            goods_brand_name AS goodsBrand, goods_nums AS goodsCount,
-            experiment_project_name AS projectName, experiment_class_name AS className
-        FROM experiment_order_child
-        WHERE order_form_id = %(oid)s AND IFNULL(delete_status, 2) <> 1
-        ORDER BY id ASC
-        LIMIT 100
-        """,
-        {"oid": order_id},
+    rev = first.get("reverso_context")
+    if rev in (None, "") and first.get("sc_reverso_context") not in (None, ""):
+        rev = first.get("sc_reverso_context")
+    try:
+        rev_i = int(rev) if rev not in (None, "") else 0
+    except (TypeError, ValueError):
+        rev_i = 1 if str(rev).strip().upper() in ("1", "ON", "TRUE", "YES") else 2
+    recovery_label = "是" if rev_i == 1 else ("否" if rev_i == 2 else "-")
+
+    child_list: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for row in rows:
+        r = dict(row)
+        cid = r.get("cid")
+        if not cid:
+            continue
+        try:
+            cid_i = int(cid)
+        except (TypeError, ValueError):
+            continue
+        if cid_i in seen:
+            continue
+        seen.add(cid_i)
+        child_list.append(
+            {
+                "orderId": str(r.get("ordc_id") or ""),
+                "goodsName": str(r.get("goods_name") or ""),
+                "goodsNums": r.get("goods_nums"),
+                "projectName": str(r.get("experiment_project_name") or ""),
+                "className": str(r.get("experiment_class_name") or ""),
+            }
+        )
+    if not child_list:
+        # 再查一次产品行，避免 LEFT JOIN 过滤导致空明细
+        for ch in fetch_all(
+            """
+            SELECT
+                order_id AS orderId, goods_name AS goodsName, goods_nums AS goodsNums,
+                experiment_project_name AS projectName, experiment_class_name AS className
+            FROM experiment_order_child
+            WHERE order_form_id = %(oid)s AND IFNULL(delete_status, 2) <> 1
+            ORDER BY id ASC
+            LIMIT 100
+            """,
+            {"oid": order_id},
+        ) or []:
+            child_list.append(
+                {
+                    "orderId": str(ch.get("orderId") or ""),
+                    "goodsName": str(ch.get("goodsName") or ""),
+                    "goodsNums": ch.get("goodsNums"),
+                    "projectName": str(ch.get("projectName") or ""),
+                    "className": str(ch.get("className") or ""),
+                }
+            )
+
+    project_name = (
+        (child_list[0].get("projectName") if child_list else "")
+        or str(first.get("experiment_project_name") or "").strip()
+        or "实验"
     )
     font_name = _resolve_pdf_font()
 
     try:
         buf = BytesIO()
-        c = canvas.Canvas(buf, pagesize=A4)
-        width, height = A4
-        y = height - 40
-        c.setFont(font_name, 16)
-        c.drawString(40, y, "实验预约单")
-        y -= 28
-        c.setFont(font_name, 10)
-        lines = [
-            f"订单编号：{order.get('orderNo') or order_id}",
-            f"客户名称：{order.get('customerName') or '-'}",
-            f"所属公司：{order.get('supplierName') or '-'}",
-            f"收件人：{ship_user or '-'}",
-            f"联系电话：{ship_phone or '-'}",
-            f"寄送地址：{address_text or '-'}",
-            f"制单时间：{str(order.get('addTime') or '')[:19]}",
-            "",
-            "产品明细：",
-        ]
-        for line in lines:
-            c.drawString(40, y, str(line)[:90])
-            y -= 16
-            if y < 60:
-                c.showPage()
-                c.setFont(font_name, 10)
-                y = height - 40
-        if not children:
-            c.drawString(40, y, "（暂无产品明细）")
-            y -= 14
-        for idx, ch in enumerate(children, 1):
-            text = (
-                f"{idx}. {ch.get('childOrderId') or ''} "
-                f"{ch.get('goodsName') or ''} / {ch.get('goodsSpec') or ''} "
-                f"x{ch.get('goodsCount') or ''} "
-                f"{ch.get('projectName') or ''} ({ch.get('className') or ''})"
+        doc = SimpleDocTemplate(
+            buf,
+            pagesize=A4,
+            leftMargin=18 * mm,
+            rightMargin=18 * mm,
+            topMargin=16 * mm,
+            bottomMargin=16 * mm,
+        )
+        title_style = ParagraphStyle(
+            "YydTitle",
+            fontName=font_name,
+            fontSize=16,
+            leading=22,
+            alignment=TA_CENTER,
+            spaceAfter=6,
+        )
+        cell_style = ParagraphStyle(
+            "YydCell",
+            fontName=font_name,
+            fontSize=10,
+            leading=14,
+            alignment=TA_LEFT,
+        )
+        sample_style = ParagraphStyle(
+            "YydSample",
+            fontName=font_name,
+            fontSize=10,
+            leading=16,
+            alignment=TA_LEFT,
+            spaceBefore=4,
+            spaceAfter=4,
+        )
+        tiny_style = ParagraphStyle(
+            "YydTiny",
+            fontName=font_name,
+            fontSize=7,
+            leading=9,
+            alignment=TA_CENTER,
+        )
+
+        qr_flowable = None
+        try:
+            import qrcode
+
+            qr = qrcode.QRCode(version=2, box_size=4, border=1)
+            qr.add_data(order_no)
+            qr.make(fit=True)
+            qr_img = qr.make_image(fill_color="black", back_color="white")
+            qr_buf = BytesIO()
+            qr_img.save(qr_buf, format="PNG")
+            qr_buf.seek(0)
+            qr_flowable = Image(qr_buf, width=22 * mm, height=22 * mm)
+        except Exception:
+            qr_flowable = Paragraph(order_no, tiny_style)
+
+        head = Table(
+            [
+                [
+                    Paragraph(f"{project_name}-预约单", title_style),
+                    [qr_flowable, Paragraph(order_no, tiny_style)],
+                ]
+            ],
+            colWidths=[130 * mm, 30 * mm],
+        )
+        head.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("ALIGN", (1, 0), (1, 0), "CENTER"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ]
             )
-            c.drawString(40, y, text[:95])
-            y -= 14
-            if y < 60:
-                c.showPage()
-                c.setFont(font_name, 10)
-                y = height - 40
-        c.save()
+        )
+
+        sample_parts: list[str] = []
+        if not child_list:
+            sample_parts.append("（暂无产品明细）")
+        for ch in child_list:
+            sample_parts.append(
+                "样品编号：{oid}&nbsp;&nbsp;&nbsp;"
+                "样品名称：{name}&nbsp;&nbsp;&nbsp;"
+                "样品数量：{nums}&nbsp;&nbsp;&nbsp;"
+                "实验项目：{proj}".format(
+                    oid=ch.get("orderId") or "-",
+                    name=ch.get("goodsName") or "-",
+                    nums=ch.get("goodsNums") if ch.get("goodsNums") not in (None, "") else "-",
+                    proj=ch.get("projectName") or "-",
+                )
+            )
+        sample_html = "<br/><br/>".join(sample_parts)
+
+        def _cell(text: str) -> Paragraph:
+            return Paragraph(str(text or "-").replace("\n", "<br/>"), cell_style)
+
+        data = [
+            [_cell("实验项目："), _cell(project_name)],
+            [_cell("订单编号："), _cell(order_no)],
+            [_cell("下单时间："), _cell(add_time or "-")],
+            [_cell("样品寄送地址："), _cell(address_text)],
+            [_cell("是否回收样品："), _cell(recovery_label)],
+            [Paragraph(sample_html, sample_style), ""],
+        ]
+        # 末行合并两列
+        table = Table(data, colWidths=[42 * mm, 118 * mm])
+        table.setStyle(
+            TableStyle(
+                [
+                    ("FONTNAME", (0, 0), (-1, -1), font_name),
+                    ("FONTSIZE", (0, 0), (-1, -1), 10),
+                    ("GRID", (0, 0), (-1, -1), 0.8, colors.black),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                    ("TOPPADDING", (0, 0), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                    ("BACKGROUND", (0, 0), (0, 4), colors.Color(0.96, 0.96, 0.96)),
+                    ("SPAN", (0, 5), (1, 5)),
+                ]
+            )
+        )
+
+        story = [head, Spacer(1, 8 * mm), table]
+        doc.build(story)
         pdf_bytes = buf.getvalue()
     except Exception as exc:
         return False, f"PDF 绘制失败: {exc}"
 
-    # 替换旧预约单，避免预览仍打开最早那份错误 PDF
     try:
         accessory_repo.soft_delete_yyd_attachments(order_id)
     except Exception:
         pass
 
-    order_no = str(order.get("orderNo") or order_id)
     ok_flag, msg, _meta = save_order_attachment(
         data=pdf_bytes,
         orig_name=f"{order_no}预约单.pdf",
