@@ -225,9 +225,26 @@ try {
 	)
 	$SshTarget = "$DeployUser@$deployHost"
 
+	# Warm SSH once after keyscan/cold start so the first real sync is less likely to hit exit 255.
+	Write-Host '[deploy] SSH warmup (true)'
+	$prevEapWarm = $ErrorActionPreference
+	$ErrorActionPreference = 'Continue'
+	try {
+		& $script:UtooSshExe @SshArgs $SshTarget 'true' 2>&1 | Out-Null
+	} finally {
+		$ErrorActionPreference = $prevEapWarm
+	}
+
 	function Test-UtooSshTransportFailed([int]$ExitCode) {
 		# OpenSSH: 255 = connection/protocol failure (timeout, reset, etc.)
 		return ($ExitCode -eq 255 -or $ExitCode -eq 124)
+	}
+
+	function Test-UtooSudoUnavailable([string]$ErrText) {
+		# Only treat these as "sudo -n cannot run at all". Inner command failures
+		# (pip/health/script exit != 0) must NOT fall back to no-sudo — that deletes
+		# /tmp/utoo_ci_*.sh via rm -f then masks the real error as exit 127.
+		return [bool]($ErrText -match '(?i)a password is required|sudo:.*(not allowed|no tty|a terminal is required|a password is required)|is not in the sudoers|sorry, try again|sudo: command not found|sudo: unable to resolve host')
 	}
 
 	function Invoke-UtooSshRetry {
@@ -272,8 +289,9 @@ try {
 		return (($out | Out-String).Trim())
 	}
 	function Invoke-RemoteSudo([string]$RemoteCmd) {
-		# Prefer passwordless sudo. Do NOT fall back to non-sudo on SSH timeout:
-		# that caused deploy_all to hit Permission denied on __pycache__ while single deploy looked fine.
+		# Prefer passwordless sudo. Do NOT fall back to no-sudo on inner-command failure:
+		# that caused /tmp/utoo_ci_*.sh already rm'd then "No such file" (exit 127) on retry,
+		# especially visible on first deploy after runner/SSH cold start when pip/health fails.
 		$escaped = $RemoteCmd -replace "'", "'\''"
 		$cmd = "sudo -n bash -c '$escaped'"
 		try {
@@ -282,12 +300,14 @@ try {
 			} | Out-Null
 			return
 		} catch {
-			# Only fall back when sudo itself is unavailable/denied (not SSH transport).
 			$errText = "$_"
 			if ($errText -match 'exit 255|Connection timed out|Connection refused|Connection reset') {
 				throw
 			}
-			Write-Host ('[deploy] sudo -n failed; retrying without sudo: {0}' -f $RemoteCmd) -ForegroundColor Yellow
+			if (-not (Test-UtooSudoUnavailable $errText)) {
+				throw
+			}
+			Write-Host ('[deploy] sudo -n unavailable; retrying without sudo: {0}' -f $RemoteCmd) -ForegroundColor Yellow
 			Invoke-UtooSshRetry -What ("ssh(no-sudo): $RemoteCmd") -Action {
 				& $script:UtooSshExe @SshArgs $SshTarget $RemoteCmd
 			} | Out-Null
@@ -324,7 +344,23 @@ try {
 			$unix = ($text -replace "`r`n", "`n" -replace "`r", "`n")
 			[IO.File]::WriteAllText($localSh, $unix, [Text.UTF8Encoding]::new($false))
 			Invoke-Scp -LocalPath $localSh -RemotePath $remoteSh
-			Invoke-RemoteSudo ("bash {0}; ec=`$?; rm -f {0}; exit `$ec" -f $remoteSh)
+			# Keep remote script on failure so debugging still has the file; success still cleans up.
+			$wrap = ("bash {0}; ec=`$?; if [ `$ec -eq 0 ]; then rm -f {0}; else echo [deploy] remote script failed kept={0} ec=`$ec >&2; fi; exit `$ec" -f $remoteSh)
+			try {
+				Invoke-RemoteSudo $wrap
+			} catch {
+				try {
+					$tail = Invoke-RemoteSudoCapture 'for f in /tmp/utoo_unit_*.log; do [ -f "$f" ] || continue; echo ===== "$f" =====; tail -n 40 "$f"; done; true'
+					if (-not [string]::IsNullOrWhiteSpace($tail)) {
+						Write-Host '[deploy] ---- remote /tmp/utoo_unit_*.log (tail) ----' -ForegroundColor Yellow
+						Write-Host $tail
+						Write-Host '[deploy] ---- end unit log tail ----' -ForegroundColor Yellow
+					}
+				} catch {
+					# ignore log fetch failures
+				}
+				throw
+			}
 		} finally {
 			Remove-Item -LiteralPath $localSh -Force -ErrorAction SilentlyContinue
 		}
@@ -342,7 +378,10 @@ try {
 			if ($errText -match 'exit 255|Connection timed out|Connection refused|Connection reset') {
 				throw
 			}
-			Write-Host ('[deploy] sudo -n capture failed; retrying without sudo: {0}' -f $RemoteCmd) -ForegroundColor Yellow
+			if (-not (Test-UtooSudoUnavailable $errText)) {
+				throw
+			}
+			Write-Host ('[deploy] sudo -n capture unavailable; retrying without sudo: {0}' -f $RemoteCmd) -ForegroundColor Yellow
 			$out = Invoke-UtooSshRetry -What ("ssh-capture(no-sudo): $RemoteCmd") -Action {
 				& $script:UtooSshExe @SshArgs $SshTarget $RemoteCmd
 			}
@@ -358,7 +397,7 @@ try {
 			$unix = ($text -replace "`r`n", "`n" -replace "`r", "`n")
 			[IO.File]::WriteAllText($localSh, $unix, [Text.UTF8Encoding]::new($false))
 			Invoke-Scp -LocalPath $localSh -RemotePath $remoteSh
-			$out = Invoke-RemoteSudoCapture ("bash {0}; ec=`$?; rm -f {0}; exit `$ec" -f $remoteSh)
+			$out = Invoke-RemoteSudoCapture ("bash {0}; ec=`$?; if [ `$ec -eq 0 ]; then rm -f {0}; else echo [deploy] remote script failed kept={0} ec=`$ec >&2; fi; exit `$ec" -f $remoteSh)
 			return $out
 		} finally {
 			Remove-Item -LiteralPath $localSh -Force -ErrorAction SilentlyContinue
