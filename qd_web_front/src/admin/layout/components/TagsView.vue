@@ -104,6 +104,8 @@ async function closeTag(tag: TagView) {
     viewsBefore[idx + 1] ||
     null
   tagsViewStore.delView(tag.path)
+  // 关闭详情等标签后丢弃 keep-alive 缓存，避免再次打开仍显示串单后的脏数据
+  tagsViewStore.refreshView(tag.path)
   if (!wasActive) return
 
   const views = tagsViewStore.visitedViews
