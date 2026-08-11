@@ -921,8 +921,9 @@ def _save_order_from_consult_impl(
             "sid": ch.get("sample_id") or None,
             "ct": ch.get("currency_type") or 1,
         }
+        child_pk = None
         try:
-            execute_insert(
+            child_pk = execute_insert(
                 """
                 INSERT INTO experiment_order_child
                     (add_time, delete_status, order_form_id, order_id,
@@ -941,7 +942,7 @@ def _save_order_from_consult_impl(
             )
         except Exception as exc:
             try:
-                execute_insert(
+                child_pk = execute_insert(
                     """
                     INSERT INTO experiment_order_child
                         (add_time, delete_status, order_form_id, order_id,
@@ -960,6 +961,33 @@ def _save_order_from_consult_impl(
                 )
             except Exception as exc2:
                 return False, f"创建订单子行失败：{exc2 or exc}", None
+        # 对齐 Java saveExpOrders：子行日志「创建子订单」
+        if child_pk:
+            try:
+                execute(
+                    """
+                    INSERT INTO experiment_order_child_log
+                        (addTime, deleteStatus, of_id, log_info, log_user_id)
+                    VALUES (NOW(), 0, %(oid)s, %(info)s, %(uid)s)
+                    """,
+                    {
+                        "oid": child_pk,
+                        "info": "创建子订单",
+                        "uid": staff_user_id or None,
+                    },
+                )
+            except Exception:
+                try:
+                    execute(
+                        """
+                        INSERT INTO experiment_order_child_log
+                            (addTime, deleteStatus, of_id, log_info)
+                        VALUES (NOW(), 0, %(oid)s, %(info)s)
+                        """,
+                        {"oid": child_pk, "info": "创建子订单"},
+                    )
+                except Exception:
+                    pass
 
     execute(
         """
@@ -985,6 +1013,30 @@ def _save_order_from_consult_impl(
         },
     )
     _update_consult_row(c, status=2)
+    # 对齐 Java：咨询转订单写「创建订单」操作日志
+    try:
+        execute(
+            """
+            INSERT INTO experiment_order_log (addTime, deleteStatus, of_id, log_info, log_user_id)
+            VALUES (NOW(), 0, %(oid)s, %(info)s, %(uid)s)
+            """,
+            {
+                "oid": int(order_pk),
+                "info": "创建订单",
+                "uid": staff_user_id or None,
+            },
+        )
+    except Exception:
+        try:
+            execute(
+                """
+                INSERT INTO experiment_order_log (addTime, deleteStatus, of_id, log_info)
+                VALUES (NOW(), 0, %(oid)s, %(info)s)
+                """,
+                {"oid": int(order_pk), "info": "创建订单"},
+            )
+        except Exception:
+            pass
     return True, str(order_pk), order_pk
 
 
