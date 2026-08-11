@@ -1464,6 +1464,8 @@ const tagsViewStore = useTagsViewStore()
 
 function syncDetailTagTitle(ot: string, orderNo?: string) {
   if (route.name !== 'ExperimentOrderDetail') return
+  // 仅更新「当前路由」对应标签；缓存实例在错误时机 load 时不得改写其它详情的标题
+  if (String(route.params.id || '') !== String(props.orderId || '')) return
   const queryFrom = String(route.query.from || '')
   const from = queryFrom || detailFromByOrderType(ot)
   // 仅当显式带列表 from 时补列表标签；勿按 orderType 推断，否则会从资金/支付等页硬插列表标签
@@ -2996,7 +2998,10 @@ async function onSubmitSampleAction() {
 /** keep-alive 停用期间忽略 orderId 变化，避免其它带 :id 路由误触发「订单不存在」 */
 const panelActive = ref(true)
 onActivated(() => {
+  const fromCache = !panelActive.value
   panelActive.value = true
+  // 从缓存切回时按当前 props 重新拉取（停用期间父级可能已纠正 orderId 却未 load）
+  if (fromCache && props.orderId) load()
 })
 onDeactivated(() => {
   panelActive.value = false

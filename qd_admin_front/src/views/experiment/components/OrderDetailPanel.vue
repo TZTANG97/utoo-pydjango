@@ -1518,6 +1518,8 @@ onDeactivated(() => {
 
 function syncDetailTagTitle(ot: string, orderNo?: string) {
   if (route.name !== 'ExperimentOrderDetail') return
+  // 仅更新「当前路由」对应标签；缓存实例在错误时机 load 时不得改写其它详情的标题
+  if (String(route.params.id || '') !== String(props.orderId || '')) return
   const queryFrom = String(route.query.from || '')
   const from = queryFrom || detailFromByOrderType(ot)
   // 仅当显式带列表 from 时补列表标签；勿按 orderType 推断，否则会从资金/支付等页硬插列表标签
