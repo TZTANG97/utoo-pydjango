@@ -1579,6 +1579,8 @@ const sampleVisible = ref(false)
 const sampleAction = ref<SampleAction>('arrive')
 const sampleTableRef = ref<InstanceType<typeof ElTable>>()
 const sampleSelected = ref<Record<string, unknown>[]>([])
+/** 强制单选时清表/重勾会再触发 selection-change，用锁避免递归 */
+let sampleSelectionLock = false
 const sampleStoreId = ref('')
 const sampleStorePosId = ref('')
 const sampleStoreOptions = ref<Record<string, unknown>[]>([])
@@ -1733,22 +1735,26 @@ const sampleConfirmLocation = computed(() => {
 })
 const sampleExtraHint = computed(() => {
   if (sampleAction.value === 'arrive')
-    return '请勾选已处理(状态2)的子行；仓库名称/位置可不填，填了则入库到对应仓位（选仓位时请只勾选一行）'
+    return '请勾选一条已处理(状态2)的子行；仓库名称/位置可不填，填了则入库到对应仓位'
   if (sampleAction.value === 'return')
-    return '请勾选测试完成(状态39)的子行；仓库名称/位置可不填，不选仓可多选批量归还'
+    return '请勾选一条测试完成(状态39)的子行；仓库名称/位置可不填'
   if (sampleAction.value === 'pick')
     return sampleExpectedPosLabel.value
-      ? `请勾选样品到货(状态36)的子行，并确认出库仓库位置（${sampleExpectedPosLabel.value}）`
-      : '请勾选样品到货(状态36)的子行；若已入库则须确认仓库位置出库'
+      ? `请勾选一条样品到货(状态36)的子行，并确认出库仓库位置（${sampleExpectedPosLabel.value}）`
+      : '请勾选一条样品到货(状态36)的子行；若已入库则须确认仓库位置出库'
   if (sampleAction.value === 'ship')
-    return '请勾选已归还(状态41)的子行；须确认仓库位置，并填写快递公司与单号'
-  if (sampleAction.value === 'video') return '请勾选尚未预约会议的子行，并填写预约时间与会议号'
+    return '请勾选一条已归还(状态41)的子行；须确认仓库位置，并填写快递公司与单号'
+  if (sampleAction.value === 'video')
+    return '请勾选一条尚未预约会议的子行，并填写预约时间与会议号'
   if (sampleAction.value === 'testStart')
-    return '请勾选已领用(状态37)的子行（单行），并确认实验平台与创建子单时一致'
+    return '请勾选一条已领用(状态37)的子行，并确认实验平台与创建子单时一致'
+  if (sampleAction.value === 'testEnd')
+    return '请勾选已开始测试(状态38)的子行（可多选）'
   if (sampleAction.value === 'retain')
-    return '请勾选已归还(状态41)的子行；留存可入库到留存仓；报废须确认原仓库位置'
+    return '请勾选一条已归还(状态41)的子行；留存可入库到留存仓；报废须确认原仓库位置'
+  if (sampleAction.value === 'retest') return '请勾选一条测试完成或已归还的子行'
   if (sampleAction.value === 'confirmDone')
-    return '请勾选测试完成且未确认的子行，备注必填（确认完成≠订单已完成）'
+    return '请勾选一条测试完成且未确认的子行，备注必填（确认完成≠订单已完成）'
   return ''
 })
 
@@ -2549,14 +2555,27 @@ async function submitAppointment() {
 }
 
 async function onSampleSelectionChange(rows: Record<string, unknown>[]) {
-  sampleSelected.value = rows
+  if (sampleSelectionLock) return
+  let selected = rows
+  // 对齐 Java：除「测试完成」外一次只能选一条
+  if (sampleAction.value !== 'testEnd' && rows.length > 1) {
+    ElMessage.warning('只能选择一条数据!')
+    const last = rows[rows.length - 1]
+    sampleSelectionLock = true
+    sampleTableRef.value?.clearSelection()
+    await nextTick()
+    sampleTableRef.value?.toggleRowSelection(last, true)
+    sampleSelectionLock = false
+    selected = [last]
+  }
+  sampleSelected.value = selected
   // 领用/寄回/报废：勾选一行时预填原仓库/仓位便于确认
   const needConfirmPos =
     sampleAction.value === 'pick' ||
     sampleAction.value === 'ship' ||
     (sampleAction.value === 'retain' && sampleRetainMode.value === 'scrap')
-  if (needConfirmPos && rows.length === 1) {
-    const row = rows[0]
+  if (needConfirmPos && selected.length === 1) {
+    const row = selected[0]
     const sid = row.storeId != null ? String(row.storeId) : ''
     const pid = row.storePosId != null ? String(row.storePosId) : ''
     if (sid) {
@@ -2685,6 +2704,11 @@ async function onSubmitSampleAction() {
     ElMessage.warning('请至少选择一行')
     return
   }
+  // 对齐 Java：除「测试完成」外只能一条
+  if (sampleAction.value !== 'testEnd' && ids.length !== 1) {
+    ElMessage.warning('只能选择一条数据!')
+    return
+  }
   if (sampleAction.value === 'video' && !sampleMeeting.value.trim()) {
     ElMessage.warning('请填写会议号')
     return
@@ -2709,10 +2733,6 @@ async function onSubmitSampleAction() {
       ElMessage.warning('请确认样本仓库位置!')
       return
     }
-    if (needPos && ids.length > 1) {
-      ElMessage.warning('确认仓库位置寄回时请只勾选一行')
-      return
-    }
   }
   if (sampleAction.value === 'confirmDone' && !sampleConfirmMark.value.trim()) {
     ElMessage.warning('请填写确认备注')
@@ -2725,20 +2745,12 @@ async function onSubmitSampleAction() {
       ElMessage.warning(hasStore ? '请选择仓库位置!' : '请选择仓库!')
       return
     }
-    if (hasStore && hasPos && ids.length > 1) {
-      ElMessage.warning('选择仓库位置时请只勾选一行')
-      return
-    }
   }
   if (sampleAction.value === 'return') {
     const hasStore = !!sampleStoreId.value
     const hasPos = !!sampleStorePosId.value
     if (hasStore !== hasPos) {
       ElMessage.warning(hasStore ? '请选择仓库位置!' : '请选择仓库!')
-      return
-    }
-    if (hasStore && hasPos && ids.length > 1) {
-      ElMessage.warning('选择仓库位置时请只勾选一行')
       return
     }
   }
@@ -2750,16 +2762,8 @@ async function onSubmitSampleAction() {
       ElMessage.warning('请输入样本仓库位置!')
       return
     }
-    if (needPos && ids.length > 1) {
-      ElMessage.warning('确认仓库位置出库时请只勾选一行')
-      return
-    }
   }
   if (sampleAction.value === 'testStart') {
-    if (ids.length !== 1) {
-      ElMessage.warning('开始测试请只勾选一行')
-      return
-    }
     // type=9 分包子单无实验平台，不校验（对齐 Java ceshistart）
     if (orderType.value === '10') {
       const row = sampleSelected.value[0]
@@ -2771,10 +2775,6 @@ async function onSubmitSampleAction() {
   }
   if (sampleAction.value === 'retain' && sampleRetainMode.value === 'retain') {
     if (sampleIsPosition.value === '1') {
-      if (ids.length !== 1) {
-        ElMessage.warning('入库到留存仓库时请只勾选一行')
-        return
-      }
       if (!sampleRetainStoreId.value || !sampleRetainStorePosId.value) {
         ElMessage.warning('请选择留存仓库位置')
         return
@@ -2787,10 +2787,6 @@ async function onSubmitSampleAction() {
     )
     if (needPos && !sampleStorePosId.value) {
       ElMessage.warning('请确认样本仓库位置!')
-      return
-    }
-    if (needPos && ids.length > 1) {
-      ElMessage.warning('确认仓库位置报废时请只勾选一行')
       return
     }
   }

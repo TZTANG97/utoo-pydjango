@@ -61,6 +61,15 @@ def _parse_ids(raw: Any) -> list[int]:
     return out
 
 
+def _require_single_child(ids: list[int]) -> tuple[bool, str]:
+    """对齐 Java 样品流程选行：除测试完成外一次只能一条。"""
+    if not ids:
+        return False, "请选择子单行"
+    if len(ids) != 1:
+        return False, "只能选择一条数据!"
+    return True, ""
+
+
 def _write_log(order_id: int, info: str, user_id: str | int | None = None) -> None:
     uid = str(user_id).strip() if user_id not in (None, "") else None
     try:
@@ -598,8 +607,9 @@ def sample_arrive(
     - 不选仓位：仍生成样品管理单（无仓位），仅推进状态
     """
     ids = _parse_ids(child_ids)
-    if not ids:
-        return False, "请选择子单行"
+    ok_one, err_one = _require_single_child(ids)
+    if not ok_one:
+        return False, err_one
     sid = str(store_id or "").strip()
     spos = str(store_position_id or "").strip()
     if "_" in spos:
@@ -646,8 +656,6 @@ def sample_arrive(
     pos_i: int | None = None
 
     if sid and spos:
-        if len(ids) != 1:
-            return False, "选择仓库位置时请只勾选一行"
         try:
             store_i = int(sid)
             pos_i = int(spos)
@@ -792,8 +800,9 @@ def sample_pick(
 ) -> tuple[bool, str]:
     """对齐 Java type=2：有仓位则须确认仓位，领用后清空仓位。"""
     ids = _parse_ids(child_ids)
-    if not ids:
-        return False, "请选择子单行"
+    ok_one, err_one = _require_single_child(ids)
+    if not ok_one:
+        return False, err_one
     order = _load_order(order_id)
     if not order:
         return False, "订单不存在"
@@ -907,10 +916,9 @@ def test_start(
 ) -> tuple[bool, str]:
     """对齐 Java ceshistart：type=10 校验实验平台；type=9 分包子单不校验平台。"""
     ids = _parse_ids(child_ids)
-    if not ids:
-        return False, "请选择子单行"
-    if len(ids) != 1:
-        return False, "开始测试请只勾选一行"
+    ok_one, err_one = _require_single_child(ids)
+    if not ok_one:
+        return False, err_one
     main = fetch_one(
         "SELECT order_type AS orderType FROM experiment_order WHERE id = %(id)s LIMIT 1",
         {"id": order_id},
@@ -1128,17 +1136,18 @@ def sample_return(
     store_position_id: str = "",
     staff_user_id: str | int | None = None,
 ) -> tuple[bool, str]:
-    """对齐 Java isPosition=0/1：仓库位置可选；不选仓时可批量归还。"""
+    """对齐 Java isPosition=0/1：仓库位置可选；一次只能操作一条子行。"""
     ids = _parse_ids(child_ids)
-    if not ids:
-        return False, "请选择子单行"
+    ok_one, err_one = _require_single_child(ids)
+    if not ok_one:
+        return False, err_one
     sid = str(store_id or "").strip()
     spos = str(store_position_id or "").strip()
     if "_" in spos:
         parts = spos.split("_", 1)
         if parts[0] == "storePosId" and parts[1].isdigit():
             spos = parts[1]
-    # 不选仓库：仅推进状态（对齐 Java isPosition=0），支持多选
+    # 不选仓库：仅推进状态（对齐 Java isPosition=0）
     if not sid and not spos:
         ok, msg = _set_children_status(
             order_id=order_id,
@@ -1151,8 +1160,6 @@ def sample_return(
         return (True, "样品归还成功！") if ok else (ok, msg)
     if not sid or not spos:
         return False, "请同时选择仓库名称和位置，或不选仓库直接归还"
-    if len(ids) > 1:
-        return False, "选择仓库位置时请只勾选一行"
     try:
         store_i = int(sid)
         pos_i = int(spos)
@@ -1315,10 +1322,11 @@ def sample_ship_back(
     store_position_id: str = "",
     staff_user_id: str | int | None = None,
 ) -> tuple[bool, str]:
-    """对齐 Java addExpress：快递公司/单号必填；支持多选逐行寄回。"""
+    """对齐 Java addExpress：快递公司/单号必填；一次只能操作一条子行。"""
     ids = _parse_ids(child_ids)
-    if not ids:
-        return False, "请选择子单行"
+    ok_one, err_one = _require_single_child(ids)
+    if not ok_one:
+        return False, err_one
     no = (express_no or "").strip()
     name = (express_name or "").strip()
     if not name:
@@ -1330,66 +1338,60 @@ def sample_ship_back(
     if not re.match(r"^[A-Za-z0-9\-]+$", no):
         return False, "快递单号格式不正确"
     spos = str(store_position_id or "").strip()
-    ok_n = 0
-    last_msg = "样品寄回成功！"
-    for cid in ids:
-        gotc = _child_treasury(cid)
-        confirm = spos
-        if gotc and gotc.get("storePosId") not in (None, "", 0, "0"):
-            confirm = spos or str(gotc.get("storePosId"))
-            if str(gotc.get("storePosId")) != str(confirm):
-                return False, f"样本仓库位置不正确!(子行{cid})"
-        extra_parts = [", is_sure = 1", ", in_status = 1"]
-        params: dict[str, Any] = {"eno": no[:80]}
-        # 库字段为 snake_case：express_no；快递公司名写入日志（无 express_name 列）
-        extra_parts.append(", express_no = %(eno)s")
-        log_suffix = f"样品寄回,{name} 物流单号为：{no}"
-        ok, msg = _set_children_status(
-            order_id=order_id,
-            child_ids=[cid],
-            expect_from={ST_RETURN},
-            to_status=ST_DONE,
-            log_suffix=log_suffix,
-            extra_sql="".join(extra_parts),
-            extra_params=params,
-            staff_user_id=staff_user_id,
-            bump_main="done",
-        )
-        if not ok:
-            if ok_n:
-                return True, f"已寄回 {ok_n} 行，其余失败：{msg}"
-            return ok, msg
-        ok_n += 1
-        last_msg = msg or last_msg
-        if gotc:
-            try:
-                pos_id = int(gotc.get("storePosId") or 0)
-            except (TypeError, ValueError):
-                pos_id = 0
-            if pos_id:
-                _clear_store_position(pos_id)
-            try:
-                execute(
-                    """
-                    UPDATE exp_goods_out_treasury_child
-                    SET store_id = NULL, store_position_id = NULL, got_status = 3
-                    WHERE id = %(id)s
-                    """,
-                    {"id": gotc["id"]},
-                )
-            except Exception:
-                pass
-            try:
-                execute(
-                    """
-                    INSERT INTO exp_outin_depot_log
-                        (addTime, deleteStatus, of_id, log_info)
-                    VALUES (NOW(), 0, %(of_id)s, '样品寄回')
-                    """,
-                    {"of_id": gotc.get("outId")},
-                )
-            except Exception:
-                pass
+    cid = ids[0]
+    gotc = _child_treasury(cid)
+    confirm = spos
+    if gotc and gotc.get("storePosId") not in (None, "", 0, "0"):
+        confirm = spos or str(gotc.get("storePosId"))
+        if str(gotc.get("storePosId")) != str(confirm):
+            return False, f"样本仓库位置不正确!(子行{cid})"
+    extra_parts = [", is_sure = 1", ", in_status = 1"]
+    params: dict[str, Any] = {"eno": no[:80]}
+    # 库字段为 snake_case：express_no；快递公司名写入日志（无 express_name 列）
+    extra_parts.append(", express_no = %(eno)s")
+    log_suffix = f"样品寄回,{name} 物流单号为：{no}"
+    ok, msg = _set_children_status(
+        order_id=order_id,
+        child_ids=[cid],
+        expect_from={ST_RETURN},
+        to_status=ST_DONE,
+        log_suffix=log_suffix,
+        extra_sql="".join(extra_parts),
+        extra_params=params,
+        staff_user_id=staff_user_id,
+        bump_main="done",
+    )
+    if not ok:
+        return ok, msg
+    if gotc:
+        try:
+            pos_id = int(gotc.get("storePosId") or 0)
+        except (TypeError, ValueError):
+            pos_id = 0
+        if pos_id:
+            _clear_store_position(pos_id)
+        try:
+            execute(
+                """
+                UPDATE exp_goods_out_treasury_child
+                SET store_id = NULL, store_position_id = NULL, got_status = 3
+                WHERE id = %(id)s
+                """,
+                {"id": gotc["id"]},
+            )
+        except Exception:
+            pass
+        try:
+            execute(
+                """
+                INSERT INTO exp_outin_depot_log
+                    (addTime, deleteStatus, of_id, log_info)
+                VALUES (NOW(), 0, %(of_id)s, '样品寄回')
+                """,
+                {"of_id": gotc.get("outId")},
+            )
+        except Exception:
+            pass
     try:
         from apps.admin_experiment.services.wx_suborder_notify import notify_sample_ship
 
@@ -1417,32 +1419,13 @@ def sample_retain(
     - 报废：清空仓位，子行→50
     - 留存：清空原样品库仓位；isPosition=1 时写入留存库 newStorePosId(position_status=2)
     - 全部子行完成后主单→50
+    - 一次只能操作一条子行
     """
     ids = _parse_ids(child_ids)
-    if not ids:
-        return False, "请选择子单行"
+    ok_one, err_one = _require_single_child(ids)
+    if not ok_one:
+        return False, err_one
     need_pos = str(is_position or "0").strip() in ("1", "true", "True")
-    if need_pos and not scrap and len(ids) != 1:
-        return False, "入库到留存仓库时请只勾选一行"
-    # 报废 / 不入库：支持多选
-    if len(ids) > 1 and (scrap or not need_pos):
-        ok_n = 0
-        for cid in ids:
-            ok, msg = sample_retain(
-                order_id=order_id,
-                child_ids=[cid],
-                scrap=scrap,
-                is_position="0",
-                store_pos_id=store_pos_id,
-                new_store_pos_id="",
-                staff_user_id=staff_user_id,
-            )
-            if not ok:
-                if ok_n:
-                    return True, f"已处理 {ok_n} 行，其余失败：{msg}"
-                return ok, msg
-            ok_n += 1
-        return True, f"{'样品报废' if scrap else '样品留存'}成功"
     cid = ids[0]
     child = fetch_one(
         """
@@ -1688,14 +1671,15 @@ def add_video_meeting(
     staff_user_id: str | int | None = None,
 ) -> tuple[bool, str]:
     ids = _parse_ids(child_ids)
+    ok_one, err_one = _require_single_child(ids)
+    if not ok_one:
+        return False, err_one
     num = (meeting_num or "").strip()
     if not num:
         return False, "请填写会议号"
     stime = (setting_time or "").strip()[:19]
     if not stime:
         return False, "请选择预约云视频时间"
-    if not ids:
-        return False, "请选择子单行"
     ok_n = 0
     for cid in ids:
         n = execute(
@@ -1747,8 +1731,9 @@ def confirm_children(
     staff_user_id: str | int | None = None,
 ) -> tuple[bool, str]:
     ids = _parse_ids(child_ids)
-    if not ids:
-        return False, "请选择要确认的子单行"
+    ok_one, err_one = _require_single_child(ids)
+    if not ok_one:
+        return False, err_one
     # 对齐 Java confirm.ajax：备注必填
     if not str(mark or "").strip():
         return False, "请填写确认备注"
@@ -1812,8 +1797,9 @@ def retest_apply(
     - 测试完成(39) → 样品领用(37)，下一步开始测试
     """
     ids = _parse_ids(child_ids)
-    if not ids:
-        return False, "请选择子单行"
+    ok_one, err_one = _require_single_child(ids)
+    if not ok_one:
+        return False, err_one
     ok_n = 0
     for cid in ids:
         child = fetch_one(
