@@ -52,6 +52,23 @@ def ensure_schema() -> None:
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """
     )
+    execute(
+        """
+        CREATE TABLE IF NOT EXISTS iot_ops_auth_session (
+            staff_user_id VARCHAR(64) NOT NULL PRIMARY KEY COMMENT 'UTOO 员工 id',
+            access_token TEXT NOT NULL,
+            refresh_token TEXT NULL,
+            iot_user_id VARCHAR(64) NULL DEFAULT '',
+            iot_user_name VARCHAR(128) NULL DEFAULT '',
+            iot_true_name VARCHAR(128) NULL DEFAULT '',
+            iot_dept_id VARCHAR(64) NULL DEFAULT '',
+            expires_at DATETIME NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY idx_expires (expires_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """
+    )
     for col, ddl in (
         ("iot_operator_user_id", "VARCHAR(64) NULL DEFAULT ''"),
         ("iot_operator_name", "VARCHAR(128) NULL DEFAULT ''"),
@@ -61,6 +78,94 @@ def ensure_schema() -> None:
         except Exception:
             pass
     _SCHEMA_READY = True
+
+
+def upsert_iot_auth_session(
+    *,
+    staff_user_id: str,
+    access_token: str,
+    refresh_token: str = "",
+    iot_user_id: str = "",
+    iot_user_name: str = "",
+    iot_true_name: str = "",
+    iot_dept_id: str = "",
+    ttl_seconds: int = 21600,
+) -> None:
+    ensure_schema()
+    sid = str(staff_user_id or "").strip()
+    if not sid or not access_token:
+        return
+    ttl = max(60, int(ttl_seconds or 21600))
+    execute(
+        """
+        INSERT INTO iot_ops_auth_session (
+            staff_user_id, access_token, refresh_token,
+            iot_user_id, iot_user_name, iot_true_name, iot_dept_id,
+            expires_at, created_at, updated_at
+        ) VALUES (
+            %(sid)s, %(at)s, %(rt)s,
+            %(uid)s, %(uname)s, %(tname)s, %(dept)s,
+            DATE_ADD(NOW(), INTERVAL %(ttl)s SECOND), NOW(), NOW()
+        )
+        ON DUPLICATE KEY UPDATE
+            access_token = VALUES(access_token),
+            refresh_token = VALUES(refresh_token),
+            iot_user_id = VALUES(iot_user_id),
+            iot_user_name = VALUES(iot_user_name),
+            iot_true_name = VALUES(iot_true_name),
+            iot_dept_id = VALUES(iot_dept_id),
+            expires_at = VALUES(expires_at),
+            updated_at = NOW()
+        """,
+        {
+            "sid": sid[:64],
+            "at": access_token,
+            "rt": refresh_token or "",
+            "uid": (iot_user_id or "")[:64],
+            "uname": (iot_user_name or "")[:128],
+            "tname": (iot_true_name or "")[:128],
+            "dept": (iot_dept_id or "")[:64],
+            "ttl": ttl,
+        },
+    )
+
+
+def get_iot_auth_session(staff_user_id: str) -> dict[str, Any] | None:
+    ensure_schema()
+    sid = str(staff_user_id or "").strip()
+    if not sid:
+        return None
+    row = fetch_one(
+        """
+        SELECT
+            access_token AS accessToken,
+            refresh_token AS refreshToken,
+            iot_user_id AS userId,
+            iot_user_name AS userName,
+            iot_true_name AS trueName,
+            iot_dept_id AS deptId,
+            expires_at AS expiresAt
+        FROM iot_ops_auth_session
+        WHERE staff_user_id = %(sid)s
+          AND expires_at > NOW()
+        LIMIT 1
+        """,
+        {"sid": sid[:64]},
+    )
+    if not row or not row.get("accessToken"):
+        return None
+    return row
+
+
+def delete_iot_auth_session(staff_user_id: str) -> None:
+    ensure_schema()
+    sid = str(staff_user_id or "").strip()
+    if not sid:
+        return
+    execute(
+        "DELETE FROM iot_ops_auth_session WHERE staff_user_id = %(sid)s",
+        {"sid": sid[:64]},
+    )
 
 
 def get_child(child_id: int) -> dict[str, Any] | None:
@@ -85,13 +190,27 @@ def get_child(child_id: int) -> dict[str, Any] | None:
 
 
 def list_children_by_business_order(order_id: str) -> list[dict[str, Any]]:
-    """按业务单号列出产品行（实验子单明细）。"""
+    """按业务单号列出产品行。
+
+    与订单详情 `_fetch_children_basic` 同口径：
+    1) 先按 order_form_id（主单/直接挂靠）
+    2) 为空再按 exp_qd_purchase_order_child（type=9/10 实验子单）
+    """
     oid = str(order_id or "").strip()
     if not oid:
         return []
-    return fetch_all(
+    order = fetch_one(
         """
-        SELECT
+        SELECT id FROM experiment_order
+        WHERE order_id = %(oid)s
+        LIMIT 1
+        """,
+        {"oid": oid},
+    )
+    if not order or order.get("id") is None:
+        return []
+    pk = int(order["id"])
+    cols = """
             c.id,
             c.order_id AS orderIdCol,
             c.order_form_id AS orderFormId,
@@ -101,13 +220,29 @@ def list_children_by_business_order(order_id: str) -> list[dict[str, Any]]:
             c.experiment_project_name AS projectName,
             c.sample_id AS sampleId,
             c.order_id AS childOrderId
+    """
+    rows = fetch_all(
+        f"""
+        SELECT {cols}
         FROM experiment_order_child c
-        INNER JOIN experiment_order o ON c.order_form_id = o.id
-        WHERE o.order_id = %(oid)s
+        WHERE c.order_form_id = %(pk)s
           AND IFNULL(c.delete_status, 2) <> 1
         ORDER BY c.id ASC
         """,
-        {"oid": oid},
+        {"pk": pk},
+    )
+    if rows:
+        return rows
+    return fetch_all(
+        f"""
+        SELECT {cols}
+        FROM exp_qd_purchase_order_child poc
+        JOIN experiment_order_child c ON poc.order_child_id = c.id
+        WHERE poc.purchase_order_id = %(pk)s
+          AND IFNULL(c.delete_status, 2) <> 1
+        ORDER BY c.id ASC
+        """,
+        {"pk": pk},
     )
 
 

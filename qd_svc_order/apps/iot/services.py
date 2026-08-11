@@ -10,12 +10,11 @@ from apps.core.db_utils import fetch_one
 from apps.iot import iot_client, repository as repo
 from apps.iot.iot_client import IotClientError
 from django.conf import settings
-from django.core.cache import cache
 from django.db import transaction
 
 logger = logging.getLogger(__name__)
 
-_IOT_AUTH_TTL = 6 * 3600  # 秒
+_IOT_AUTH_TTL = 7 * 24 * 3600  # 秒：落库后默认 7 天，避免进详情反复授权
 
 
 class ServiceError(Exception):
@@ -32,8 +31,29 @@ def _staff_id(user: dict | None) -> str:
     return str(user.get("user_id") or user.get("id") or user.get("userId") or "").strip()
 
 
-def _iot_auth_cache_key(staff_id: str) -> str:
-    return f"iot_ops_auth:{staff_id}"
+def _save_iot_session(staff: str, sess: dict[str, Any]) -> None:
+    repo.upsert_iot_auth_session(
+        staff_user_id=staff,
+        access_token=str(sess.get("accessToken") or ""),
+        refresh_token=str(sess.get("refreshToken") or ""),
+        iot_user_id=str(sess.get("userId") or ""),
+        iot_user_name=str(sess.get("userName") or ""),
+        iot_true_name=str(sess.get("trueName") or ""),
+        iot_dept_id=str(sess.get("deptId") or ""),
+        ttl_seconds=_IOT_AUTH_TTL,
+    )
+
+
+def _load_iot_session(staff: str) -> dict[str, Any] | None:
+    sess = repo.get_iot_auth_session(staff)
+    if not isinstance(sess, dict) or not sess.get("accessToken"):
+        return None
+    return sess
+
+
+def _clear_iot_session(staff: str) -> None:
+    if staff:
+        repo.delete_iot_auth_session(staff)
 
 
 def _extract_task_id(resp: dict[str, Any]) -> str:
@@ -93,7 +113,7 @@ def _register_payload(
 
 
 def auth_iot_login(*, username: str, password: str, user: dict | None = None) -> dict[str, Any]:
-    """用 IOT 运维账号登录，缓存 JWT（不落库密码）。"""
+    """用 IOT 运维账号登录，会话落库（不落密码）。"""
     staff = _staff_id(user)
     if not staff:
         raise ServiceError("未登录 UTOO", code="UNAUTHORIZED", http_status=401)
@@ -120,7 +140,7 @@ def auth_iot_login(*, username: str, password: str, user: dict | None = None) ->
         "trueName": str(iot_user.get("true_name") or iot_user.get("user_name") or name),
         "deptId": str(iot_user.get("dept_id") or ""),
     }
-    cache.set(_iot_auth_cache_key(staff), sess, timeout=_IOT_AUTH_TTL)
+    _save_iot_session(staff, sess)
     return {
         "authorized": True,
         "iotUserId": sess["userId"],
@@ -134,8 +154,8 @@ def auth_iot_status(*, user: dict | None = None) -> dict[str, Any]:
     staff = _staff_id(user)
     if not staff:
         return {"authorized": False}
-    sess = cache.get(_iot_auth_cache_key(staff))
-    if not isinstance(sess, dict) or not sess.get("accessToken"):
+    sess = _load_iot_session(staff)
+    if not sess:
         return {"authorized": False}
     return {
         "authorized": True,
@@ -147,8 +167,7 @@ def auth_iot_status(*, user: dict | None = None) -> dict[str, Any]:
 
 def auth_iot_logout(*, user: dict | None = None) -> dict[str, Any]:
     staff = _staff_id(user)
-    if staff:
-        cache.delete(_iot_auth_cache_key(staff))
+    _clear_iot_session(staff)
     return {"authorized": False}
 
 
@@ -156,8 +175,8 @@ def _require_iot_session(user: dict | None) -> dict[str, Any]:
     staff = _staff_id(user)
     if not staff:
         raise ServiceError("未登录 UTOO", code="UNAUTHORIZED", http_status=401)
-    sess = cache.get(_iot_auth_cache_key(staff))
-    if not isinstance(sess, dict) or not sess.get("accessToken"):
+    sess = _load_iot_session(staff)
+    if not sess:
         raise ServiceError(
             "请先授权 IOT 运维账号",
             code="IOT_AUTH_REQUIRED",
@@ -175,7 +194,7 @@ def list_devices(*, q: str = "", limit: int = 200, user: dict | None = None) -> 
         )
     except IotClientError as exc:
         if exc.status in (401, 403):
-            cache.delete(_iot_auth_cache_key(_staff_id(user)))
+            _clear_iot_session(_staff_id(user))
             raise ServiceError(
                 "IOT 授权已失效，请重新登录 IOT 账号",
                 code="IOT_AUTH_REQUIRED",
@@ -220,10 +239,14 @@ def create_task(
             http_status=409,
         )
 
-    order_pk = repo.resolve_order_pk(child)
-    order = repo.load_order_brief(order_pk=order_pk, business_order_id=oid)
-    if order and order.get("orderId"):
-        oid = str(order.get("orderId"))
+    # 绑定表 order_id 保留当前页业务单号（type=9/10 子单号），勿被产品行 order_form_id 父单覆盖
+    order = repo.load_order_brief(business_order_id=oid)
+    if order and order.get("id") is not None:
+        order_pk = int(order["id"])
+    else:
+        order_pk = repo.resolve_order_pk(child)
+        if not order:
+            order = repo.load_order_brief(order_pk=order_pk)
 
     existing = repo.get_binding_by_child(int(child_id))
     if existing and str(existing.get("bind_status") or "") in ("running", "finished"):
@@ -346,7 +369,7 @@ def build_sso_jump(
         )
     except IotClientError as exc:
         if exc.status in (401, 403):
-            cache.delete(_iot_auth_cache_key(_staff_id(user)))
+            _clear_iot_session(_staff_id(user))
             raise ServiceError(
                 "IOT 授权已失效，请重新登录 IOT 账号",
                 code="IOT_AUTH_REQUIRED",
