@@ -114,6 +114,7 @@ WEIXIN_GZH_SEND = env("WEIXIN_GZH_SEND", default="1")
 
 # UTOO × IOT（正式 .env + 本机 .env.local 叠加；见 docs/UTOO-IOT本机交叉配置.md）
 IOT_BASE_URL = env("IOT_BASE_URL", default="")
+IOT_WEB_URL = env("IOT_WEB_URL", default="")  # 运维前端，如 http://127.0.0.1:5173
 IOT_SERVICE_TOKEN = env("IOT_SERVICE_TOKEN", default="")
 IOT_HMAC_SECRET = env("IOT_HMAC_SECRET", default="")
 IOT_APP_ID = env("IOT_APP_ID", default="utoo-iot")

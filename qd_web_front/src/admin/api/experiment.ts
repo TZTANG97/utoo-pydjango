@@ -372,6 +372,12 @@ export const iotListDevices = (data?: Record<string, unknown>) =>
   postAjax(`/iot/device/list`, data || {})
 export const iotBindDevice = (data: Record<string, unknown>) =>
   postAjax(`/iot/device/bind`, data)
+/** 创建 IOT 试验任务（不选设备） */
+export const iotCreateTask = (data: Record<string, unknown>) =>
+  postAjax(`/iot/task/create`, data)
+/** 免登跳转 IOT（授权缓存换 ticket） */
+export const iotSsoJump = (data?: Record<string, unknown>) =>
+  postAjax(`/iot/sso/jump`, data || {})
 export const iotUnbindDevice = (data: Record<string, unknown>) =>
   postAjax(`/iot/device/unbind`, data)
 export const iotGetBinding = (data: Record<string, unknown>) =>

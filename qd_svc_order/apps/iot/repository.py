@@ -181,13 +181,15 @@ def upsert_bind(
     order_id: str,
     child_id: int,
     order_pk_id: int | None,
-    device_id: str,
+    device_id: str = "",
+    bind_status: str = "task_created",
     bound_by: str = "",
     remark: str = "",
     iot_operator_user_id: str = "",
     iot_operator_name: str = "",
 ) -> int:
     ensure_schema()
+    status = (bind_status or "task_created").strip() or "task_created"
     existing = get_binding_by_child(child_id)
     if existing:
         execute(
@@ -196,7 +198,7 @@ def upsert_bind(
             SET order_id = %(oid)s,
                 order_pk_id = %(pk)s,
                 iot_device_id = %(did)s,
-                bind_status = 'bound',
+                bind_status = %(bs)s,
                 iot_task_sync_status = '',
                 last_event = %(ev)s,
                 bound_by = %(by)s,
@@ -208,8 +210,9 @@ def upsert_bind(
             {
                 "oid": order_id,
                 "pk": order_pk_id,
-                "did": device_id,
-                "ev": (remark or "bind")[:64],
+                "did": device_id or "",
+                "bs": status[:32],
+                "ev": (remark or "create_task")[:64],
                 "by": (bound_by or "")[:64],
                 "op_uid": (iot_operator_user_id or "")[:64],
                 "op_name": (iot_operator_name or "")[:128],
@@ -224,7 +227,7 @@ def upsert_bind(
              iot_task_sync_status, last_event, bound_by,
              iot_operator_user_id, iot_operator_name, created_at, updated_at)
         VALUES
-            (%(oid)s, %(cid)s, %(pk)s, %(did)s, 'bound',
+            (%(oid)s, %(cid)s, %(pk)s, %(did)s, %(bs)s,
              '', %(ev)s, %(by)s,
              %(op_uid)s, %(op_name)s, NOW(), NOW())
         """,
@@ -232,12 +235,30 @@ def upsert_bind(
             "oid": order_id,
             "cid": child_id,
             "pk": order_pk_id,
-            "did": device_id,
-            "ev": (remark or "bind")[:64],
+            "did": device_id or "",
+            "bs": status[:32],
+            "ev": (remark or "create_task")[:64],
             "by": (bound_by or "")[:64],
             "op_uid": (iot_operator_user_id or "")[:64],
             "op_name": (iot_operator_name or "")[:128],
         },
+    )
+
+
+def update_device_assigned(child_id: int, *, device_id: str) -> None:
+    """IOT 分配试验箱后回写。"""
+    ensure_schema()
+    execute(
+        """
+        UPDATE experiment_order_iot_bind
+        SET iot_device_id = %(did)s,
+            bind_status = 'bound',
+            last_event = 'device_assigned',
+            last_sync_at = NOW(),
+            updated_at = NOW()
+        WHERE child_id = %(cid)s
+        """,
+        {"did": (device_id or "")[:128], "cid": child_id},
     )
 
 

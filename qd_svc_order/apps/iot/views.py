@@ -83,6 +83,7 @@ def device_list(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def device_bind(request: Request, user=None):
+    """兼容旧绑定接口：忽略 deviceId，改为创建试验任务。"""
     data = merge_payload(request)
     try:
         result = services.bind_device(
@@ -94,7 +95,42 @@ def device_bind(request: Request, user=None):
         )
         return ok(obj=result)
     except ServiceError as exc:
-        return fail(exc.message, obj={"code": exc.code})
+        return fail(exc.message, obj={"code": getattr(exc, "code", None) or "FAIL"})
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def create_task(request: Request, user=None):
+    data = merge_payload(request)
+    try:
+        result = services.create_task(
+            order_id=str(data.get("orderId") or data.get("order_id") or ""),
+            child_id=to_int(data.get("childId") or data.get("child_id")),
+            remark=str(data.get("remark") or ""),
+            user=user,
+        )
+        return ok(obj=result)
+    except ServiceError as exc:
+        return fail(exc.message, obj={"code": getattr(exc, "code", None) or "FAIL"})
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def sso_jump(request: Request, user=None):
+    data = merge_payload(request)
+    try:
+        result = services.build_sso_jump(
+            user=user,
+            task_id=str(data.get("taskId") or data.get("iotTaskId") or ""),
+            redirect=str(data.get("redirect") or ""),
+        )
+        return ok(obj=result)
+    except ServiceError as exc:
+        return fail(exc.message, obj={"code": getattr(exc, "code", None) or "FAIL"})
 
 
 @api_view(["POST"])

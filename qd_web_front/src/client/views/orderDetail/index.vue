@@ -173,10 +173,21 @@ export default {
         ofId: this.id,
       })
         .then((res) => {
-          if (res.res) {
-            const payload = res.obj || res.data || {};
-            this.tcoList = payload.data || [];
-            this.tcoTotal = payload.recordsTotal || 0;
+          // 兼容 api_ok 包装 {obj:{data,recordsTotal}} 与顶层 DataTables
+          const payload =
+            (res.obj && (res.obj.data !== undefined || res.obj.recordsTotal !== undefined)
+              ? res.obj
+              : null) ||
+            (res.data && !Array.isArray(res.data) && res.data.data !== undefined
+              ? res.data
+              : null) ||
+            (res.recordsTotal !== undefined || Array.isArray(res.data) ? res : null) ||
+            {};
+          const rows = Array.isArray(payload.data) ? payload.data : [];
+          const total = Number(payload.recordsTotal || 0);
+          if (res.res || res.code === 0 || rows.length || total) {
+            this.tcoList = rows;
+            this.tcoTotal = total;
           } else {
             this.tcoList = [];
             this.tcoTotal = 0;

@@ -66,7 +66,7 @@ def purchase_order_detail(request: Request):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def orders_by_sale_order_id(request: Request):
-    """子订单列表 — 客户按归属过滤；员工走 dpt。返回顶层 DataTables。"""
+    """子订单列表 — 客户按归属过滤并 api_ok 包装；员工走 dpt 顶层 DataTables。"""
     from apps.auth_support.helpers import get_current_user_from_request, is_exp_customer
 
     q = request.query_params
@@ -80,6 +80,7 @@ def orders_by_sale_order_id(request: Request):
 
     user = get_current_user_from_request(request)
     if is_exp_customer(user):
+        # 与 getChildFormByIdExp 一致：C 端前端读 res.obj.data / recordsTotal
         body = purchase_svc.purchase_orders_by_sale(
             user_id=int(user["user_id"]),
             of_id=of_id,
@@ -88,14 +89,14 @@ def orders_by_sale_order_id(request: Request):
             length=length,
             draw=draw,
         )
-    else:
-        body = purchase_svc.purchase_orders_by_sale_dpt(
-            of_id=of_id,
-            order_id=order_id,
-            start=start,
-            length=length,
-            draw=draw,
-        )
+        return Response(api_ok(body))
+    body = purchase_svc.purchase_orders_by_sale_dpt(
+        of_id=of_id,
+        order_id=order_id,
+        start=start,
+        length=length,
+        draw=draw,
+    )
     return Response(body)
 
 

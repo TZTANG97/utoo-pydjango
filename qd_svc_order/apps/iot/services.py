@@ -56,7 +56,7 @@ def _register_payload(
     *,
     order_id: str,
     child_id: int,
-    device_id: str,
+    device_id: str = "",
     child: dict[str, Any],
     order: dict[str, Any] | None,
     operator_user_id: str = "",
@@ -73,17 +73,23 @@ def _register_payload(
     base_cb = str(getattr(settings, "IOT_UTOO_CALLBACK_URL", "") or "").strip()
     if base_cb:
         callback = base_cb
-    return {
+    payload: dict[str, Any] = {
         "source": "utoo",
         "externalId": f"utoo:{order_id}:{child_id}",
         "orderId": order_id,
         "childId": child_id,
-        "deviceId": device_id,
         "projectName": project[:255],
         "sampleSummary": sample,
         "callbackUrl": callback or None,
         "operatorUserId": (operator_user_id or "")[:64] or None,
     }
+    # 设备改由 IOT 分配；空字符串表示未分配
+    did = str(device_id or "").strip()
+    if did:
+        payload["deviceId"] = did
+    else:
+        payload["deviceId"] = ""
+    return payload
 
 
 def auth_iot_login(*, username: str, password: str, user: dict | None = None) -> dict[str, Any]:
@@ -188,83 +194,181 @@ def list_devices(*, q: str = "", limit: int = 200, user: dict | None = None) -> 
     }
 
 
-def bind_device(
+def create_task(
     *,
     order_id: str,
     child_id: int,
-    device_id: str,
     remark: str = "",
     user: dict | None = None,
 ) -> dict[str, Any]:
+    """创建 IOT 试验任务（不选设备）；设备在 IOT 侧分配。"""
     repo.ensure_schema()
     sess = _require_iot_session(user)
     oid = str(order_id or "").strip()
-    did = str(device_id or "").strip()
-    if not oid or not child_id or not did:
-        raise ServiceError("参数错误：orderId/childId/deviceId 必填")
+    if not oid or not child_id:
+        raise ServiceError("参数错误：orderId/childId 必填")
 
     child = repo.get_child(int(child_id))
     if not child:
         raise ServiceError("子单行不存在")
 
-    order_pk = repo.resolve_order_pk(child)
+    cur = _child_status(child)
+    if cur < sample_flow_repo.ST_PICK:
+        raise ServiceError(
+            f"请先完成样品领用后再创建试验任务(当前状态 {cur})",
+            code="STATUS_CONFLICT",
+            http_status=409,
+        )
 
+    order_pk = repo.resolve_order_pk(child)
     order = repo.load_order_brief(order_pk=order_pk, business_order_id=oid)
-    if order and not oid:
-        oid = str(order.get("orderId") or oid)
     if order and order.get("orderId"):
         oid = str(order.get("orderId"))
 
     existing = repo.get_binding_by_child(int(child_id))
     if existing and str(existing.get("bind_status") or "") in ("running", "finished"):
-        st = str(existing.get("bind_status"))
-        if st == "running":
-            raise ServiceError("测试中禁止换绑，请先结束或解绑", code="STATUS_CONFLICT", http_status=409)
+        if str(existing.get("bind_status")) == "running":
+            raise ServiceError("测试中禁止重建任务", code="STATUS_CONFLICT", http_status=409)
 
     op_uid = str(sess.get("userId") or "")
     op_name = str(sess.get("trueName") or sess.get("userName") or "")
-    repo.upsert_bind(
-        order_id=oid,
-        child_id=int(child_id),
-        order_pk_id=order_pk,
-        device_id=did,
-        bound_by=_staff_id(user),
-        remark=remark or "bind",
-        iot_operator_user_id=op_uid,
-        iot_operator_name=op_name,
-    )
+    existing_device = str((existing or {}).get("iot_device_id") or "").strip()
 
-    sync_status = "failed"
-    task_id = ""
-    sync_msg = ""
     try:
         resp = iot_client.register_task(
             _register_payload(
                 order_id=oid,
                 child_id=int(child_id),
-                device_id=did,
+                device_id=existing_device,
                 child=child,
                 order=order,
                 operator_user_id=op_uid,
             )
         )
-        task_id = _extract_task_id(resp)
-        sync_status = "ok"
-        sync_msg = "register_ok"
     except IotClientError as exc:
-        sync_msg = str(exc)[:200]
         logger.warning("IOT register failed child=%s: %s", child_id, exc)
+        # 记录失败态便于重试，但不视为创建成功
+        repo.upsert_bind(
+            order_id=oid,
+            child_id=int(child_id),
+            order_pk_id=order_pk,
+            device_id=existing_device,
+            bind_status="task_created",
+            bound_by=_staff_id(user),
+            remark=remark or "create_task_fail",
+            iot_operator_user_id=op_uid,
+            iot_operator_name=op_name,
+        )
+        repo.update_task_sync(
+            int(child_id),
+            task_id=None,
+            sync_status="failed",
+            last_event=str(exc)[:64],
+        )
+        raise ServiceError(
+            f"IOT 任务下发失败: {exc}",
+            code="IOT_REGISTER_FAIL",
+            http_status=502,
+        ) from exc
 
+    task_id = _extract_task_id(resp)
+    if not task_id:
+        raise ServiceError("IOT 未返回 taskId", code="IOT_REGISTER_FAIL", http_status=502)
+
+    repo.upsert_bind(
+        order_id=oid,
+        child_id=int(child_id),
+        order_pk_id=order_pk,
+        device_id=existing_device,
+        bind_status="task_created" if not existing_device else "bound",
+        bound_by=_staff_id(user),
+        remark=remark or "create_task",
+        iot_operator_user_id=op_uid,
+        iot_operator_name=op_name,
+    )
     repo.update_task_sync(
         int(child_id),
-        task_id=task_id or None,
-        sync_status=sync_status,
-        last_event=sync_msg,
+        task_id=task_id,
+        sync_status="ok",
+        last_event="register_ok",
     )
     bind = repo.get_binding_by_child(int(child_id))
     out = repo.serialize_bind(bind) or {}
-    out["registerMessage"] = sync_msg
+    out["registerMessage"] = "register_ok"
+    out["iotTaskId"] = task_id
     return out
+
+
+def bind_device(
+    *,
+    order_id: str,
+    child_id: int,
+    device_id: str = "",
+    remark: str = "",
+    user: dict | None = None,
+) -> dict[str, Any]:
+    """兼容旧接口：忽略 deviceId，改为 create_task。"""
+    return create_task(
+        order_id=order_id,
+        child_id=child_id,
+        remark=remark or "bind_compat",
+        user=user,
+    )
+
+
+def build_sso_jump(
+    *,
+    user: dict | None = None,
+    task_id: str = "",
+    redirect: str = "",
+) -> dict[str, Any]:
+    """用已授权 IOT JWT 换一次性 ticket，返回运维端免登跳转 URL。"""
+    sess = _require_iot_session(user)
+    access = str(sess.get("accessToken") or "").strip()
+    if not access:
+        raise ServiceError(
+            "请先授权 IOT 运维账号",
+            code="IOT_AUTH_REQUIRED",
+            http_status=401,
+        )
+    try:
+        resp = iot_client.create_sso_ticket(
+            access_token=access,
+            refresh_token=str(sess.get("refreshToken") or ""),
+            user={
+                "user_id": sess.get("userId") or "",
+                "user_name": sess.get("userName") or "",
+                "true_name": sess.get("trueName") or "",
+                "user_type": "0",
+                "dept_id": sess.get("deptId") or "",
+            },
+        )
+    except IotClientError as exc:
+        if exc.status in (401, 403):
+            cache.delete(_iot_auth_cache_key(_staff_id(user)))
+            raise ServiceError(
+                "IOT 授权已失效，请重新登录 IOT 账号",
+                code="IOT_AUTH_REQUIRED",
+                http_status=401,
+            ) from exc
+        raise ServiceError(f"换取免登 ticket 失败: {exc}", code="IOT_SSO_FAIL") from exc
+
+    ticket = str(resp.get("ticket") or (resp.get("data") or {}).get("ticket") or "").strip()
+    if not ticket:
+        raise ServiceError("IOT 未返回 ticket", code="IOT_SSO_FAIL")
+
+    web = str(getattr(settings, "IOT_WEB_URL", "") or getattr(settings, "IOT_BASE_URL", "") or "").rstrip("/")
+    if not web:
+        raise ServiceError("IOT_WEB_URL 未配置", code="CONFIG")
+
+    tid = str(task_id or "").strip()
+    redir = str(redirect or "").strip()
+    if not redir:
+        redir = f"/main/utoo-tasks?taskId={tid}" if tid else "/main/utoo-tasks"
+    from urllib.parse import quote
+
+    jump = f"{web}/sso?ticket={quote(ticket)}&redirect={quote(redir)}"
+    return {"jumpUrl": jump, "ticket": ticket, "redirect": redir}
 
 
 def unbind_device(*, order_id: str = "", child_id: int, user: dict | None = None) -> dict[str, Any]:
@@ -299,10 +403,12 @@ def get_binding(*, order_id: str = "", child_id: int) -> dict[str, Any] | None:
 
 
 def resync_device(*, order_id: str = "", child_id: int, user: dict | None = None) -> dict[str, Any]:
+    """重新下发任务到 IOT（允许空设备）。"""
     repo.ensure_schema()
+    _require_iot_session(user)
     bind = repo.get_binding_by_child(int(child_id))
     if not bind or str(bind.get("bind_status") or "") == "unbound":
-        raise ServiceError("未找到有效绑定", code="BIND_NOT_FOUND", http_status=404)
+        raise ServiceError("未找到有效任务绑定", code="BIND_NOT_FOUND", http_status=404)
     child = repo.get_child(int(child_id))
     if not child:
         raise ServiceError("子单行不存在")
@@ -312,9 +418,6 @@ def resync_device(*, order_id: str = "", child_id: int, user: dict | None = None
         order_pk=bind.get("order_pk_id"),
         business_order_id=oid,
     )
-    sync_status = "failed"
-    task_id = ""
-    sync_msg = ""
     try:
         resp = iot_client.register_task(
             _register_payload(
@@ -326,20 +429,31 @@ def resync_device(*, order_id: str = "", child_id: int, user: dict | None = None
                 operator_user_id=str(bind.get("iot_operator_user_id") or ""),
             )
         )
-        task_id = _extract_task_id(resp) or str(bind.get("iot_task_id") or "")
-        sync_status = "ok"
-        sync_msg = "resync_ok"
     except IotClientError as exc:
-        sync_msg = str(exc)[:200]
         logger.warning("IOT resync failed child=%s: %s", child_id, exc)
+        repo.update_task_sync(
+            int(child_id),
+            task_id=None,
+            sync_status="failed",
+            last_event=str(exc)[:64],
+        )
+        raise ServiceError(
+            f"IOT 重新下发失败: {exc}",
+            code="IOT_REGISTER_FAIL",
+            http_status=502,
+        ) from exc
+    task_id = _extract_task_id(resp) or str(bind.get("iot_task_id") or "")
+    if not task_id:
+        raise ServiceError("IOT 未返回 taskId", code="IOT_REGISTER_FAIL", http_status=502)
     repo.update_task_sync(
         int(child_id),
-        task_id=task_id or None,
-        sync_status=sync_status,
-        last_event=sync_msg,
+        task_id=task_id,
+        sync_status="ok",
+        last_event="resync_ok",
     )
     out = repo.serialize_bind(repo.get_binding_by_child(int(child_id))) or {}
-    out["registerMessage"] = sync_msg
+    out["registerMessage"] = "resync_ok"
+    out["iotTaskId"] = task_id
     return out
 
 
@@ -373,6 +487,8 @@ def _normalize_event(event: str) -> str:
         return "finished"
     if e in ("experiment.aborted", "aborted", "abort"):
         return "aborted"
+    if e in ("device.assigned", "device_assigned", "deviceassigned", "assigned"):
+        return "device_assigned"
     return e
 
 
@@ -437,7 +553,20 @@ def handle_experiment_event(payload: dict[str, Any]) -> dict[str, Any]:
     line_status = None
     cur = _child_status(child)
 
-    if event == "started":
+    if event == "device_assigned":
+        did = str(payload.get("deviceId") or "").strip()
+        if not did:
+            raise ServiceError("deviceAssigned 缺少 deviceId", code="FAIL", http_status=400)
+        repo.update_device_assigned(child_id, device_id=did)
+        if task_id:
+            repo.update_task_sync(
+                child_id,
+                task_id=task_id,
+                sync_status="ok",
+                last_event="device_assigned",
+            )
+        line_status = cur
+    elif event == "started":
         # 已在测试中：幂等成功
         if cur == sample_flow_repo.ST_TESTING:
             repo.update_from_callback(

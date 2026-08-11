@@ -172,3 +172,21 @@ def list_devices(*, q: str = "", limit: int = 200, access_token: str = "") -> di
         query=query,
         headers=_bearer_headers(token),
     )
+
+
+def create_sso_ticket(
+    *,
+    access_token: str,
+    refresh_token: str = "",
+    user: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """POST /nss/api/v1/sso/ticket — Service Token 写入一次性 ticket。"""
+    return _request(
+        "POST",
+        "/nss/api/v1/sso/ticket",
+        body={
+            "accessToken": access_token,
+            "refreshToken": refresh_token or "",
+            "user": user or {},
+        },
+    )
