@@ -59,14 +59,19 @@ def _object_key(path: str, name: str) -> str:
 
 
 def _oss_key_candidates(path: str, name: str) -> list[str]:
-    """兼容 path=upload/order、order、以及历史裸文件名。"""
+    """兼容 path=upload/order、order、utoo/order/file 以及历史裸文件名。"""
     n = (name or "").strip().lstrip("/")
     primary = _object_key(path, name)
+    path_norm = (path or "").strip().replace("\\", "/").strip("/")
     out: list[str] = []
     for k in (
         primary,
+        f"{path_norm}/{n}" if path_norm and n else "",
         f"upload/order/{n}" if n else "",
         f"order/{n}" if n else "",
+        f"utoo/order/{n}" if n else "",
+        f"utoo/order/file/{n}" if n else "",
+        f"{path_norm}/file/{n}" if path_norm and n and not path_norm.endswith("/file") else "",
         n,
     ):
         k2 = (k or "").strip("/")

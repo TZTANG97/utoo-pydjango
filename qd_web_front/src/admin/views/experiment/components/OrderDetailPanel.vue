@@ -638,9 +638,8 @@
                 <div v-for="f in orderFiles" :key="'of-' + String(f.id)" class="file-item">
                   <a
                     class="file-name"
-                    :href="fileUrl(f)"
-                    target="_blank"
-                    rel="noopener"
+                    href="#"
+                    @click.prevent="onPreviewFile(f)"
                   >{{ fileLabel(f) }}</a>
                   <el-button type="success" size="small" @click="onDownloadFile(f)">下载</el-button>
                   <el-button type="danger" size="small" :loading="acting" @click="onDeleteFile(f)">
@@ -663,9 +662,8 @@
                 <div v-for="f in invoiceFiles" :key="'inv-' + String(f.id)" class="file-item">
                   <a
                     class="file-name"
-                    :href="fileUrl(f)"
-                    target="_blank"
-                    rel="noopener"
+                    href="#"
+                    @click.prevent="onPreviewFile(f)"
                   >{{ fileLabel(f) }}</a>
                   <el-button type="success" size="small" @click="onDownloadFile(f)">下载</el-button>
                   <el-button type="danger" size="small" :loading="acting" @click="onDeleteFile(f)">
@@ -1322,6 +1320,8 @@ import {
   uploadSubPayExpOrder,
   uploadExpOrderFile,
   deleteExpOrderFile,
+  downloadExpOrderFile,
+  previewExpOrderFile,
   updateExpOrderMsg,
   withdrawExpOrderAudit,
   iotBindDevice,
@@ -1833,22 +1833,30 @@ function fileLabel(f: Record<string, unknown>) {
   return String(f.info || f.name || '附件')
 }
 
-function fileUrl(f: Record<string, unknown>) {
-  const u = String(f.url || '')
-  if (u) return u
-  const path = String(f.path || '').replace(/\/$/, '')
-  const name = String(f.name || '')
-  if (path && name) return `${path}/${name}`
-  return path || name || '#'
-}
-
-function onDownloadFile(f: Record<string, unknown>) {
-  const url = fileUrl(f)
-  if (!url || url === '#') {
-    ElMessage.warning('文件地址无效')
+async function onPreviewFile(f: Record<string, unknown>) {
+  const id = Number(f.id)
+  if (!id) {
+    ElMessage.warning('文件无效')
     return
   }
-  window.open(url, '_blank')
+  const name = fileLabel(f)
+  const result = await previewExpOrderFile(id, name)
+  if (!result.ok) {
+    ElMessage.error(result.message || '预览失败')
+  }
+}
+
+async function onDownloadFile(f: Record<string, unknown>) {
+  const id = Number(f.id)
+  if (!id) {
+    ElMessage.warning('文件无效')
+    return
+  }
+  const name = fileLabel(f)
+  const result = await downloadExpOrderFile(id, name)
+  if (!result.ok) {
+    ElMessage.error(result.message || '下载失败')
+  }
 }
 
 async function onDeleteFile(f: Record<string, unknown>) {
