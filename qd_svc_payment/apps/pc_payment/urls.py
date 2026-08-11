@@ -16,6 +16,7 @@ urlpatterns = [
     path("rechargePrePay.ajax", views_pay.recharge_pre_pay),
     path("rechargeContinuePay.ajax", views_pay.recharge_continue_pay),
     path("addRecharge.ajax", views_pay.add_recharge_view),
+    path("saveaccessory.ajax", views_pay.save_accessory_view),
     path("queryPayStatus.ajax", views_pay.query_pay_status),
     path("queryPayStatusByOrder.ajax", views_pay.query_pay_status_by_order),
     path("pay.ajax", views_pay.wechat_pay_notify),

@@ -31,7 +31,14 @@ export default {
       'sidebar'
     ]),
     routes() {
-      return this.$router.options.routes
+      // 统一 SPA 合并了 admin + client 路由；C 端侧栏只展示个人中心菜单，勿泄漏后台「登录」等项
+      const all = this.$router.options.routes || []
+      return all.filter((route) => {
+        if (route.hidden || route.meta?.hidden) return false
+        const p = route.path || ''
+        if (p === '/admin' || p.startsWith('/admin/')) return false
+        return true
+      })
     },
     activeMenu() {
       const route = this.$route

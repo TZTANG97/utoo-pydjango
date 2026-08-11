@@ -116,7 +116,7 @@ export default {
             } else {
               this.$notify.warning({
                 title: "提示",
-                message: res.errMsg,
+                message: res.resMsg || res.message || "上传失败",
               });
             }
           })
@@ -152,7 +152,7 @@ export default {
           message: "请上传回执单！",
         });
       this.$emit("confirmSubmit", {
-        money: this.title === "充值" ? this.topUpMoney : this.money,
+        money: this.title === "充值" ? this.topUpMoney : this.payMoney,
         fileId: this.fileId.join(","),
       });
       this.fileList = [];
@@ -317,10 +317,12 @@ export default {
           </li>
         </ul>
       </div>
-      <span slot="footer" class="dialog-footer">
-        <el-button @click="handleClose">取&nbsp;消</el-button>
-        <el-button type="primary" @click="confirm">确&nbsp;定</el-button>
-      </span>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="handleClose">取&nbsp;消</el-button>
+          <el-button type="primary" @click="confirm">确&nbsp;定</el-button>
+        </span>
+      </template>
     </el-dialog>
   </div>
 </template>

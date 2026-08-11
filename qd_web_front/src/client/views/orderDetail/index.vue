@@ -393,7 +393,7 @@ export default {
           this.$notify({
             type: res.res ? "success" : "warning",
             title: "提示",
-            message: res.res ? "支付申请已提交" : res.errMsg,
+            message: res.res ? "支付申请已提交" : (res.resMsg || res.message || "提交失败"),
           });
           if (res.res) {
             this.openOfflinePay = false;

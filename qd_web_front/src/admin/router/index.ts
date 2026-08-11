@@ -5,12 +5,15 @@ export const constantRoutes: RouteRecordRaw[] = [
   {
     path: '/admin/login',
     name: 'AdminLogin',
+    // hidden 顶层 + meta：C 端侧栏读的是 item.hidden，统一 SPA 合并路由时勿泄漏
+    hidden: true,
     component: () => import('@admin/views/login/index.vue'),
     meta: { title: '登录', hidden: true, noTagsView: true },
   },
   {
     path: '/admin/redirect',
     component: Layout,
+    hidden: true,
     meta: { hidden: true },
     children: [
       {

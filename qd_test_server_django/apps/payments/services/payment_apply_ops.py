@@ -177,7 +177,7 @@ def save_accessory(
                     },
                 )
 
-        total = Decimal(str(order.get("totalPrice") or 0))
+        total = Decimal(str(order.get("totalPrice") or order.get("total_price") or 0))
         paid = Decimal(str(order_repo.sum_bill(oid, 2)))
         due = max(total - paid, Decimal("0"))
 
@@ -199,6 +199,8 @@ def save_accessory(
                 "pa": pa_num,
             },
         )
+        # 回执单同时挂到付款申请，便于后台审核查看
+        _link_accessories(file_ids=",".join(file_parts), pa_id=pa_id)
         pa_repo.insert_submitted_log(pa_id=pa_id, user_id=user_id)
         execute(
             "UPDATE experiment_order SET is_upload_receipt = 1 WHERE id = %(oid)s",

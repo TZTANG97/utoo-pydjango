@@ -15,6 +15,7 @@ from apps.payments.services.pay_notify import (
     dispatch_pay_notify,
 )
 from apps.payments.services.recharge_apply import add_recharge
+from apps.payments.services.payment_apply_ops import save_accessory
 from apps.payments.services.recharge_list import (
     sel_default_account,
     sel_recharge_list_for_user,
@@ -168,6 +169,24 @@ def add_recharge_view(request: Request, user=None):
         user_id=int(user["user_id"]),
         money=params.get("money", ""),
         file_id=params.get("file_id", ""),
+        pay_way=params.get("pay_way", "3"),
+    )
+    if ok_flag:
+        return Response(api_ok(message=msg))
+    return Response(api_fail(400, msg))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@pc_ajax_view(require_customer=True)
+def save_accessory_view(request: Request, user=None):
+    params = _pay_form_params(request)
+    ok_flag, msg = save_accessory(
+        user_id=int(user["user_id"]),
+        order_ids=params.get("id", ""),
+        file_id=params.get("file_id", ""),
+        order_type=params.get("type", "2"),
         pay_way=params.get("pay_way", "3"),
     )
     if ok_flag:
