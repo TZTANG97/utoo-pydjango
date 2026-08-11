@@ -1056,8 +1056,11 @@ def test_start(
 def test_end(
     *, order_id: int, child_ids: Any, staff_user_id: str | int | None = None
 ) -> tuple[bool, str]:
-    """对齐 Java ceshiend：子行→39；全部≥39 时主单→39。"""
+    """对齐 Java ceshiend：子行→39；全部≥39 时主单→39；一次只能一条。"""
     ids = _parse_ids(child_ids)
+    ok_one, err_one = _require_single_child(ids)
+    if not ok_one:
+        return False, err_one
     ok, msg = _set_children_status(
         order_id=order_id,
         child_ids=ids,

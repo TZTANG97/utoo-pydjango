@@ -1749,7 +1749,7 @@ const sampleExtraHint = computed(() => {
   if (sampleAction.value === 'testStart')
     return '请勾选一条已领用(状态37)的子行，并确认实验平台与创建子单时一致'
   if (sampleAction.value === 'testEnd')
-    return '请勾选已开始测试(状态38)的子行（可多选）'
+    return '请勾选一条已开始测试(状态38)的子行'
   if (sampleAction.value === 'retain')
     return '请勾选一条已归还(状态41)的子行；留存可入库到留存仓；报废须确认原仓库位置'
   if (sampleAction.value === 'retest') return '请勾选一条测试完成或已归还的子行'
@@ -2557,8 +2557,8 @@ async function submitAppointment() {
 async function onSampleSelectionChange(rows: Record<string, unknown>[]) {
   if (sampleSelectionLock) return
   let selected = rows
-  // 对齐 Java：除「测试完成」外一次只能选一条
-  if (sampleAction.value !== 'testEnd' && rows.length > 1) {
+  // 对齐 Java 样品流程：一次只能选一条
+  if (rows.length > 1) {
     ElMessage.warning('只能选择一条数据!')
     const last = rows[rows.length - 1]
     sampleSelectionLock = true
@@ -2704,8 +2704,8 @@ async function onSubmitSampleAction() {
     ElMessage.warning('请至少选择一行')
     return
   }
-  // 对齐 Java：除「测试完成」外只能一条
-  if (sampleAction.value !== 'testEnd' && ids.length !== 1) {
+  // 对齐 Java 样品流程：一次只能一条
+  if (ids.length !== 1) {
     ElMessage.warning('只能选择一条数据!')
     return
   }
