@@ -217,12 +217,12 @@
         </el-button>
         <el-button v-if="detail.canMoreInfo" @click="onMoreInfo">更多信息</el-button>
         <el-button
-          v-if="detail.canGenerateAppointment"
+          v-if="detail.canGenerateAppointment || detail.canRegenerateAppointment"
           class="btn-accent"
           :loading="acting"
           @click="onGenerateAppointment"
         >
-          生成预约单
+          {{ detail.canRegenerateAppointment ? '重新生成预约单' : '生成预约单' }}
         </el-button>
         <!-- type=9/10 样品流转 -->
         <el-button
@@ -456,7 +456,7 @@
             {{ detail.customerName || detail.companyName || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="所属公司">{{ detail.supplierName || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="审核主管">{{ detail.saleManager || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="实验室主管">{{ detail.saleManager || '-' }}</el-descriptions-item>
           <el-descriptions-item label="销售人员">{{ detail.saleUser || '-' }}</el-descriptions-item>
           <el-descriptions-item label="制单人">{{ detail.addUser || '-' }}</el-descriptions-item>
           <el-descriptions-item label="下单时间">{{ detail.orderTime || '-' }}</el-descriptions-item>
@@ -492,7 +492,7 @@
             {{ detail.customerName || detail.companyName || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="所属公司">{{ detail.supplierName || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="审核主管">{{ detail.saleManager || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="实验室主管">{{ detail.saleManager || '-' }}</el-descriptions-item>
           <el-descriptions-item label="销售人员">{{ detail.saleUser || '-' }}</el-descriptions-item>
           <el-descriptions-item label="制单员">{{ detail.addUser || '-' }}</el-descriptions-item>
           <el-descriptions-item label="下单时间">{{ detail.orderTime || '-' }}</el-descriptions-item>
@@ -1406,7 +1406,7 @@
 
     <el-dialog
       v-model="appointmentVisible"
-      title="生成预约单 · 选择寄送地址"
+      :title="(detail?.canRegenerateAppointment ? '重新生成预约单' : '生成预约单') + ' · 选择寄送地址'"
       width="560px"
       destroy-on-close
     >
@@ -1424,7 +1424,7 @@
       <template #footer>
         <el-button @click="appointmentVisible = false">取消</el-button>
         <el-button type="primary" :loading="acting || appointmentLoading" @click="submitAppointment">
-          确定生成
+          {{ detail?.canRegenerateAppointment ? '确定重新生成' : '确定生成' }}
         </el-button>
       </template>
     </el-dialog>

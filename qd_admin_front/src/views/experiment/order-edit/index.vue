@@ -3,10 +3,11 @@
     <header class="page-head">
       <button type="button" class="back-link" @click="goBack">← 返回详情</button>
       <h2>编辑订单</h2>
-      <p v-if="detail" class="sub">
+      <p v-if="detail && !isExpSub && !isSubcontractSub" class="sub">
         <span class="mono">{{ detail.orderId }}</span>
         · {{ detail.orderStatusLabel }}
       </p>
+      <p v-else-if="detail" class="sub">{{ detail.orderStatusLabel }}</p>
     </header>
 
     <el-form v-if="detail" label-width="130px" class="form-card" @submit.prevent>
@@ -62,7 +63,7 @@
         </el-col>
 
         <el-col :span="12">
-          <el-form-item :label="isExpSub ? '审核主管' : '销售主管'" required>
+          <el-form-item :label="isExpSub ? '实验室主管' : '销售主管'" required>
             <el-select
               v-model="form.saleManagerId"
               filterable
@@ -365,6 +366,7 @@
         </el-table>
         <!-- type10：可改测试人员 / 实验平台 / 预计完成时间 -->
         <el-table v-else-if="isExpSub" :data="lines" border stripe empty-text="暂无产品行">
+          <el-table-column prop="childOrderId" label="子订单编号" min-width="150" show-overflow-tooltip />
           <el-table-column prop="goodsName" label="产品名称" min-width="140" show-overflow-tooltip />
           <el-table-column label="产品型号" min-width="120">
             <template #default="{ row }">
@@ -1354,7 +1356,7 @@ async function onSave() {
     return
   }
   if (!form.saleManagerId) {
-    ElMessage.warning(isExpSub.value ? '请选择审核主管' : '请选择销售主管')
+    ElMessage.warning(isExpSub.value ? '请选择实验室主管' : '请选择销售主管')
     return
   }
   if (!isSubcontractSub.value && !form.saleUserId) {
