@@ -982,8 +982,8 @@ def test_start(
                 """,
                 {"cid": ids[0], "line_id": line_pk},
             )
-    except Exception:
-        logger.exception("insert experiment_log failed child=%s", ids[0])
+        except Exception:
+            logger.exception("insert experiment_log failed child=%s", ids[0])
     # 样品管理单操作记录
     try:
         got_rows = fetch_all(
