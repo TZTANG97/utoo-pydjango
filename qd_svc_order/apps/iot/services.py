@@ -914,7 +914,10 @@ def get_experiment_data(
     except (TypeError, ValueError):
         order_pk_int = None
 
-    if not repo.user_owns_order(
+    # C 端客户校验归属；员工(sy_user)联调/代查跳过
+    from apps.auth_support.helpers import is_exp_customer
+
+    if is_exp_customer(user) and not repo.user_owns_order(
         user_id=uid,
         mobile=mobile or "",
         order_pk=order_pk_int,

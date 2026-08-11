@@ -79,22 +79,22 @@ export default {
       })
     },
 
-    openIotExperimentData() {
-      if (!this.detail) return
+    openIotExperimentData(row) {
+      if (!this.detail || !row || !row.id) return
       this.iotDialogVisible = true
       this.iotLoading = true
       this.iotData = null
       const orderId = this.detail.orderId || this.detail.order_id || ''
-      const childId =
-        (this.goodsDetail[0] && this.goodsDetail[0].id) || this.id
       getIotExperimentDataApi({
         orderId,
-        childId,
+        childId: row.id,
         includeSeries: 1,
       })
         .then((res) => {
           if (res.res) {
-            this.iotData = res.obj || null
+            // 接口外层含 bind 元数据，曲线在 run 内
+            const obj = res.obj || null
+            this.iotData = (obj && obj.run) || obj
           } else {
             this.$notify({
               type: 'error',
@@ -197,13 +197,6 @@ export default {
     <el-card class="box-card" v-if="detail">
       <div slot="header" class="clearfix">
         <span>子订单详情</span>
-        <el-button
-          style="float: right; padding: 3px 0"
-          type="text"
-          @click="openIotExperimentData"
-        >
-          试验数据
-        </el-button>
       </div>
       <div class="row">
         <div class="text item">
@@ -309,11 +302,13 @@ export default {
       <el-table-column
         align="center"
         label="操作"
+        min-width="160"
       >
-        <template #default="{ row: { ispcfc, ispcqr, id } }">
-          <el-button type="text" v-if="ispcfc" size="mini" @click="dialogTitle = '复测', dialogVisible = true, productId = id">复测
+        <template #default="{ row }">
+          <el-button type="text" size="mini" @click="openIotExperimentData(row)">试验数据</el-button>
+          <el-button type="text" v-if="row.ispcfc" size="mini" @click="dialogTitle = '复测', dialogVisible = true, productId = row.id">复测
           </el-button>
-          <el-button type="text" v-if="ispcqr" size="mini" @click="productId = id, confirmComplete()">确认完成</el-button>
+          <el-button type="text" v-if="row.ispcqr" size="mini" @click="productId = row.id, confirmComplete()">确认完成</el-button>
         </template>
       </el-table-column>
     </el-table>

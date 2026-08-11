@@ -344,3 +344,6 @@ def experiment_data(request: Request):
         return Response(ajax_ok(obj=result))
     except ServiceError as exc:
         return Response(ajax_fail(exc.message, obj={"code": exc.code}))
+    except Exception as exc:
+        logger.exception("experiment_data failed: %s", exc)
+        return Response(ajax_fail(f"获取试验数据失败: {exc}"))

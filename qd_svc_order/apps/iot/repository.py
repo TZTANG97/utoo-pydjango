@@ -574,7 +574,7 @@ def update_child_line_id(child_id: int, line_id: str) -> None:
 
 
 def user_owns_order(*, user_id: int, mobile: str, order_pk: int | None, business_order_id: str = "") -> bool:
-    """对齐 myExperimentOrderList：custom_user_id / mobile。"""
+    """对齐 myExperimentOrderList：custom_user_id / mobile；type=9/10 同时校验父销售单。"""
     params: dict[str, Any] = {
         "user_id": user_id,
         "user_id_str": str(user_id),
@@ -582,18 +582,23 @@ def user_owns_order(*, user_id: int, mobile: str, order_pk: int | None, business
     }
     where_id = ""
     if order_pk:
-        where_id = "t.id = %(pk)s"
+        # 子单(pk)或其父单(parent_id)任一归属即可
+        where_id = "(t.id = %(pk)s OR t.id = (SELECT parent_id FROM experiment_order WHERE id = %(pk)s LIMIT 1))"
         params["pk"] = order_pk
     elif business_order_id:
-        where_id = "t.order_id = %(oid)s"
+        where_id = (
+            "(t.order_id = %(oid)s OR t.id = ("
+            "SELECT parent_id FROM experiment_order WHERE order_id = %(oid)s LIMIT 1))"
+        )
         params["oid"] = str(business_order_id)
     else:
         return False
+    # experiment_order 公司字段是 customer_name（存 qd_user_company.id），不是 company_id
     row = fetch_one(
         f"""
         SELECT t.id
         FROM experiment_order t
-        LEFT JOIN qd_user_company quc ON t.company_id = quc.id
+        LEFT JOIN qd_user_company quc ON t.customer_name = quc.id
         WHERE {where_id}
           AND (
             t.custom_user_id = %(user_id)s
