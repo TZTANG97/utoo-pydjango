@@ -1274,9 +1274,26 @@ def grab_order(*, order_id: int, user_id: str) -> tuple[bool, str]:
     if st > 36:
         return False, "该子单当前状态不可抢"
     execute(
-        "UPDATE experiment_order_child SET test_user_id = %(uid)s WHERE id = %(id)s",
-        {"uid": user_id, "id": child["id"]},
+        """
+        UPDATE experiment_order_child
+        SET test_user_id = %(uid)s
+        WHERE id = %(id)s
+          AND CAST(IFNULL(test_user_id, '') AS CHAR) = CAST(%(pool)s AS CHAR)
+        """,
+        {"uid": str(user_id).strip(), "id": child["id"], "pool": GRAB_POOL_TEST_USER_ID},
     )
+    # 确认已写入，避免静默未更新
+    after = fetch_one(
+        """
+        SELECT test_user_id AS testUserId
+        FROM experiment_order_child
+        WHERE id = %(id)s
+        LIMIT 1
+        """,
+        {"id": child["id"]},
+    )
+    if str((after or {}).get("testUserId") or "").strip() != str(user_id).strip():
+        return False, "抢单写入失败，请重试"
     try:
         execute(
             """
@@ -1284,7 +1301,7 @@ def grab_order(*, order_id: int, user_id: str) -> tuple[bool, str]:
             SET test_user_id = %(uid)s
             WHERE child_id = %(cid)s
             """,
-            {"uid": user_id, "cid": child["id"]},
+            {"uid": str(user_id).strip(), "cid": child["id"]},
         )
     except Exception:
         pass
@@ -2021,7 +2038,7 @@ _CHILD_LINE_SELECT = """
 """
 
 _CHILD_LINE_JOINS = """
-        LEFT JOIN sy_users u ON c.test_user_id = u.id
+        LEFT JOIN sy_users u ON CAST(c.test_user_id AS CHAR) = CAST(u.id AS CHAR)
         LEFT JOIN experiment_line ln ON c.line_id = ln.id
         LEFT JOIN (
             SELECT v1.*
@@ -2107,7 +2124,7 @@ def _fetch_children_fallback(order_id: int) -> list[dict[str, Any]]:
             u.true_name AS testUserTrueName, c.add_time AS addTime,
             ln.line_num AS platformName
         FROM experiment_order_child c
-        LEFT JOIN sy_users u ON c.test_user_id = u.id
+        LEFT JOIN sy_users u ON CAST(c.test_user_id AS CHAR) = CAST(u.id AS CHAR)
         LEFT JOIN experiment_line ln ON c.line_id = ln.id
         WHERE c.order_form_id = %(oid)s AND IFNULL(c.delete_status, 2) <> 1
         ORDER BY c.id ASC
@@ -2143,7 +2160,7 @@ def _fetch_children_fallback(order_id: int) -> list[dict[str, Any]]:
             ln.line_num AS platformName
         FROM exp_qd_purchase_order_child poc
         JOIN experiment_order_child c ON poc.order_child_id = c.id
-        LEFT JOIN sy_users u ON c.test_user_id = u.id
+        LEFT JOIN sy_users u ON CAST(c.test_user_id AS CHAR) = CAST(u.id AS CHAR)
         LEFT JOIN experiment_line ln ON c.line_id = ln.id
         WHERE poc.purchase_order_id = %(oid)s AND IFNULL(c.delete_status, 2) <> 1
         ORDER BY c.id ASC

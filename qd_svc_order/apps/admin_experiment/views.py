@@ -753,7 +753,8 @@ def grab_order(request: Request, user=None):
     child_id = to_int(data.get("ofId") or data.get("id") or data.get("childId") or data.get("orderId"))
     if not child_id:
         return fail("参数错误")
-    uid = str((user or {}).get("id") or (user or {}).get("user_id") or "")
+    # 与其它接口一致：JWT 只有 user_id，勿优先取不存在的 id
+    uid = _staff_id(user)
     if not uid:
         return fail("用户未登录")
     ok_flag, msg = order_repo.grab_order(order_id=child_id, user_id=uid)

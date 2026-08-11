@@ -448,7 +448,11 @@
                 placeholder="请选择"
                 style="width: 140px"
               >
-                <el-option label="抢单" value="22" />
+                <el-option
+                  v-if="String(row.testUserId || '') === GRAB_POOL_TEST_USER_ID"
+                  label="待抢单"
+                  :value="GRAB_POOL_TEST_USER_ID"
+                />
                 <el-option
                   v-for="u in testerOptionsForRow(row)"
                   :key="String(u.id)"
@@ -811,6 +815,8 @@ const projectDlg = reactive({
 const platformOpts = ref<Opt[]>([])
 const testerDefault = ref<Record<string, unknown>[]>([])
 const testerByClass = ref<Record<string, Record<string, unknown>[]>>({})
+/** Java 待抢池哨兵：test_user_id=22 */
+const GRAB_POOL_TEST_USER_ID = '22'
 
 const totalNums = computed(() =>
   lines.value.reduce((s, r) => s + (Number(r.goodsNums) || 0), 0)
@@ -959,8 +965,52 @@ function testerLabel(u: Record<string, unknown>) {
 
 function testerOptionsForRow(row: LineRow) {
   const cid = String(row.classId || detail.value?.classId || '')
-  if (cid && testerByClass.value[cid]?.length) return testerByClass.value[cid]
-  return testerDefault.value
+  const raw =
+    cid && testerByClass.value[cid]?.length
+      ? testerByClass.value[cid]
+      : testerDefault.value
+  // 待抢池账号不进普通下拉，避免与「待抢单」选项抢同一 value 导致回显错乱
+  return (raw || []).filter((u) => String(u.id) !== GRAB_POOL_TEST_USER_ID)
+}
+
+/** 把当前行测试人员塞进下拉，保证抢单后能回显姓名而非「待抢单」 */
+function ensureTesterOnRow(row: LineRow, children: Record<string, unknown>[]) {
+  const tid = String(row.testUserId || '').trim()
+  if (!tid || tid === GRAB_POOL_TEST_USER_ID) return
+  const hit = children.find((c) => String(c.id) === String(row.id))
+  let name = String(
+    hit?.testUserTrueName || hit?.testUserName || hit?.testUser || ''
+  ).trim()
+  if (!name || name === '-' || name === '待抢单' || name === '抢单') {
+    name = ''
+  }
+  const patch = {
+    id: tid,
+    trueName: name || tid,
+    userName: name || tid,
+  }
+  const cid = String(row.classId || '').trim()
+  if (cid) {
+    const bucket = testerByClass.value[cid] || []
+    if (!bucket.some((u) => String(u.id) === tid)) {
+      testerByClass.value[cid] = [patch, ...bucket]
+    } else {
+      testerByClass.value[cid] = bucket.map((u) =>
+        String(u.id) === tid && name && !testerLabel(u)
+          ? { ...u, trueName: name, userName: name }
+          : u
+      )
+    }
+  }
+  if (!testerDefault.value.some((u) => String(u.id) === tid)) {
+    testerDefault.value = [patch, ...testerDefault.value]
+  } else if (name) {
+    testerDefault.value = testerDefault.value.map((u) =>
+      String(u.id) === tid && !testerLabel(u)
+        ? { ...u, trueName: name, userName: name }
+        : u
+    )
+  }
 }
 
 async function loadTestersForClasses(classIds: string[]) {
@@ -1461,21 +1511,7 @@ async function load() {
       if (obj.classId) classIds.push(String(obj.classId))
       await loadTestersForClasses(classIds)
       for (const row of lines.value) {
-        if (row.testUserId) {
-          const listRef = row.classId ? testerByClass.value : null
-          const bucket =
-            (row.classId && testerByClass.value[row.classId]) || testerDefault.value
-          if (!bucket.some((u) => String(u.id) === row.testUserId)) {
-            const hit = children.find((c) => String(c.id) === String(row.id))
-            const name = String(hit?.testUserName || hit?.testUser || row.testUserId)
-            const patch = { id: row.testUserId, trueName: name, userName: name }
-            if (row.classId && listRef) {
-              testerByClass.value[row.classId] = [patch, ...bucket]
-            } else {
-              testerDefault.value = [patch, ...bucket]
-            }
-          }
-        }
+        ensureTesterOnRow(row, children)
         if (row.lineId) {
           const hit = children.find((c) => String(c.id) === String(row.id))
           ensureOpt(
