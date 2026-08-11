@@ -1,5 +1,6 @@
 from django.urls import path
 
+from apps.admin_experiment import views as admin_exp_views
 from apps.pc_order import (
     views_address,
     views_catalog,
@@ -40,4 +41,6 @@ urlpatterns = [
     path("saveServiceConsult.ajax", views_consult.save_service_consult),
     path("cancelConsult.ajax", views_consult.cancel_consult),
     path("printYyd.ajax", views_consult.print_yyd),
+    # 兼容网关偶发转发 /api/pc/downloadFile.ajax
+    path("downloadFile.ajax", admin_exp_views.order_download_file),
 ]

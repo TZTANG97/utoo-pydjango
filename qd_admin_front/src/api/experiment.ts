@@ -252,11 +252,14 @@ export async function fetchExpOrderFileBlob(
     id: String(id),
     ...(displayName ? { name: displayName } : {}),
   })
+  // 优先订单服务正式路由；pc 为网关本地兜底（勿再误转发 404）
   const urls = [
     `${base}/experimentOrder/downloadFile.ajax?${qs}`,
+    `${base}/adminExperiment/order/downloadFile.ajax?${qs}`,
     `${base}/pc/downloadFile.ajax?${qs}`,
   ]
   let lastErr = '下载失败'
+  let businessErr = ''
   for (const url of urls) {
     try {
       const res = await fetch(url, {
@@ -271,16 +274,21 @@ export async function fetchExpOrderFileBlob(
       })
       const ct = (res.headers.get('content-type') || '').toLowerCase()
       if (!res.ok) {
-        // 网关偶发把附件当 JSON 失败时，尽量读出 message
+        let msg = `下载失败(${res.status})`
         if (ct.includes('json')) {
           try {
             const body = (await res.json()) as AjaxBody
-            lastErr = body.resMsg || body.message || `下载失败(${res.status})`
+            msg = body.resMsg || body.message || msg
           } catch {
-            lastErr = `下载失败(${res.status})`
+            /* keep msg */
           }
-        } else {
-          lastErr = `下载失败(${res.status})`
+        }
+        // 网关转发 404/非 JSON 属于路由问题，保留更早的业务错误
+        const isProxyNoise =
+          /返回非 JSON|不可用（HTTP|Not Found/i.test(msg) || res.status === 404
+        if (!isProxyNoise || !businessErr) {
+          lastErr = msg
+          if (!isProxyNoise) businessErr = msg
         }
         continue
       }
@@ -289,7 +297,9 @@ export async function fetchExpOrderFileBlob(
         const text = await blob.text()
         try {
           const body = JSON.parse(text) as AjaxBody
-          lastErr = body.resMsg || body.message || lastErr
+          const msg = body.resMsg || body.message || lastErr
+          lastErr = msg
+          businessErr = msg
         } catch {
           lastErr = text || lastErr
         }
@@ -300,6 +310,10 @@ export async function fetchExpOrderFileBlob(
       const m = /filename\*=UTF-8''([^;]+)|filename=\"?([^\";]+)\"?/i.exec(cd)
       if (m) {
         filename = decodeURIComponent((m[1] || m[2] || filename).trim())
+      }
+      // filename= 可能是 ASCII 占位，优先用展示名（含中文预约单）
+      if (displayName && /\.pdf$/i.test(displayName)) {
+        filename = displayName
       }
       const lower = filename.toLowerCase()
       let mime = blob.type || 'application/octet-stream'
@@ -315,7 +329,7 @@ export async function fetchExpOrderFileBlob(
       lastErr = e instanceof Error ? e.message : lastErr
     }
   }
-  return { ok: false, message: lastErr }
+  return { ok: false, message: businessErr || lastErr }
 }
 
 /** 预览附件：经后端取流后新开页，避免直链 OSS NoSuchKey */

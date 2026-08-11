@@ -21,11 +21,18 @@ def print_pdf_info(*, user_id: int, order_id: int) -> Optional[dict[str, Any]]:
 
     first = dict(rows[0])
     address = first.get("send_address") or first.get("sc_send_address") or ""
+    user_name = str(first.get("userName") or first.get("addressee_name") or "").strip()
+    mobile = str(first.get("sc_mobile") or first.get("addressee_mobile") or "").strip()
     test_addr_id = first.get("test_address_id")
     if test_addr_id:
-        ta = print_pdf_repo.get_test_address(int(test_addr_id))
-        if ta and ta.get("address"):
+        ta = print_pdf_repo.get_test_address(int(test_addr_id)) or {}
+        if ta.get("address"):
             address = ta["address"]
+        # 寄送地址主数据优先于咨询单/订单收件字段
+        if str(ta.get("trueName") or "").strip():
+            user_name = str(ta.get("trueName") or "").strip()
+        if str(ta.get("mobile") or "").strip():
+            mobile = str(ta.get("mobile") or "").strip()
 
     reverso = first.get("reverso_context") or first.get("sc_reverso_context")
     recovery: int | None = None
@@ -66,8 +73,8 @@ def print_pdf_info(*, user_id: int, order_id: int) -> Optional[dict[str, Any]]:
         "id": first.get("eid"),
         "order_id": first.get("ord_id") or "",
         "addTime": to_jsonable(first.get("addTime")),
-        "userName": first.get("userName") or "",
-        "mobile": first.get("sc_mobile") or "",
+        "userName": user_name,
+        "mobile": mobile,
         "sampleDelivery": {
             "address": address,
             "recovery": recovery,

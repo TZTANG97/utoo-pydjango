@@ -1878,6 +1878,8 @@ def get_order(order_id: int) -> dict[str, Any] | None:
     row["canConfirmPay"] = parent_kind and sure_recv
     row["canConfirmCustomer"] = parent_kind and st == 67
     row["canGenerateAppointment"] = parent_kind and is_online == 0 and is_yyd == 0 and st not in (0,)
+    # 已生成也可重新生成（替换 PDF，修正寄送地址/收件人等）
+    row["canRegenerateAppointment"] = parent_kind and is_online == 0 and is_yyd == 1 and st not in (0,)
     # 创建子单：存在待处理产品行 op_status=1
     if parent_kind and st != 0:
         # 兼容历史：子单已取消但产品行未释放时，自动恢复为可创建
@@ -3748,7 +3750,9 @@ def generate_appointment(
     row = get_order(order_id)
     if not row:
         return False, "订单不存在"
-    if not row.get("canGenerateAppointment"):
+    can_gen = bool(row.get("canGenerateAppointment"))
+    can_regen = bool(row.get("canRegenerateAppointment"))
+    if not (can_gen or can_regen):
         return False, "当前不可生成预约单"
     addr = (test_address_id or "").strip()
     if not addr:
@@ -3776,21 +3780,24 @@ def generate_appointment(
             return False, "更新预约标志失败"
 
     pdf_ok, pdf_msg = _build_appointment_pdf(order_id=order_id, test_address_id=addr_id)
+    action_label = "重新生成预约单" if can_regen else "生成预约单"
     _write_order_log(
         order_id,
-        f"生成预约单 地址:{addr_id}" + ("" if pdf_ok else f"（PDF:{pdf_msg}）"),
+        f"{action_label} 地址:{addr_id}" + ("" if pdf_ok else f"（PDF:{pdf_msg}）"),
         user_id=staff_user_id,
     )
     if not pdf_ok:
-        try:
-            execute(
-                "UPDATE experiment_order SET is_yyd = 0 WHERE id = %(id)s",
-                {"id": order_id},
-            )
-        except Exception:
-            pass
+        # 重新生成失败时保留已有 is_yyd，避免把已生成状态清掉
+        if not can_regen:
+            try:
+                execute(
+                    "UPDATE experiment_order SET is_yyd = 0 WHERE id = %(id)s",
+                    {"id": order_id},
+                )
+            except Exception:
+                pass
         return False, f"PDF 生成失败：{pdf_msg}"
-    return True, "已生成预约单"
+    return True, f"已{action_label}"
 
 
 def _resolve_pdf_font() -> str:
@@ -3830,13 +3837,17 @@ def _resolve_pdf_font() -> str:
 
 
 def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool, str]:
-    """生成预约单 PDF 并写入 accessory type=6。"""
+    """生成预约单 PDF 并写入 accessory type=6。
+
+    收件人/电话/寄送地址优先取所选 test_address，其次咨询单/订单收件字段。
+    """
     try:
         from io import BytesIO
 
         from reportlab.lib.pagesizes import A4
         from reportlab.pdfgen import canvas
 
+        from apps.orders.repositories import accessory as accessory_repo
         from apps.orders.repositories import print_pdf as print_pdf_repo
         from apps.orders.services.accessory_upload import save_order_attachment
     except Exception as exc:
@@ -3848,10 +3859,13 @@ def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool
             t.id, t.order_id AS orderNo,
             q.name AS customerName, u.company_name AS supplierName,
             t.addTime, t.send_address AS sendAddress,
-            t.addressee_name AS shipUser, t.addressee_mobile AS shipPhone
+            t.addressee_name AS shipUser, t.addressee_mobile AS shipPhone,
+            sc.userName AS consultUser, sc.mobile AS consultMobile,
+            sc.send_address AS consultSendAddress
         FROM experiment_order t
         LEFT JOIN qd_user_company q ON t.customer_name = q.id
         LEFT JOIN `user` u ON t.supplier_name = u.id
+        LEFT JOIN service_consult sc ON sc.order_id = t.id
         WHERE t.id = %(id)s
         LIMIT 1
         """,
@@ -3860,7 +3874,21 @@ def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool
     if not order:
         return False, "订单不存在"
     addr_row = print_pdf_repo.get_test_address(test_address_id) or {} if test_address_id else {}
-    address_text = str(addr_row.get("address") or order.get("sendAddress") or "")
+    ship_user = (
+        str(addr_row.get("trueName") or "").strip()
+        or str(order.get("consultUser") or "").strip()
+        or str(order.get("shipUser") or "").strip()
+    )
+    ship_phone = (
+        str(addr_row.get("mobile") or "").strip()
+        or str(order.get("consultMobile") or "").strip()
+        or str(order.get("shipPhone") or "").strip()
+    )
+    address_text = (
+        str(addr_row.get("address") or "").strip()
+        or str(order.get("consultSendAddress") or "").strip()
+        or str(order.get("sendAddress") or "").strip()
+    )
     children = fetch_all(
         """
         SELECT
@@ -3889,8 +3917,8 @@ def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool
             f"订单编号：{order.get('orderNo') or order_id}",
             f"客户名称：{order.get('customerName') or '-'}",
             f"所属公司：{order.get('supplierName') or '-'}",
-            f"收件人：{order.get('shipUser') or '-'}",
-            f"联系电话：{order.get('shipPhone') or '-'}",
+            f"收件人：{ship_user or '-'}",
+            f"联系电话：{ship_phone or '-'}",
             f"寄送地址：{address_text or '-'}",
             f"制单时间：{str(order.get('addTime') or '')[:19]}",
             "",
@@ -3923,6 +3951,12 @@ def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool
         pdf_bytes = buf.getvalue()
     except Exception as exc:
         return False, f"PDF 绘制失败: {exc}"
+
+    # 替换旧预约单，避免预览仍打开最早那份错误 PDF
+    try:
+        accessory_repo.soft_delete_yyd_attachments(order_id)
+    except Exception:
+        pass
 
     order_no = str(order.get("orderNo") or order_id)
     ok_flag, msg, _meta = save_order_attachment(

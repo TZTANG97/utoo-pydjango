@@ -1,4 +1,4 @@
-import request, {
+﻿import request, {
   type AjaxBody,
   type RequestConfig,
   ajaxErrorMessage,
@@ -218,6 +218,139 @@ export const uploadExpOrderFile = (formData: FormData) =>
 
 export const deleteExpOrderFile = (id: string | number) =>
   postAjax(`${BASE}/order/deleteFile.ajax`, { id })
+
+/** 对齐 Java downloadFile.ajax：blob 强制下载，避免 window.open 预览 */
+export async function downloadExpOrderFile(
+  id: string | number,
+  displayName?: string
+): Promise<{ ok: boolean; message?: string }> {
+  const result = await fetchExpOrderFileBlob(id, displayName)
+  if (!result.ok || !result.blob) {
+    return { ok: false, message: result.message || '下载失败' }
+  }
+  const objUrl = URL.createObjectURL(result.blob)
+  const a = document.createElement('a')
+  a.href = objUrl
+  a.download = result.filename || displayName || `file-${id}`
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(objUrl)
+  return { ok: true }
+}
+
+/** 拉取附件字节（本地盘 / OSS），供下载与预览共用 */
+export async function fetchExpOrderFileBlob(
+  id: string | number,
+  displayName?: string
+): Promise<{ ok: boolean; blob?: Blob; filename?: string; message?: string }> {
+  const { getToken } = await import('@admin/utils/auth')
+  const token = getToken() || ''
+  const base = (import.meta.env.VITE_APP_BASE_API as string) || '/api'
+  const qs = new URLSearchParams({
+    id: String(id),
+    ...(displayName ? { name: displayName } : {}),
+  })
+  // 优先订单服务正式路由；pc 为网关本地兜底（勿再误转发 404）
+  const urls = [
+    `${base}/experimentOrder/downloadFile.ajax?${qs}`,
+    `${base}/adminExperiment/order/downloadFile.ajax?${qs}`,
+    `${base}/pc/downloadFile.ajax?${qs}`,
+  ]
+  let lastErr = '下载失败'
+  let businessErr = ''
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/octet-stream,*/*',
+          'X-Channel': 'admin',
+          ...(token
+            ? { token, Authorization: `Bearer ${token}` }
+            : {}),
+        },
+      })
+      const ct = (res.headers.get('content-type') || '').toLowerCase()
+      if (!res.ok) {
+        let msg = `下载失败(${res.status})`
+        if (ct.includes('json')) {
+          try {
+            const body = (await res.json()) as AjaxBody
+            msg = body.resMsg || body.message || msg
+          } catch {
+            /* keep msg */
+          }
+        }
+        // 网关转发 404/非 JSON 属于路由问题，保留更早的业务错误
+        const isProxyNoise =
+          /返回非 JSON|不可用（HTTP|Not Found/i.test(msg) || res.status === 404
+        if (!isProxyNoise || !businessErr) {
+          lastErr = msg
+          if (!isProxyNoise) businessErr = msg
+        }
+        continue
+      }
+      const blob = await res.blob()
+      if (ct.includes('json') || blob.type.includes('json')) {
+        const text = await blob.text()
+        try {
+          const body = JSON.parse(text) as AjaxBody
+          const msg = body.resMsg || body.message || lastErr
+          lastErr = msg
+          businessErr = msg
+        } catch {
+          lastErr = text || lastErr
+        }
+        continue
+      }
+      const cd = res.headers.get('content-disposition') || ''
+      let filename = displayName || `file-${id}`
+      const m = /filename\*=UTF-8''([^;]+)|filename=\"?([^\";]+)\"?/i.exec(cd)
+      if (m) {
+        filename = decodeURIComponent((m[1] || m[2] || filename).trim())
+      }
+      // filename= 可能是 ASCII 占位，优先用展示名（含中文预约单）
+      if (displayName && /\.pdf$/i.test(displayName)) {
+        filename = displayName
+      }
+      const lower = filename.toLowerCase()
+      let mime = blob.type || 'application/octet-stream'
+      if (lower.endsWith('.pdf')) mime = 'application/pdf'
+      else if (lower.endsWith('.png')) mime = 'image/png'
+      else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) mime = 'image/jpeg'
+      const typed =
+        mime && mime !== blob.type
+          ? new Blob([blob], { type: mime })
+          : blob
+      return { ok: true, blob: typed, filename }
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : lastErr
+    }
+  }
+  return { ok: false, message: businessErr || lastErr }
+}
+
+/** 预览附件：经后端取流后新开页，避免直链 OSS NoSuchKey */
+export async function previewExpOrderFile(
+  id: string | number,
+  displayName?: string
+): Promise<{ ok: boolean; message?: string }> {
+  const result = await fetchExpOrderFileBlob(id, displayName)
+  if (!result.ok || !result.blob) {
+    return { ok: false, message: result.message || '预览失败' }
+  }
+  const objUrl = URL.createObjectURL(result.blob)
+  const win = window.open(objUrl, '_blank')
+  if (!win) {
+    URL.revokeObjectURL(objUrl)
+    return { ok: false, message: '浏览器拦截了预览窗口，请允许弹窗后重试' }
+  }
+  window.setTimeout(() => URL.revokeObjectURL(objUrl), 60_000)
+  return { ok: true }
+}
+
 
 export const updateExpOrderMsg = (id: string | number, msg: string) =>
   postAjax(`${BASE}/order/updateMsg.ajax`, { id, msg })

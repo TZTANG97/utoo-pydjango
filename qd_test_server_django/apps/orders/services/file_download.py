@@ -58,21 +58,48 @@ def _object_key(path: str, name: str) -> str:
     return p or n
 
 
-def _public_url(acc: dict) -> str:
+def _oss_key_candidates(path: str, name: str) -> list[str]:
+    """兼容 path=upload/order、order、以及历史裸文件名。"""
+    n = (name or "").strip().lstrip("/")
+    primary = _object_key(path, name)
+    out: list[str] = []
+    for k in (
+        primary,
+        f"upload/order/{n}" if n else "",
+        f"order/{n}" if n else "",
+        n,
+    ):
+        k2 = (k or "").strip("/")
+        if k2 and k2 not in out:
+            out.append(k2)
+    return out
+
+
+def _public_url_candidates(acc: dict) -> list[str]:
     path = str(acc.get("path") or "").strip().rstrip("/")
     name = str(acc.get("name") or "").strip().lstrip("/")
+    urls: list[str] = []
     if path.startswith("http://") or path.startswith("https://"):
-        return f"{path}/{name}" if name and not path.endswith(name) else path
+        u = f"{path}/{name}" if name and not path.endswith(name) else path
+        if u:
+            urls.append(u)
     try:
         config = get_config_row()
         base = (image_web_server(config) or "").rstrip("/")
     except Exception:
         base = (getattr(settings, "IMAGE_WEB_SERVER", "") or "").rstrip("/")
-    if base and path and name:
-        return f"{base}/{path}/{name}"
     if base and name:
-        return f"{base}/{name}"
-    return ""
+        for mid in (path, "upload/order", "order", ""):
+            mid2 = (mid or "").strip("/")
+            u = f"{base}/{mid2}/{name}" if mid2 else f"{base}/{name}"
+            if u not in urls:
+                urls.append(u)
+    return urls
+
+
+def _public_url(acc: dict) -> str:
+    cands = _public_url_candidates(acc)
+    return cands[0] if cands else ""
 
 
 def _try_oss_download(key: str) -> Optional[bytes]:
@@ -117,6 +144,7 @@ def _local_file_candidates(upload_root: Path, path: str, name: str) -> list[Path
     if filename:
         out.append(upload_root / "order" / filename)
         out.append(upload_root / filename)
+        out.append(upload_root / "upload" / "order" / filename)
     if key:
         out.append(upload_root / Path(*key.split("/")))
         parts = key.split("/")
@@ -143,26 +171,33 @@ def load_accessory_bytes(
     if not acc:
         return None, ""
     download_name = build_download_filename(acc, name_hint)
-    key = _object_key(acc.get("path") or "", acc.get("name") or "")
+    path = str(acc.get("path") or "")
+    name = str(acc.get("name") or "")
 
-    data = _try_oss_download(key) if key else None
-    if data:
-        return data, download_name
+    for key in _oss_key_candidates(path, name):
+        data = _try_oss_download(key)
+        if data:
+            return data, download_name
 
     upload_root = Path(getattr(settings, "UPLOAD_DIR", None) or "upload")
     if not upload_root.is_absolute():
         upload_root = Path(getattr(settings, "BASE_DIR", Path.cwd())) / upload_root
-    for local_path in _local_file_candidates(
-        upload_root, str(acc.get("path") or ""), str(acc.get("name") or "")
-    ):
+    for local_path in _local_file_candidates(upload_root, path, name):
         if local_path.is_file():
             return local_path.read_bytes(), download_name
 
-    data = _try_http_download(_public_url(acc))
-    if data:
-        return data, download_name
+    for url in _public_url_candidates(acc):
+        data = _try_http_download(url)
+        if data:
+            return data, download_name
 
-    logger.warning("attachment not found id=%s key=%s", accessory_id, key)
+    logger.warning(
+        "attachment not found id=%s path=%s name=%s keys=%s",
+        accessory_id,
+        path,
+        name,
+        _oss_key_candidates(path, name),
+    )
     return None, download_name
 
 

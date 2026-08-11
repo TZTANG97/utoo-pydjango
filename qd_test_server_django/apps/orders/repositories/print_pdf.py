@@ -46,7 +46,16 @@ def fetch_print_pdf_rows(order_id: int) -> list[dict[str, Any]]:
 
 
 def get_test_address(test_address_id: int) -> dict[str, Any] | None:
+    """测试寄送地址：收件人 true_name、手机 mobile、地址 address。"""
     return fetch_one(
-        "SELECT address FROM test_address WHERE id = %(tid)s LIMIT 1",
+        """
+        SELECT
+            address,
+            true_name AS trueName,
+            mobile
+        FROM test_address
+        WHERE id = %(tid)s
+        LIMIT 1
+        """,
         {"tid": test_address_id},
     )

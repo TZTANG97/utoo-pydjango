@@ -29,9 +29,28 @@ def get_yyd_attachment(order_id: int) -> dict[str, Any] | None:
         """
         SELECT path, name FROM accessory
         WHERE deleteStatus = 0 AND exp_of_id = %(oid)s AND type = 6
-        ORDER BY id ASC LIMIT 1
+        ORDER BY id DESC LIMIT 1
         """,
         {"oid": order_id},
+    )
+
+
+def soft_delete_yyd_attachments(order_id: int) -> int:
+    """软删主单上旧预约单 PDF（type=6），便于重新生成后预览最新文件。"""
+    if not order_id:
+        return 0
+    return int(
+        execute(
+            """
+            UPDATE accessory
+            SET deleteStatus = 1
+            WHERE IFNULL(deleteStatus, 0) = 0
+              AND exp_of_id = %(oid)s
+              AND type = 6
+            """,
+            {"oid": order_id},
+        )
+        or 0
     )
 
 
