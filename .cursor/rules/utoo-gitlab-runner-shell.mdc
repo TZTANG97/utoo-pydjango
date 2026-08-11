@@ -1,0 +1,25 @@
+---
+description: utoo-windows Runner 必须用 powershell，禁止改成 bash
+alwaysApply: true
+---
+
+# GitLab Runner shell（硬性）
+
+本机 `C:\GitLab-Runner\config.toml` 里 **`name = "utoo-windows"` 必须 `shell = "powershell"`**。
+
+## 禁止
+
+- 把 `utoo-windows` 改成 `shell = "bash"` / `pwsh` / `cmd`
+- 为「中文 commit」「对齐工厂项目」「mkdir not found」去改 Runner shell
+- 整文件重写 `config.toml` 时把 utoo 写成 bash
+- 新增/恢复 `deploy/utoo-windows/ci-entry-*.sh` 作为发版入口
+
+## 原因
+
+Runner 以 **LocalSystem** 跑。`shell=bash` 时 `get_sources` 会报 `mkdir: command not found`，发版必挂。
+
+## 正确做法
+
+- CI 入口只用 `ci-entry-*.cmd` → `powershell -File`（见 `.gitlab-ci.yml`）
+- 若发现被改成 bash：管理员运行 `C:\GitLab-Runner\fix-utoo-runner-admin.cmd`，或 `ensure-utoo-powershell.ps1`
+- 中文 commit / 日志编码：修脚本编码与入口，**不要动 shell**
