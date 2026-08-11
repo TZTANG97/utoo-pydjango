@@ -515,7 +515,7 @@ const selected = ref<Record<string, unknown>[]>([])
 const managerOptions = ref<Record<string, unknown>[]>([])
 const testManagerOptions = ref<Record<string, unknown>[]>([])
 const staffOptions = ref<Record<string, unknown>[]>([])
-/** 实验子单测试人员：按 classId 缓存 queryTestUsers 结果 */
+/** 实验/分包子单测试人员：按 classId 缓存 queryTestUsers 结果 */
 const testerByClass = ref<Record<string, Record<string, unknown>[]>>({})
 const testerDefault = ref<Record<string, unknown>[]>([])
 const companyOptions = ref<Record<string, unknown>[]>([])
@@ -555,8 +555,13 @@ const titleText = computed(() =>
 const isSubcontract = computed(() => String(parent.value?.orderType || '') === '8')
 const isExperiment = computed(() => String(parent.value?.orderType || '') === '6')
 
+/** 待创建产品行：op_status=1 且未挂接有效分包/实验子单（防重复创建） */
 const pendingRows = computed(() =>
-  children.value.filter((r) => Number(r.opStatus ?? 0) === 1)
+  children.value.filter((r) => {
+    if (r.canCreateSubLine != null) return Boolean(r.canCreateSubLine)
+    if (r.alreadyLinked === true || r.hasActivePurchase === true) return false
+    return Number(r.opStatus ?? r.op_status ?? 0) === 1
+  })
 )
 
 const totalCostText = computed(() => {
@@ -576,7 +581,7 @@ function userLabel(u: Record<string, unknown>) {
 }
 
 function testerOptionsForRow(row: Record<string, unknown>) {
-  if (isSubcontract.value) return staffOptions.value
+  // 分包/实验子单：均按实验分类 queryTestUsers（含角色+分类绑定权限）
   const cid = String(row.classId || parent.value?.classId || '')
   if (cid && testerByClass.value[cid]?.length) return testerByClass.value[cid]
   return testerDefault.value
@@ -714,6 +719,14 @@ async function loadOptions() {
     taxOptions.value = taxRes.data as Record<string, unknown>[]
   }
   await reloadCompanies()
+  // 分包/实验创建页：测试人员按产品行 classId 拉权限名单（对齐 queryTestUsers）
+  if (isSubcontract.value || isExperiment.value) {
+    const classIds = children.value
+      .map((c) => String(c.classId || parent.value?.classId || ''))
+      .filter(Boolean)
+    if (parent.value?.classId) classIds.push(String(parent.value.classId))
+    await loadTestersForClasses(classIds)
+  }
   if (isExperiment.value) {
     try {
       const cust = await fetchCustomerNamesExp()
@@ -736,11 +749,6 @@ async function loadOptions() {
     } catch {
       platformOptions.value = []
     }
-    const classIds = children.value
-      .map((c) => String(c.classId || parent.value?.classId || ''))
-      .filter(Boolean)
-    if (parent.value?.classId) classIds.push(String(parent.value.classId))
-    await loadTestersForClasses(classIds)
     await reloadCustomerAccounts(form.customerName || '')
   }
 }

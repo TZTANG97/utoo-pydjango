@@ -292,11 +292,13 @@ async function loadGrabOptions() {
 function openDetail(row: Record<string, unknown>) {
   if (isGrab.value) {
     const orderNo = String(row.orderId || '').trim()
+    const ot = String(row.orderType || '10')
     router.push({
       name: 'ExperimentOrderDetail',
       params: { id: String(row.id) },
       query: {
         from: 'grab-orders',
+        orderType: ot,
         ...(orderNo ? { orderNo } : {}),
       },
     })

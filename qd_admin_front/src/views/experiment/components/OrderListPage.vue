@@ -171,17 +171,17 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import AdminPageCard from '@/components/AdminPageCard.vue'
+import AdminPageCard from '@admin/components/AdminPageCard.vue'
 import {
   auditExpOrder,
   exportExpOrders,
   fetchExpOrderList,
   fetchExpOrderStatusOptions,
   fetchGrabOrderList,
-} from '@/api/experiment'
-import { fetchSupplierAll, fetchUserList } from '@/api/system'
-import { useDataTable } from '@/composables/useDataTable'
-import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
+} from '@admin/api/experiment'
+import { fetchSupplierAll, fetchUserList } from '@admin/api/system'
+import { useDataTable } from '@admin/composables/useDataTable'
+import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
 const router = useRouter()
 
@@ -292,11 +292,13 @@ async function loadGrabOptions() {
 function openDetail(row: Record<string, unknown>) {
   if (isGrab.value) {
     const orderNo = String(row.orderId || '').trim()
+    const ot = String(row.orderType || '10')
     router.push({
       name: 'ExperimentOrderDetail',
       params: { id: String(row.id) },
       query: {
         from: 'grab-orders',
+        orderType: ot,
         ...(orderNo ? { orderNo } : {}),
       },
     })

@@ -905,17 +905,21 @@ def test_start(
     line_id: str = "",
     staff_user_id: str | int | None = None,
 ) -> tuple[bool, str]:
-    """对齐 Java ceshistart：确认实验平台 lineId 与子行一致，子行→38，主单升至38。"""
+    """对齐 Java ceshistart：type=10 校验实验平台；type=9 分包子单不校验平台。"""
     ids = _parse_ids(child_ids)
     if not ids:
         return False, "请选择子单行"
     if len(ids) != 1:
         return False, "开始测试请只勾选一行"
+    main = fetch_one(
+        "SELECT order_type AS orderType FROM experiment_order WHERE id = %(id)s LIMIT 1",
+        {"id": order_id},
+    )
+    ot = str((main or {}).get("orderType") or "")
+    need_platform = ot == "10"
     lid = str(line_id or "").strip()
     if "_" in lid:
         lid = lid.split("_", 1)[-1].strip()
-    if not lid:
-        return False, "请确认实验平台"
     child = fetch_one(
         """
         SELECT id, order_id AS childOrderId, order_status AS orderStatus,
@@ -929,14 +933,18 @@ def test_start(
     if not child:
         return False, "子单行不存在"
     child_line = str(child.get("lineId") or "").strip()
-    if child_line and child_line != lid:
-        return False, "实验平台不正确!"
-    if not child_line:
-        # 创建子单时已要求选平台；若历史数据缺 line_id 则允许写入确认值
-        execute(
-            "UPDATE experiment_order_child SET line_id = %(lid)s WHERE id = %(id)s",
-            {"lid": lid[:64], "id": ids[0]},
-        )
+    if need_platform:
+        if not lid:
+            return False, "请确认实验平台"
+        if child_line and child_line != lid:
+            return False, "实验平台不正确!"
+        if not child_line:
+            # 创建子单时已要求选平台；若历史数据缺 line_id 则允许写入确认值
+            execute(
+                "UPDATE experiment_order_child SET line_id = %(lid)s WHERE id = %(id)s",
+                {"lid": lid[:64], "id": ids[0]},
+            )
+            child_line = lid
     ok, msg = _set_children_status(
         order_id=order_id,
         child_ids=ids,
@@ -974,8 +982,8 @@ def test_start(
                 """,
                 {"cid": ids[0], "line_id": line_pk},
             )
-        except Exception:
-            logger.exception("insert experiment_log failed child=%s", ids[0])
+    except Exception:
+        logger.exception("insert experiment_log failed child=%s", ids[0])
     # 样品管理单操作记录
     try:
         got_rows = fetch_all(
@@ -1000,33 +1008,33 @@ def test_start(
             )
     except Exception:
         logger.exception("write start-test depot log failed child=%s", ids[0])
-    # 平台占用 +1（失败不阻断）
-    try:
-        execute(
-            """
-            UPDATE experiment_line
-            SET run_num = IFNULL(run_num, 0) + 1,
-                line_status = CASE WHEN IFNULL(line_status, 0) = 0 THEN 1 ELSE line_status END
-            WHERE id = %(id)s
-            """,
-            {"id": line_pk or 0},
-        )
-    except Exception:
-        pass
-    # 测试人员进行中数量 +1
-    try:
-        tuid = child.get("testUserId")
-        if tuid not in (None, ""):
+    # Java：仅 type=10 更新实验线占用与测试人员进行中数量
+    if need_platform and line_pk:
+        try:
             execute(
                 """
-                UPDATE sy_users
-                SET test_num = IFNULL(test_num, 0) + 1
+                UPDATE experiment_line
+                SET run_num = IFNULL(run_num, 0) + 1,
+                    line_status = CASE WHEN IFNULL(line_status, 0) = 0 THEN 1 ELSE line_status END
                 WHERE id = %(id)s
                 """,
-                {"id": tuid},
+                {"id": line_pk},
             )
-    except Exception:
-        pass
+        except Exception:
+            pass
+        try:
+            tuid = child.get("testUserId")
+            if tuid not in (None, ""):
+                execute(
+                    """
+                    UPDATE sy_users
+                    SET test_num = IFNULL(test_num, 0) + 1
+                    WHERE id = %(id)s
+                    """,
+                    {"id": tuid},
+                )
+        except Exception:
+            pass
     try:
         from apps.admin_experiment.services.wx_suborder_notify import notify_test_start
 

@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div v-loading="loading" class="create-page">
     <header class="page-head">
       <button type="button" class="back-link" @click="goBack">← 返回详情</button>
@@ -555,8 +555,13 @@ const titleText = computed(() =>
 const isSubcontract = computed(() => String(parent.value?.orderType || '') === '8')
 const isExperiment = computed(() => String(parent.value?.orderType || '') === '6')
 
+/** 待创建产品行：op_status=1 且未挂接有效分包/实验子单（防重复创建） */
 const pendingRows = computed(() =>
-  children.value.filter((r) => Number(r.opStatus ?? 0) === 1)
+  children.value.filter((r) => {
+    if (r.canCreateSubLine != null) return Boolean(r.canCreateSubLine)
+    if (r.alreadyLinked === true || r.hasActivePurchase === true) return false
+    return Number(r.opStatus ?? r.op_status ?? 0) === 1
+  })
 )
 
 const totalCostText = computed(() => {
@@ -575,8 +580,8 @@ function userLabel(u: Record<string, unknown>) {
   return name && uname && name !== uname ? `${name}（${uname}）` : name || uname || String(u.id)
 }
 
+/** 对齐 queryTestUsers：按测试分类过滤（含管理员/测试人员/测试主管+分类绑定） */
 function testerOptionsForRow(row: Record<string, unknown>) {
-  if (isSubcontract.value) return staffOptions.value
   const cid = String(row.classId || parent.value?.classId || '')
   if (cid && testerByClass.value[cid]?.length) return testerByClass.value[cid]
   return testerDefault.value
@@ -714,6 +719,14 @@ async function loadOptions() {
     taxOptions.value = taxRes.data as Record<string, unknown>[]
   }
   await reloadCompanies()
+  // 分包/实验创建子单：测试人员均走 queryTestUsers（按分类权限），勿用全员 type=-1
+  if (isSubcontract.value || isExperiment.value) {
+    const classIds = children.value
+      .map((c) => String(c.classId || parent.value?.classId || ''))
+      .filter(Boolean)
+    if (parent.value?.classId) classIds.push(String(parent.value.classId))
+    await loadTestersForClasses(classIds)
+  }
   if (isExperiment.value) {
     try {
       const cust = await fetchCustomerNamesExp()
@@ -736,11 +749,6 @@ async function loadOptions() {
     } catch {
       platformOptions.value = []
     }
-    const classIds = children.value
-      .map((c) => String(c.classId || parent.value?.classId || ''))
-      .filter(Boolean)
-    if (parent.value?.classId) classIds.push(String(parent.value.classId))
-    await loadTestersForClasses(classIds)
     await reloadCustomerAccounts(form.customerName || '')
   }
 }

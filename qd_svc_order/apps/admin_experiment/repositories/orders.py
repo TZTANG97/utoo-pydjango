@@ -1141,17 +1141,27 @@ def list_grab_orders(
     page: int,
     page_size: int,
 ) -> tuple[list[dict[str, Any]], int]:
-    """对齐 Java qd_list_dpt / listPagesdpt0419：type=10 + 子单 test_user_id=22。"""
+    """抢单列表：实验子订单(10) + 实验分包子订单(9)，子行 test_user_id=22。"""
     where = """
-        WHERE t.order_status > 0 AND t.order_type = '10'
-          AND EXISTS (
-            SELECT 1
-            FROM exp_qd_purchase_order_child poc
-            JOIN experiment_order_child ocf ON poc.order_child_id = ocf.id
-            WHERE poc.purchase_order_id = t.id
-              AND ocf.test_user_id = %(pool_uid)s
-              AND ocf.order_status <= 36
-              AND IFNULL(ocf.delete_status, 2) <> 1
+        WHERE t.order_status > 0 AND t.order_type IN ('9', '10')
+          AND (
+            EXISTS (
+              SELECT 1
+              FROM exp_qd_purchase_order_child poc
+              JOIN experiment_order_child ocf ON poc.order_child_id = ocf.id
+              WHERE poc.purchase_order_id = t.id
+                AND ocf.test_user_id = %(pool_uid)s
+                AND ocf.order_status <= 36
+                AND IFNULL(ocf.delete_status, 2) <> 1
+            )
+            OR EXISTS (
+              SELECT 1
+              FROM experiment_order_child ocf2
+              WHERE ocf2.order_form_id = t.id
+                AND ocf2.test_user_id = %(pool_uid)s
+                AND ocf2.order_status <= 36
+                AND IFNULL(ocf2.delete_status, 2) <> 1
+            )
           )
     """
     params: dict[str, Any] = {"pool_uid": GRAB_POOL_TEST_USER_ID}
@@ -1206,6 +1216,7 @@ def list_grab_orders(
         SELECT
             t.id, t.addTime, t.order_id AS orderId, t.order_status AS orderStatus,
             t.order_time AS orderTime, t.purchase_type AS purchaseType,
+            t.order_type AS orderType,
             qs.name AS stockCompanyName, q.name AS companyName,
             p.order_id AS parentOrderId,
             sm.user_name AS saleManagerName, sm.true_name AS saleManagerTrueName,
@@ -1224,6 +1235,7 @@ def list_grab_orders(
     )
     for r in rows:
         r["orderStatusLabel"] = _status_label(r.get("orderStatus"))
+        r["orderType"] = str(r.get("orderType") or "10")
         r["companyName"] = r.get("companyName") or r.get("stockCompanyName") or "-"
         r["saleManager"] = str(r.get("saleManagerTrueName") or r.get("saleManagerName") or "-")
         r["saleUser"] = str(r.get("saleUserTrueName") or r.get("saleUserName") or "-")
@@ -1557,33 +1569,20 @@ def get_order(order_id: int) -> dict[str, Any] | None:
         row["orderTime"] = (row.get("addTime") or "")[:10]
     row["isVideoLabel"] = "是" if _video_is_yes(row.get("isVideo")) else "否"
     row["showShipAddress"] = False
-    # type=9/10：样品回收/电话/云视频/寄回地址对齐 Java —— 以父主单为准
+    # type=9/10：样品回收/电话/云视频/寄回地址对齐 Java —— 均以父主单为准
+    # （ExpSubPurchaseOrderController：reverso/mobile/send_address 取 orderParent）
     if ot in ("9", "10"):
-        # type=10 Java 直接取父单 reverso / mobile / is_video / send_address
-        if ot == "10":
-            rev = row.get("parentReversoContext")
-            if rev is None or str(rev).strip() == "":
-                rev = row.get("reversoContext")
-            pv = row.get("parentIsVideo")
-            if pv is None or str(pv).strip() == "":
-                pv = row.get("isVideo")
-            phone = (
-                str(row.get("parentMobile") or "").strip()
-                or str(row.get("mobile") or "").strip()
-                or str(row.get("shipPhone") or "").strip()
-            )
-        else:
+        rev = row.get("parentReversoContext")
+        if rev is None or str(rev).strip() == "":
             rev = row.get("reversoContext")
-            if rev is None or str(rev).strip() == "":
-                rev = row.get("parentReversoContext")
-            pv = row.get("parentIsVideo")
-            if pv is None or str(pv).strip() == "":
-                pv = row.get("isVideo")
-            phone = (
-                str(row.get("mobile") or "").strip()
-                or str(row.get("parentMobile") or "").strip()
-                or str(row.get("shipPhone") or "").strip()
-            )
+        pv = row.get("parentIsVideo")
+        if pv is None or str(pv).strip() == "":
+            pv = row.get("isVideo")
+        phone = (
+            str(row.get("parentMobile") or "").strip()
+            or str(row.get("mobile") or "").strip()
+            or str(row.get("shipPhone") or "").strip()
+        )
         rev_yes = _reverso_is_yes(rev)
         row["reversoLabel"] = "是" if rev_yes else "否"
         row["reversoYes"] = rev_yes
@@ -1909,10 +1908,18 @@ def get_order(order_id: int) -> dict[str, Any] | None:
         pending_lines = int(
             scalar(
                 """
-                SELECT COUNT(*) FROM experiment_order_child
-                WHERE order_form_id = %(oid)s
-                  AND IFNULL(delete_status, 2) <> 1
-                  AND IFNULL(op_status, 0) = 1
+                SELECT COUNT(*) FROM experiment_order_child c
+                WHERE c.order_form_id = %(oid)s
+                  AND IFNULL(c.delete_status, 2) <> 1
+                  AND IFNULL(c.op_status, 0) = 1
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM exp_qd_purchase_order_child p
+                      INNER JOIN experiment_order o ON o.id = p.purchase_order_id
+                      WHERE p.order_child_id = c.id
+                        AND IFNULL(o.deleteStatus, 0) = 0
+                        AND IFNULL(o.order_status, -1) <> 0
+                  )
                 """,
                 {"oid": row["id"]},
                 0,
@@ -2349,6 +2356,31 @@ def list_order_children(
         seen_ids.add(cid)
         deduped.append(r)
     rows = deduped
+    # 已挂接到未取消分包/实验子单的产品行：创建页不可再选
+    linked_active: set[int] = set()
+    if seen_ids:
+        try:
+            id_list = sorted(seen_ids)
+            placeholders = ", ".join(f"%(c{i})s" for i in range(len(id_list)))
+            params = {f"c{i}": cid for i, cid in enumerate(id_list)}
+            linked_rows = fetch_all(
+                f"""
+                SELECT DISTINCT p.order_child_id AS cid
+                FROM exp_qd_purchase_order_child p
+                INNER JOIN experiment_order o ON o.id = p.purchase_order_id
+                WHERE p.order_child_id IN ({placeholders})
+                  AND IFNULL(o.deleteStatus, 0) = 0
+                  AND IFNULL(o.order_status, -1) <> 0
+                """,
+                params,
+            )
+            for lr in linked_rows or []:
+                try:
+                    linked_active.add(int(lr["cid"]))
+                except (TypeError, ValueError, KeyError):
+                    pass
+        except Exception:
+            linked_active = set()
     for r in rows:
         r["orderStatusLabel"] = _child_line_status_label(r.get("orderStatus"))
         r["testUserName"] = str(r.get("testUserTrueName") or r.get("testUserName") or "-")
@@ -2372,31 +2404,60 @@ def list_order_children(
         r["finishTime"] = str(ft)[:19] if ft else ""
         if not r.get("deviceName"):
             r["deviceName"] = r.get("className") or ""
+        try:
+            op_i = int(r.get("opStatus")) if r.get("opStatus") is not None else 0
+        except (TypeError, ValueError):
+            op_i = 0
+        try:
+            cid_i = int(r.get("id"))
+        except (TypeError, ValueError):
+            cid_i = 0
+        already = cid_i in linked_active
+        r["alreadyLinked"] = already
+        # 创建子单可选：待处理(op=1) 且未挂接有效子单
+        r["canCreateSubLine"] = bool(op_i == 1 and not already)
     _attach_child_runtime_fields(rows)
     return rows
 
 
 def list_order_logs(order_id: int) -> list[dict[str, Any]]:
+    """对齐 Java getByOfId + findUserById 回填操作人（trueName / userName）。"""
     rows = fetch_all(
         """
         SELECT
             l.id, l.addTime, l.log_info AS logInfo, l.log_user_id AS logUserId,
-            COALESCE(u.true_name, u.user_name, eu.trueName, eu.userName) AS logUserName
+            COALESCE(
+                NULLIF(TRIM(u.true_name), ''),
+                NULLIF(TRIM(u.user_name), ''),
+                NULLIF(TRIM(eu.trueName), ''),
+                NULLIF(TRIM(eu.userName), '')
+            ) AS logUserName
         FROM experiment_order_log l
         LEFT JOIN sy_users u ON CAST(l.log_user_id AS CHAR) = CAST(u.id AS CHAR)
         LEFT JOIN exp_user eu ON CAST(l.log_user_id AS CHAR) = CAST(eu.id AS CHAR)
-        WHERE l.of_id = %(oid)s AND IFNULL(l.deleteStatus, 0) = 0
+        WHERE l.of_id = %(oid)s
+          AND IFNULL(l.deleteStatus, 0) = 0
         ORDER BY l.addTime DESC
         LIMIT 200
         """,
         {"oid": order_id},
     )
-    for r in rows:
-        r["logUser"] = str(r.get("logUserName") or "-")
+    out: list[dict[str, Any]] = []
+    for r in rows or []:
+        uid = str(r.get("logUserId") or "").strip()
+        name = str(r.get("logUserName") or "").strip()
+        if uid and not name:
+            looked = str(_user_display_name(uid) or "").strip()
+            if looked and looked != uid:
+                name = looked
+        r["logUserName"] = name
+        # 同步给前端 prop=logUser / logUserName
+        r["logUser"] = name or "-"
         at = r.get("addTime")
         r["addTime"] = str(at)[:19] if at else ""
         r["logInfo"] = r.get("logInfo") or ""
-    return rows
+        out.append(r)
+    return out
 
 
 def list_linked_child_orders(parent_id: int, *, child_order_type: str) -> list[dict[str, Any]]:
@@ -2627,7 +2688,11 @@ def _is_audit_admin(user_id: str | int | None) -> bool:
 
 
 def apply_audit_permission(row: dict[str, Any], viewer_user_id: str | int | None) -> None:
-    """对齐 Java：status==20 且 (当前用户==sale_manager 或 isCzqx/admin) 才显示审核按钮。"""
+    """对齐 Java 详情审核按钮。
+
+    - type=9 分包子单：test_manager 或 isCzqx/admin（isshqx）
+    - 其它：sale_manager 或 isCzqx/admin
+    """
     try:
         st = int(row.get("orderStatus")) if row.get("orderStatus") is not None else -1
     except (TypeError, ValueError):
@@ -2636,8 +2701,48 @@ def apply_audit_permission(row: dict[str, Any], viewer_user_id: str | int | None
         row["canAudit"] = False
         return
     uid = str(viewer_user_id or "").strip()
+    if not uid:
+        row["canAudit"] = False
+        return
+    if _is_audit_admin(uid):
+        row["canAudit"] = True
+        return
+    ot = str(row.get("orderType") or "")
+    if ot == "9":
+        tm = str(row.get("testManagerId") or "").strip()
+        row["canAudit"] = bool(tm and uid == tm)
+    else:
+        sm = str(row.get("saleManagerId") or "").strip()
+        row["canAudit"] = bool(sm and uid == sm)
+
+
+def apply_pay_audit_permission(row: dict[str, Any], viewer_user_id: str | int | None) -> None:
+    """对齐 Java 付款审核：sale_manager 或 isxsshqx（销售主管且为本单销售主管）。"""
+    if not row.get("canAuditPay"):
+        return
+    uid = str(viewer_user_id or "").strip()
     sm = str(row.get("saleManagerId") or "").strip()
-    row["canAudit"] = bool(uid and (uid == sm or _is_audit_admin(uid)))
+    if not uid:
+        row["canAuditPay"] = False
+        return
+    if _is_audit_admin(uid):
+        return
+    if uid == sm:
+        return
+    # 销售主管角色且挂接为本单销售主管（与 uid==sm 等价兜底）
+    u = fetch_one(
+        """
+        SELECT utoo_type AS utooType
+        FROM sy_users
+        WHERE CAST(id AS CHAR) = CAST(%(id)s AS CHAR)
+        LIMIT 1
+        """,
+        {"id": uid},
+    )
+    utoo = str((u or {}).get("utooType") or "").strip()
+    if ("销售主管" in utoo or utoo == "销售主管") and uid == sm:
+        return
+    row["canAuditPay"] = False
 
 
 def _apply_child_edit_permission(
@@ -2790,6 +2895,7 @@ def get_order_detail_bundle(
     if not row:
         return None
     apply_audit_permission(row, viewer_user_id)
+    apply_pay_audit_permission(row, viewer_user_id)
     ot = str(row.get("orderType") or "")
     children = list_order_children(order_id, viewer_user_id=viewer_user_id)
     role_ctx = _viewer_role_context(viewer_user_id)
@@ -2840,6 +2946,33 @@ def get_order_detail_bundle(
     can_view_share = bool(role_ctx.get("can_view_share"))
     row["canViewShareInfo"] = can_view_share
     row["canViewLogs"] = bool(role_ctx.get("can_view_logs"))
+    can_view_finance = bool(role_ctx.get("can_view_finance", True))
+    row["canViewFinance"] = can_view_finance
+    # 对齐 Java isFlag=false：测试主管/测试人员不返回付款·开票「数据」；
+    # 上传付款/开票/申请付款按钮仍按状态显隐（Java 未用 isFlag 包按钮）。
+    if not can_view_finance:
+        row["expectPayList"] = []
+        row["receiveBills"] = []
+        row["invoiceBills"] = []
+        row["totalPrice"] = None
+        row["currencyLabel"] = ""
+        row["payWayName"] = ""
+        row["payStatusLabel"] = ""
+        row["invoiceLabel"] = ""
+        row["invoiceType"] = None
+        row["inBillTypeName"] = ""
+        row["taxes"] = ""
+        row["invoiceAmount"] = None
+        row["receiveAmount"] = None
+        bills = []
+        invoice_files = []
+        for ch in children:
+            ch["costPrice"] = None
+        # 测试主管不可做付款审核（销售主管权限）；保留上传入口条件
+        row["canAuditPay"] = False
+        row["canInvoice"] = False
+        row["canReceiveBill"] = False
+        row["canConfirmPay"] = False
     if not can_view_share or not role_ctx.get("can_view_share_detail"):
         # 隐藏区或 C 类：不返回分成明细（C 类仍显示空的分成信息标签）
         row["userScaleLabel"] = ""
@@ -2912,9 +3045,16 @@ def audit_order(
     if st != 20:
         return False, "当前状态不可审核"
     uid = str(staff_user_id or "").strip()
-    sm = str(row.get("saleManagerId") or "").strip()
-    if not uid or (uid != sm and not _is_audit_admin(uid)):
-        return False, "无审核权限"
+    ot = str(row.get("orderType") or "")
+    if ot == "9":
+        # 对齐 Java：实验室测试主管 / isCzqx
+        tm = str(row.get("testManagerId") or "").strip()
+        if not uid or (uid != tm and not _is_audit_admin(uid)):
+            return False, "无审核权限（需实验室测试主管）"
+    else:
+        sm = str(row.get("saleManagerId") or "").strip()
+        if not uid or (uid != sm and not _is_audit_admin(uid)):
+            return False, "无审核权限"
     next_status = 30 if pass_ else 10
     _set_order_status(order_id, next_status)
     _write_order_log(
@@ -3104,7 +3244,7 @@ def _format_cost_scale_label(raw: str) -> str:
 
 
 def _viewer_role_context(viewer_user_id: str | int | None) -> dict[str, Any]:
-    """详情页角色可见性：分成 / 操作日志（对齐 Java + C 类业务约束）。"""
+    """详情页角色可见性：分成 / 操作日志 / 付款开票（对齐 Java isFlag + C 类约束）。"""
     ctx = {
         "utoo": "",
         "role": "",
@@ -3113,7 +3253,10 @@ def _viewer_role_context(viewer_user_id: str | int | None) -> dict[str, Any]:
         "can_share_ratio": True,
         "can_view_logs": True,
         "can_view_all_logs": False,
+        # Java ExpSubPurchaseOrder isFlag：测试主管/测试人员不可看付款·开票·总价·币种等
+        "can_view_finance": True,
         "is_c_sales": False,
+        "is_test_role": False,
     }
     uid = str(viewer_user_id or "").strip()
     if not uid:
@@ -3134,14 +3277,14 @@ def _viewer_role_context(viewer_user_id: str | int | None) -> dict[str, Any]:
     ctx["role"] = role
     is_c = role == "C类销售人员" or "C类销售人员" in utoo
     ctx["is_c_sales"] = is_c
-    if "测试主管" in utoo:
+    is_test_mgr = "测试主管" in utoo
+    is_test_user = ("测试人员" in utoo) and (not is_test_mgr)
+    if is_test_mgr or is_test_user:
+        ctx["is_test_role"] = True
         ctx["can_view_share"] = False
         ctx["can_view_share_detail"] = False
         ctx["can_share_ratio"] = False
-    elif "测试人员" in utoo and "测试主管" not in utoo:
-        ctx["can_view_share"] = False
-        ctx["can_view_share_detail"] = False
-        ctx["can_share_ratio"] = False
+        ctx["can_view_finance"] = False
     if role in ("R类人员", "H类用户"):
         ctx["can_view_share"] = False
         ctx["can_view_share_detail"] = False
@@ -4330,8 +4473,9 @@ def update_sub_pay(
             pass
         return True, "已提交付款申请"
     if t == "2":
+        apply_pay_audit_permission(row, staff_user_id)
         if not row.get("canAuditPay"):
-            return False, "当前无可审核的付款申请"
+            return False, "无付款审核权限（需本单销售主管）"
         execute(
             "UPDATE experiment_order SET pay_status = 34 WHERE id = %(id)s",
             {"id": order_id},
@@ -4347,8 +4491,9 @@ def update_sub_pay(
             pass
         return True, "付款申请已通过"
     if t == "3":
+        apply_pay_audit_permission(row, staff_user_id)
         if not row.get("canAuditPay"):
-            return False, "当前无可审核的付款申请"
+            return False, "无付款审核权限（需本单销售主管）"
         execute(
             "UPDATE experiment_order SET pay_status = 33 WHERE id = %(id)s",
             {"id": order_id},
@@ -4495,17 +4640,48 @@ def create_sub_order_from_parent(
     if not ids:
         rows = fetch_all(
             """
-            SELECT id FROM experiment_order_child
-            WHERE order_form_id = %(oid)s
-              AND IFNULL(delete_status, 2) <> 1
-              AND IFNULL(op_status, 0) = 1
-            ORDER BY id
+            SELECT c.id FROM experiment_order_child c
+            WHERE c.order_form_id = %(oid)s
+              AND IFNULL(c.delete_status, 2) <> 1
+              AND IFNULL(c.op_status, 0) = 1
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM exp_qd_purchase_order_child p
+                  INNER JOIN experiment_order o ON o.id = p.purchase_order_id
+                  WHERE p.order_child_id = c.id
+                    AND IFNULL(o.deleteStatus, 0) = 0
+                    AND IFNULL(o.order_status, -1) <> 0
+              )
+            ORDER BY c.id
             """,
             {"oid": parent_id},
         )
         ids = [int(r["id"]) for r in rows if r.get("id") is not None]
     if not ids:
         return False, "没有可挂接的产品行", None
+
+    # 仅允许主单下待处理且未挂接有效子单的产品行（防重复创建）
+    valid_rows = fetch_all(
+        """
+        SELECT c.id FROM experiment_order_child c
+        WHERE c.order_form_id = %(oid)s
+          AND IFNULL(c.delete_status, 2) <> 1
+          AND IFNULL(c.op_status, 0) = 1
+          AND NOT EXISTS (
+              SELECT 1
+              FROM exp_qd_purchase_order_child p
+              INNER JOIN experiment_order o ON o.id = p.purchase_order_id
+              WHERE p.order_child_id = c.id
+                AND IFNULL(o.deleteStatus, 0) = 0
+                AND IFNULL(o.order_status, -1) <> 0
+          )
+        """,
+        {"oid": parent_id},
+    )
+    valid_ids = {int(r["id"]) for r in (valid_rows or []) if r.get("id") is not None}
+    ids = [cid for cid in ids if cid in valid_ids]
+    if not ids:
+        return False, "所选产品行已创建过子订单或不可用，请刷新后重选", None
 
     def _as_str_list(raw: Any) -> list[str]:
         if raw is None or raw == "":
@@ -4829,7 +5005,7 @@ def create_sub_order_from_parent(
                             WHEN IFNULL(order_status, 0) < 2 THEN 2
                             ELSE order_status
                         END
-                    WHERE id = %(cid)s AND order_form_id = %(oid)s
+                    WHERE id = %(cid)s
                     """,
                     {
                         "tu": tu,
@@ -4837,7 +5013,6 @@ def create_sub_order_from_parent(
                         "ft": ft[:19] if ft else "",
                         "lid": lid if str(lid).isdigit() else "",
                         "cid": cid,
-                        "oid": parent_id,
                     },
                 )
             except Exception:
@@ -4849,9 +5024,9 @@ def create_sub_order_from_parent(
                             WHEN IFNULL(order_status, 0) < 2 THEN 2
                             ELSE order_status
                         END
-                    WHERE id = %(cid)s AND order_form_id = %(oid)s
+                    WHERE id = %(cid)s
                     """,
-                    {"cid": cid, "oid": parent_id},
+                    {"cid": cid},
                 )
         else:
             execute(
@@ -4862,9 +5037,9 @@ def create_sub_order_from_parent(
                         WHEN IFNULL(order_status, 0) < 2 THEN 2
                         ELSE order_status
                     END
-                WHERE id = %(cid)s AND order_form_id = %(oid)s
+                WHERE id = %(cid)s
                 """,
-                {"cid": cid, "oid": parent_id},
+                {"cid": cid},
             )
     _write_order_log(
         parent_id,

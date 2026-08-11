@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="page-wrap">
     <section class="filter-panel">
       <div class="action-bar">

@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div v-loading="loading" class="create-page">
     <header class="page-head">
       <button type="button" class="back-link" @click="goBack">← 返回列表</button>
@@ -244,7 +244,9 @@
             <div class="inline-ops">
               <el-button type="primary" @click="openShareDialog">添加分成比例</el-button>
               <span v-if="shareSummary" class="share-summary">{{ shareSummary }}</span>
-              <span v-else class="share-hint">毛利合计须为 100%</span>
+              <span v-else class="share-hint">
+                {{ isSubcontractCreate ? '利润合计须为 100%' : '毛利合计须为 100%' }}
+              </span>
             </div>
           </el-form-item>
         </el-col>
@@ -453,11 +455,11 @@
       </el-table>
     </el-dialog>
 
-    <!-- 分成比例 -->
+    <!-- 分成比例：实验订单(6)=毛利+成本；分包订单(8)对齐 Java 仅利润分成 -->
     <el-dialog v-model="shareDlg.visible" title="添加分成比例" width="720px" destroy-on-close>
       <div class="share-block">
         <div class="share-block-head">
-          <strong>毛利分成</strong>
+          <strong>{{ isSubcontractCreate ? '利润分成' : '毛利分成' }}</strong>
           <span class="share-hint">比例合计须为 100%</span>
           <el-button link type="primary" @click="addShareRow(profitRows)">添加一行</el-button>
         </div>
@@ -482,7 +484,7 @@
           <el-button link type="danger" @click="profitRows.splice(idx, 1)">删除</el-button>
         </div>
       </div>
-      <div class="share-block" style="margin-top: 16px">
+      <div v-if="!isSubcontractCreate" class="share-block" style="margin-top: 16px">
         <div class="share-block-head">
           <strong>成本分成</strong>
           <span class="share-hint">按固定金额</span>
@@ -771,6 +773,7 @@ function truthyOn(v: unknown): boolean {
 }
 
 function refreshShareSummary() {
+  const label = isSubcontractCreate.value ? '利润' : '毛利'
   const profitText = parseScalePairs(form.userScaleInfo)
     .filter((r) => r.userId)
     .map((r) => {
@@ -778,7 +781,11 @@ function refreshShareSummary() {
       return `${shareUserLabel(u || { id: r.userId })} ${r.value}%`
     })
     .join('，')
-  shareSummary.value = profitText ? `毛利：${profitText}` : form.userScaleInfo ? `毛利：${form.userScaleInfo}` : ''
+  shareSummary.value = profitText
+    ? `${label}：${profitText}`
+    : form.userScaleInfo
+      ? `${label}：${form.userScaleInfo}`
+      : ''
 }
 
 async function fillFromCopy(sourceId: string) {
@@ -1060,16 +1067,20 @@ async function openShareDialog() {
     }
   }
   profitRows.value = parseScalePairs(form.userScaleInfo)
-  costRows.value = parseScalePairs(form.salecbUserScaleInfo)
+  // 分包订单无成本分成
+  costRows.value = isSubcontractCreate.value
+    ? [{ userId: '', value: '' }]
+    : parseScalePairs(form.salecbUserScaleInfo)
   shareDlg.visible = true
 }
 
 function confirmShare() {
+  const profitLabel = isSubcontractCreate.value ? '利润分成' : '毛利分成'
   let total = 0
   for (const r of profitRows.value) {
     if (!r.userId && !String(r.value).trim()) continue
     if (!r.userId) {
-      ElMessage.warning('请选择毛利分成人员!')
+      ElMessage.warning(`请选择${profitLabel}人员!`)
       return
     }
     const n = Number(r.value)
@@ -1084,12 +1095,13 @@ function confirmShare() {
     return
   }
   form.userScaleInfo = buildScaleInfo(profitRows.value)
-  form.salecbUserScaleInfo = buildScaleInfo(costRows.value)
+  form.salecbUserScaleInfo = isSubcontractCreate.value ? '' : buildScaleInfo(costRows.value)
   const profitText = profitRows.value
     .filter((r) => r.userId)
     .map((r) => `${shareUserLabel(shareUsers.value.find((u) => String(u.id) === r.userId) || { id: r.userId })} ${r.value}%`)
     .join('，')
-  shareSummary.value = profitText ? `毛利：${profitText}` : ''
+  const summaryLabel = isSubcontractCreate.value ? '利润' : '毛利'
+  shareSummary.value = profitText ? `${summaryLabel}：${profitText}` : ''
   shareDlg.visible = false
 }
 
@@ -1295,7 +1307,8 @@ async function onSave() {
     addressee_mobile: form.reversoOn ? form.addresseeMobile : '',
     msg: form.msg,
     user_scale_info: form.userScaleInfo,
-    salecb_user_scale_info: form.salecbUserScaleInfo,
+    // 分包主单对齐 Java：仅利润分成，不传成本分成
+    salecb_user_scale_info: isSubcontractCreate.value ? '' : form.salecbUserScaleInfo,
     accessoryId: orderFiles.value
       .map((f) => f.id)
       .filter((id) => id != null && String(id) !== ''),

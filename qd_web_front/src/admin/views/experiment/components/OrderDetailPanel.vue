@@ -37,7 +37,7 @@
           </p>
         </div>
         <div class="hero-meta">
-          <div v-if="!isGrabMode" class="meta-item">
+          <div v-if="!isGrabMode && canViewFinance" class="meta-item">
             <span class="meta-label">总价</span>
             <strong>{{ detail.totalPrice ?? '-' }}</strong>
             <small>{{ detail.currencyLabel }}</small>
@@ -309,7 +309,7 @@
 
       <section class="card">
         <h3 class="card-title">基本信息</h3>
-        <!-- 实验分包子订单：对齐 Java purchase_order_detail 字段 -->
+        <!-- 实验分包子订单：对齐 Java experimentsub/purchaseorder/purchase_order_detail -->
         <el-descriptions
           v-if="orderType === '9'"
           :column="3"
@@ -343,7 +343,7 @@
           <el-descriptions-item label="实验分包公司名称">
             {{ detail.stockCompanyName || '-' }}
           </el-descriptions-item>
-          <el-descriptions-item label="实验分包总价">
+          <el-descriptions-item v-if="canViewFinance" label="实验分包总价">
             {{ detail.totalPrice ?? '-' }}
             <template v-if="detail.currencyLabel === '人民币'"> 元</template>
           </el-descriptions-item>
@@ -351,27 +351,79 @@
           <el-descriptions-item label="预计完成时间">
             {{ detail.deliveryTime || '-' }}
           </el-descriptions-item>
-          <el-descriptions-item label="订单币种">{{ detail.currencyLabel || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="付款方式">{{ detail.payWayName || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="付款状态">{{ detail.payStatusLabel || '-' }}</el-descriptions-item>
-          <template v-if="expectPayRows.length">
+          <el-descriptions-item v-if="canViewFinance" label="订单币种">
+            {{ detail.currencyLabel || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item v-if="canViewFinance" label="付款方式">
+            {{ detail.payWayName || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item v-if="canViewFinance" label="付款状态">
+            {{ detail.payStatusLabel || '-' }}
+          </el-descriptions-item>
+          <template v-if="canViewFinance && expectPayRows.length">
             <template v-for="(ep, idx) in expectPayRows" :key="'ep-' + idx">
               <el-descriptions-item label="预计付款时间">{{ ep.time || '-' }}</el-descriptions-item>
               <el-descriptions-item label="预计付款金额" :span="2">
                 {{ ep.price || '-' }}
               </el-descriptions-item>
+              <el-descriptions-item v-if="ep.actualReceiveTime" label="实际付款时间">
+                {{ ep.actualReceiveTime }}
+              </el-descriptions-item>
+              <el-descriptions-item
+                v-if="ep.actualReceiveAmount != null && ep.actualReceiveAmount !== ''"
+                label="实际付款金额"
+                :span="2"
+              >
+                {{ ep.actualReceiveAmount }}
+              </el-descriptions-item>
             </template>
           </template>
-          <el-descriptions-item label="是否开票">{{ detail.invoiceLabel || '-' }}</el-descriptions-item>
-          <el-descriptions-item v-if="Number(detail.invoiceType) === 1" label="进项开票类型">
+          <template v-if="canViewFinance && receiveBillRows.length && !expectPayRows.length">
+            <template v-for="(b, idx) in receiveBillRows" :key="'rb9-' + idx">
+              <el-descriptions-item label="实际付款时间">{{ b.billDate || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="实际付款金额" :span="2">
+                {{ b.money ?? '-' }}
+              </el-descriptions-item>
+            </template>
+          </template>
+          <el-descriptions-item v-if="canViewFinance" label="是否开票">
+            {{ detail.invoiceLabel || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item
+            v-if="canViewFinance && Number(detail.invoiceType) === 1"
+            label="进项开票类型"
+          >
             {{ inBillTypeLabel }}
           </el-descriptions-item>
-          <el-descriptions-item v-if="Number(detail.invoiceType) === 1" label="税率">
+          <el-descriptions-item
+            v-if="canViewFinance && Number(detail.invoiceType) === 1"
+            label="税率"
+          >
             {{ detail.taxes || '-' }}
           </el-descriptions-item>
+          <template v-if="canViewFinance && invoiceBillRows.length">
+            <template v-for="(b, idx) in invoiceBillRows" :key="'ib9-' + idx">
+              <el-descriptions-item :label="'开票时间' + (invoiceBillRows.length > 1 ? idx + 1 : '')">
+                {{ b.billDate || '-' }}
+              </el-descriptions-item>
+              <el-descriptions-item
+                :label="'开票金额' + (invoiceBillRows.length > 1 ? idx + 1 : '')"
+                :span="2"
+              >
+                {{ b.money ?? '-' }}
+              </el-descriptions-item>
+            </template>
+          </template>
           <el-descriptions-item label="联系电话">{{ detail.contactPhone || '-' }}</el-descriptions-item>
           <el-descriptions-item label="样品是否回收">
             {{ detail.reversoLabel || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item
+            v-if="detail.showShipAddress"
+            label="样品寄回地址"
+            :span="2"
+          >
+            {{ detail.shipAddress || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="是否云视频">{{ detail.isVideoLabel || '-' }}</el-descriptions-item>
         </el-descriptions>
@@ -585,7 +637,7 @@
                 </el-upload>
               </div>
             </div>
-            <div class="files-row">
+            <div v-if="canViewFinance" class="files-row">
               <span class="files-label">发票资料</span>
               <div class="files-list">
                 <div v-for="f in invoiceFiles" :key="'inv-' + String(f.id)" class="file-item">
@@ -708,9 +760,10 @@
               }}
             </template>
           </el-table-column>
-          <el-table-column v-if="isChildKind" prop="price" label="单价" width="90" align="right" />
+          <!-- type=10 实验子订单产品列 -->
+          <el-table-column v-if="orderType === '10'" prop="price" label="单价" width="90" align="right" />
           <el-table-column
-            v-if="isChildKind"
+            v-if="orderType === '10'"
             prop="referencePrice"
             label="测试金额"
             width="100"
@@ -729,20 +782,20 @@
           <el-table-column
             v-if="isChildKind"
             prop="testUserName"
-            label="测试员"
+            :label="orderType === '9' ? '测试人员' : '测试员'"
             width="100"
           />
           <el-table-column v-if="orderType === '10'" prop="deviceName" label="设备名称" min-width="100" show-overflow-tooltip />
           <el-table-column v-if="orderType === '10'" prop="platformName" label="实验平台" min-width="100" show-overflow-tooltip />
-          <el-table-column v-if="isChildKind" prop="confirmLabel" label="是否确认" width="90" align="center" />
+          <el-table-column v-if="orderType === '10'" prop="confirmLabel" label="是否确认" width="90" align="center" />
           <el-table-column
-            v-if="isChildKind"
+            v-if="orderType === '10'"
             prop="confirmMark"
             label="确认描述"
             min-width="100"
             show-overflow-tooltip
           />
-          <el-table-column v-if="isChildKind" label="确认文件" min-width="140">
+          <el-table-column v-if="orderType === '10'" label="确认文件" min-width="140">
             <template #default="{ row }">
               <template v-if="Array.isArray(row.accessoryList) && row.accessoryList.length">
                 <div v-for="f in row.accessoryList" :key="'cf-' + String(f.id)" class="inline-file">
@@ -752,14 +805,47 @@
               <span v-else>-</span>
             </template>
           </el-table-column>
-          <el-table-column v-if="orderType === '10'" prop="jtTime" label="具体完成时间" width="160" show-overflow-tooltip />
+          <!-- type=9 分包子订单：对齐 Java purchase_order_detail 子表 -->
+          <el-table-column
+            v-if="orderType === '9' && canViewFinance"
+            prop="costPrice"
+            label="分包单价"
+            width="90"
+            align="right"
+          />
+          <el-table-column
+            v-if="isChildKind"
+            prop="orderStatusLabel"
+            label="状态"
+            width="100"
+          />
+          <el-table-column
+            v-if="orderType === '9' || orderType === '10'"
+            prop="jtTime"
+            label="具体完成时间"
+            width="160"
+            show-overflow-tooltip
+          />
+          <el-table-column
+            v-if="orderType === '9'"
+            label="预估完成时间"
+            width="120"
+          >
+            <template #default="{ row }">
+              {{ row.estimateFinish ?? '0' }}{{ row.timeTypeLabel ? ` ${row.timeTypeLabel}` : '' }}
+            </template>
+          </el-table-column>
           <el-table-column v-if="orderType === '10'" prop="expectFinishTime" label="预计完成时间" width="160" show-overflow-tooltip />
           <el-table-column v-if="orderType === '10'" label="预估完成时间" width="120">
             <template #default="{ row }">
               {{ row.estimateFinish ?? '0' }}{{ row.timeTypeLabel ? ` ${row.timeTypeLabel}` : '' }}
             </template>
           </el-table-column>
-          <el-table-column v-if="orderType === '10'" label="实际完成时间" width="130">
+          <el-table-column
+            v-if="orderType === '9' || orderType === '10'"
+            label="实际完成时间"
+            width="140"
+          >
             <template #default="{ row }">
               <span>{{ row.sjsj ?? row.actualFinish ?? '-' }}</span>
               <el-select
@@ -776,8 +862,19 @@
               <span v-else-if="row.timeTypeLabel"> {{ row.timeTypeLabel }}</span>
             </template>
           </el-table-column>
-          <el-table-column v-if="orderType === '10'" prop="storePosition" label="仓库位置" min-width="120" show-overflow-tooltip />
-          <el-table-column v-if="orderType === '10'" label="样品管理单" min-width="130" show-overflow-tooltip>
+          <el-table-column
+            v-if="orderType === '9' || orderType === '10'"
+            prop="storePosition"
+            label="仓库位置"
+            min-width="120"
+            show-overflow-tooltip
+          />
+          <el-table-column
+            v-if="orderType === '9' || orderType === '10'"
+            label="样品管理单"
+            min-width="130"
+            show-overflow-tooltip
+          >
             <template #default="{ row }">
               <el-button
                 v-if="row.outNum"
@@ -790,10 +887,20 @@
               <span v-else>-</span>
             </template>
           </el-table-column>
-          <el-table-column v-if="orderType === '10'" prop="retestOrderNo" label="关联复测编号" min-width="120" show-overflow-tooltip />
+          <el-table-column
+            v-if="orderType === '9' || orderType === '10'"
+            prop="retestOrderNo"
+            label="关联复测编号"
+            min-width="120"
+            show-overflow-tooltip
+          />
           <el-table-column v-if="orderType === '10'" prop="settingTime" label="预约云视频时间" width="160" show-overflow-tooltip />
           <el-table-column v-if="orderType === '10'" prop="meetingNum" label="腾讯会议号" width="110" show-overflow-tooltip />
-          <el-table-column v-if="orderType === '10'" label="测试数据" min-width="160">
+          <el-table-column
+            v-if="orderType === '9' || orderType === '10'"
+            label="测试数据"
+            min-width="160"
+          >
             <template #default="{ row }">
               <template v-if="Array.isArray(row.testFiles) && row.testFiles.length">
                 <div v-for="f in row.testFiles" :key="'tf-' + String(f.id)" class="inline-file">
@@ -809,7 +916,12 @@
               </el-upload>
             </template>
           </el-table-column>
-          <el-table-column v-if="orderType === '10'" label="样品信息" width="90" align="center">
+          <el-table-column
+            v-if="orderType === '9' || orderType === '10'"
+            label="样品信息"
+            width="90"
+            align="center"
+          >
             <template #default="{ row }">
               <el-button
                 v-if="row.sampleShow"
@@ -822,8 +934,7 @@
               <span v-else>-</span>
             </template>
           </el-table-column>
-          <el-table-column v-if="orderType === '9'" prop="costPrice" label="分包单价" width="90" align="right" />
-          <el-table-column v-if="isChildKind && orderType === '10'" label="保存预计完成" width="170">
+          <el-table-column v-if="orderType === '10'" label="保存预计完成" width="170">
             <template #default="{ row }">
               <el-date-picker
                 v-if="detail.canSaveFinish"
@@ -836,18 +947,6 @@
               <span v-else>{{ row.finishTime || row.expectFinishTime || '-' }}</span>
             </template>
           </el-table-column>
-          <el-table-column
-            v-else-if="isChildKind"
-            prop="finishTime"
-            label="完成时间"
-            width="170"
-          />
-          <el-table-column
-            v-if="isChildKind"
-            prop="orderStatusLabel"
-            label="状态"
-            width="100"
-          />
         </el-table>
       </section>
 
@@ -913,7 +1012,11 @@
         <h3 class="card-title">操作日志</h3>
         <el-table :data="logs" border stripe class="detail-table" max-height="360">
           <el-table-column prop="addTime" label="时间" width="170" />
-          <el-table-column prop="logUser" label="操作人" width="120" />
+          <el-table-column label="操作人" width="120" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ row.logUser || row.logUserName || '-' }}
+            </template>
+          </el-table-column>
           <el-table-column prop="logInfo" label="内容" min-width="240" show-overflow-tooltip />
         </el-table>
       </section>
@@ -1156,7 +1259,11 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="sampleAction === 'testStart'" label="实验平台" required>
+        <el-form-item
+          v-if="sampleAction === 'testStart' && orderType === '10'"
+          label="实验平台"
+          required
+        >
           <el-input
             :model-value="sampleConfirmPlatform"
             disabled
@@ -1264,7 +1371,7 @@
         <el-table-column prop="childOrderId" label="子单号" min-width="120" show-overflow-tooltip />
         <el-table-column prop="goodsName" label="产品" min-width="120" show-overflow-tooltip />
         <el-table-column
-          v-if="sampleAction === 'testStart'"
+          v-if="sampleAction === 'testStart' && orderType === '10'"
           prop="platformName"
           label="实验平台"
           min-width="120"
@@ -1496,6 +1603,8 @@ const relatedOrders = computed(
 )
 const orderType = computed(() => String(detail.value?.orderType || ''))
 const isChildKind = computed(() => ['9', '10'].includes(orderType.value))
+/** 对齐 Java isFlag：测试主管/测试人员不可看付款·开票相关数据 */
+const canViewFinance = computed(() => detail.value?.canViewFinance !== false)
 const showOrderDocsBlock = computed(() => ['6', '8', '9', '10'].includes(orderType.value))
 const outBillTypeLabel = computed(() => {
   const d = detail.value
@@ -2637,10 +2746,13 @@ async function onSubmitSampleAction() {
       ElMessage.warning('开始测试请只勾选一行')
       return
     }
-    const row = sampleSelected.value[0]
-    if (!row.lineId && !row.platformName) {
-      ElMessage.warning('该子行缺少实验平台，无法开始测试')
-      return
+    // type=9 分包子单无实验平台，不校验（对齐 Java ceshistart）
+    if (orderType.value === '10') {
+      const row = sampleSelected.value[0]
+      if (!row.lineId && !row.platformName) {
+        ElMessage.warning('该子行缺少实验平台，无法开始测试')
+        return
+      }
     }
   }
   if (sampleAction.value === 'retain' && sampleRetainMode.value === 'retain') {

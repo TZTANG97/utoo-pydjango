@@ -192,7 +192,9 @@
             <div class="inline-ops">
               <el-button type="primary" @click="openShareDialog">添加分成比例</el-button>
               <span v-if="shareSummary" class="share-summary">{{ shareSummary }}</span>
-              <span v-else class="share-hint">毛利合计须为 100%</span>
+              <span v-else class="share-hint">
+                {{ isSubcontractMain ? '利润合计须为 100%' : '毛利合计须为 100%' }}
+              </span>
             </div>
           </el-form-item>
         </el-col>
@@ -441,7 +443,7 @@
     <el-dialog v-model="shareDlg.visible" title="添加分成比例" width="720px" destroy-on-close>
       <div class="share-block">
         <div class="share-head">
-          <strong>毛利分成</strong>
+          <strong>{{ isSubcontractMain ? '利润分成' : '毛利分成' }}</strong>
           <el-button type="primary" link @click="addShareRow(profitRows)">添加</el-button>
         </div>
         <div v-for="(row, idx) in profitRows" :key="`p-${idx}`" class="share-row">
@@ -465,31 +467,33 @@
           <el-button type="danger" link @click="profitRows.splice(idx, 1)">删除</el-button>
         </div>
       </div>
-      <el-divider />
-      <div class="share-block">
-        <div class="share-head">
-          <strong>成本分成</strong>
-          <el-button type="primary" link @click="addShareRow(costRows)">添加</el-button>
+      <template v-if="!isSubcontractMain">
+        <el-divider />
+        <div class="share-block">
+          <div class="share-head">
+            <strong>成本分成</strong>
+            <el-button type="primary" link @click="addShareRow(costRows)">添加</el-button>
+          </div>
+          <div v-for="(row, idx) in costRows" :key="`c-${idx}`" class="share-row">
+            <el-select
+              v-model="row.userId"
+              filterable
+              clearable
+              placeholder="分成人员"
+              style="width: 220px"
+            >
+              <el-option
+                v-for="u in shareUsers"
+                :key="String(u.id)"
+                :label="shareUserLabel(u)"
+                :value="String(u.id)"
+              />
+            </el-select>
+            <el-input v-model="row.value" placeholder="分成金额" style="width: 140px" />
+            <el-button type="danger" link @click="costRows.splice(idx, 1)">删除</el-button>
+          </div>
         </div>
-        <div v-for="(row, idx) in costRows" :key="`c-${idx}`" class="share-row">
-          <el-select
-            v-model="row.userId"
-            filterable
-            clearable
-            placeholder="分成人员"
-            style="width: 220px"
-          >
-            <el-option
-              v-for="u in shareUsers"
-              :key="String(u.id)"
-              :label="shareUserLabel(u)"
-              :value="String(u.id)"
-            />
-          </el-select>
-          <el-input v-model="row.value" placeholder="分成金额" style="width: 140px" />
-          <el-button type="danger" link @click="costRows.splice(idx, 1)">删除</el-button>
-        </div>
-      </div>
+      </template>
       <template #footer>
         <el-button @click="shareDlg.visible = false">取消</el-button>
         <el-button type="primary" @click="confirmShare">确定</el-button>
@@ -545,6 +549,8 @@ const payWayLocked = ref(false)
 /** 6=实验主单 8=分包主单 9=分包子单 10=实验子单 */
 const orderType = computed(() => String(detail.value?.orderType || detail.value?.order_type || '6'))
 const isMainOrder = computed(() => orderType.value === '6' || orderType.value === '8')
+/** 分包主单：对齐 Java 仅利润分成，无成本分成 */
+const isSubcontractMain = computed(() => orderType.value === '8')
 const isSubcontractSub = computed(() => orderType.value === '9')
 const isExpSub = computed(() => orderType.value === '10')
 
@@ -683,27 +689,31 @@ function refreshShareSummary() {
       return `${shareUserLabel(u || { id: r.userId })} ${r.value}%`
     })
     .join('，')
+  const label = isSubcontractMain.value ? '利润' : '毛利'
   shareSummary.value = profitText
-    ? `毛利：${profitText}`
+    ? `${label}：${profitText}`
     : form.userScaleInfo
-      ? `毛利：${form.userScaleInfo}`
+      ? `${label}：${form.userScaleInfo}`
       : ''
 }
 
 function openShareDialog() {
   profitRows.value = parseScalePairs(form.userScaleInfo)
-  costRows.value = parseScalePairs(form.salecbUserScaleInfo)
+  costRows.value = isSubcontractMain.value
+    ? [{ userId: '', value: '' }]
+    : parseScalePairs(form.salecbUserScaleInfo)
   shareDlg.visible = true
 }
 
 function confirmShare() {
+  const profitLabel = isSubcontractMain.value ? '利润分成' : '毛利分成'
   for (const r of profitRows.value) {
     if (r.userId && !String(r.value).trim()) {
       ElMessage.warning('请填写正确的分成比例!')
       return
     }
     if (!r.userId && String(r.value).trim()) {
-      ElMessage.warning('请选择毛利分成人员!')
+      ElMessage.warning(`请选择${profitLabel}人员!`)
       return
     }
   }
@@ -715,7 +725,7 @@ function confirmShare() {
     return
   }
   form.userScaleInfo = buildScaleInfo(profitRows.value)
-  form.salecbUserScaleInfo = buildScaleInfo(costRows.value)
+  form.salecbUserScaleInfo = isSubcontractMain.value ? '' : buildScaleInfo(costRows.value)
   refreshShareSummary()
   shareDlg.visible = false
 }
@@ -1053,7 +1063,7 @@ async function onSave() {
       payload.supplierId = form.supplierId
       payload.outBillTypeId = form.invoiceType ? form.outBillTypeId : ''
       payload.userScaleInfo = form.userScaleInfo
-      payload.salecbUserScaleInfo = form.salecbUserScaleInfo
+      payload.salecbUserScaleInfo = isSubcontractMain.value ? '' : form.salecbUserScaleInfo
     } else if (isSubcontractSub.value) {
       payload.stockCompanyId = form.stockCompanyId
       payload.inBillTypeId = form.invoiceType ? form.inBillTypeId : ''
