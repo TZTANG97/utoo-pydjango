@@ -294,7 +294,7 @@
                   <el-option
                     v-for="a in accountOptions"
                     :key="String(a.id)"
-                    :label="String(a.mobile || a.id || '')"
+                    :label="accountLabel(a)"
                     :value="String(a.id)"
                   />
                 </el-select>
@@ -580,6 +580,39 @@ function userLabel(u: Record<string, unknown>) {
   return name && uname && name !== uname ? `${name}（${uname}）` : name || uname || String(u.id)
 }
 
+function accountLabel(a: Record<string, unknown>) {
+  return String(a.mobile || a.userName || a.trueName || a.name || a.id || '')
+}
+
+function displayName(v: unknown): string {
+  const s = String(v ?? '').trim()
+  return !s || s === '-' ? '' : s
+}
+
+/** 预填值不在下拉数据中时补一条，避免 el-select 只显示裸 id */
+function ensureUserOption(
+  list: { value: Record<string, unknown>[] },
+  id: string,
+  label?: string
+) {
+  const key = String(id || '').trim()
+  if (!key) return
+  if (list.value.some((u) => String(u.id) === key)) return
+  const text = String(label || '').trim()
+  list.value = [{ id: key, trueName: text || key, userName: text || key }, ...list.value]
+}
+
+function ensureAccountOption(id: string, label?: string) {
+  const key = String(id || '').trim()
+  if (!key) return
+  if (accountOptions.value.some((a) => String(a.id) === key)) return
+  const text = String(label || '').trim()
+  accountOptions.value = [
+    { id: key, mobile: text || key, userName: text || key },
+    ...accountOptions.value,
+  ]
+}
+
 /** 对齐 queryTestUsers：按测试分类过滤（含管理员/测试人员/测试主管+分类绑定） */
 function testerOptionsForRow(row: Record<string, unknown>) {
   const cid = String(row.classId || parent.value?.classId || '')
@@ -791,6 +824,55 @@ async function load() {
       form.saleUser = obj.saleUserId != null ? String(obj.saleUserId) : ''
       form.stockUser = obj.warehouseUserId != null ? String(obj.warehouseUserId) : ''
       await loadOptions()
+      // 主单预填值可能不在分页/角色过滤结果里：用详情姓名补选项，避免下拉只显示 id
+      ensureUserOption(
+        managerOptions,
+        form.saleManager,
+        displayName(obj.saleManager || obj.saleManagerTrueName || obj.saleManagerName)
+      )
+      ensureUserOption(
+        staffOptions,
+        form.saleUser,
+        displayName(obj.saleUser || obj.saleUserTrueName || obj.saleUserName)
+      )
+      ensureUserOption(
+        staffOptions,
+        form.stockUser,
+        displayName(obj.warehouseUser || obj.stockUser || obj.warehouseUserTrueName)
+      )
+      ensureUserOption(
+        testManagerOptions,
+        form.testManager,
+        displayName(obj.testManager || obj.testManagerTrueName || obj.testManagerName)
+      )
+      ensureAccountOption(
+        form.customUserId,
+        displayName(obj.customMobile || obj.customUserMobile || obj.customUserName)
+      )
+      if (form.customerName) {
+        const hasCust = customerOptions.value.some((c) => String(c.id) === form.customerName)
+        if (!hasCust) {
+          customerOptions.value = [
+            {
+              id: form.customerName,
+              name: displayName(obj.customerName || obj.companyName) || form.customerName,
+            },
+            ...customerOptions.value,
+          ]
+        }
+      }
+      if (form.supplierName) {
+        const hasSup = supplierOptions.value.some((s) => String(s.id) === form.supplierName)
+        if (!hasSup) {
+          supplierOptions.value = [
+            {
+              id: form.supplierName,
+              companyName: displayName(obj.supplierName) || form.supplierName,
+            },
+            ...supplierOptions.value,
+          ]
+        }
+      }
       form.orderTime = nowOrderTime()
     }
   } finally {

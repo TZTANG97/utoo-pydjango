@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from apps.admin_experiment.helpers import page_clause
 from apps.core.db_utils import execute, execute_insert, fetch_all, fetch_one, scalar
+
+logger = logging.getLogger(__name__)
 
 # 对齐 Java mainOrderStatus / experiment_orders_list 状态下拉
 ORDER_STATUS_LABEL = {
@@ -1381,10 +1384,10 @@ def get_order(order_id: int) -> dict[str, Any] | None:
         LEFT JOIN `user` cu2 ON CAST(t.custom_user_id AS CHAR) = CAST(cu2.id AS CHAR)
         LEFT JOIN exp_user pcu ON CAST(p.custom_user_id AS CHAR) = CAST(pcu.id AS CHAR)
         LEFT JOIN `user` pcu2 ON CAST(p.custom_user_id AS CHAR) = CAST(pcu2.id AS CHAR)
-        LEFT JOIN sy_users sm ON t.sale_manager = sm.id
-        LEFT JOIN sy_users su ON t.sale_user = su.id
-        LEFT JOIN sy_users au ON t.add_user_id = au.id
-        LEFT JOIN sy_users tm ON t.test_manager = tm.id
+        LEFT JOIN sy_users sm ON CAST(t.sale_manager AS CHAR) = CAST(sm.id AS CHAR)
+        LEFT JOIN sy_users su ON CAST(t.sale_user AS CHAR) = CAST(su.id AS CHAR)
+        LEFT JOIN sy_users au ON CAST(t.add_user_id AS CHAR) = CAST(au.id AS CHAR)
+        LEFT JOIN sy_users tm ON CAST(t.test_manager AS CHAR) = CAST(tm.id AS CHAR)
         LEFT JOIN sy_users wu ON CAST(t.warehouse_user AS CHAR) = CAST(wu.id AS CHAR)
         LEFT JOIN qd_consume_paytype pt ON t.pay_way = pt.id
         LEFT JOIN experiment_manage tc ON t.class_id = tc.id
@@ -4323,23 +4326,37 @@ def update_order_basic(
             )
         except Exception:
             pass
-    # 同步已有产品行数量/单价（对齐 Java editSave 更新 child）
-    if children:
+    # 同步产品行（对齐 Java editSave）：更新已有 / 新增 / 软删未提交行
+    if children is not None:
+        ot = str(row.get("orderType") or "")
+        keep_ids: set[int] = set()
         for ch in children:
             if not isinstance(ch, dict):
                 continue
+            if ch.get("_deleted") in (True, 1, "1"):
+                continue
             cid = ch.get("id") or ch.get("childId")
-            if not cid:
+            # 新增行（无 id）
+            if cid in (None, "", 0, "0"):
+                if ot not in ("6", "8"):
+                    continue
+                try:
+                    _insert_edit_child_line(order_id=order_id, ch=ch, order_no=str(row.get("orderId") or ""))
+                except Exception:
+                    logger.exception("insert edit child failed order=%s", order_id)
                 continue
             try:
                 cid_i = int(cid)
             except (TypeError, ValueError):
                 continue
+            keep_ids.add(cid_i)
             child_sets: list[str] = []
             child_params: dict[str, Any] = {"id": cid_i, "oid": order_id}
             if ch.get("goodsNums") is not None or ch.get("goods_nums") is not None:
                 try:
-                    child_params["nums"] = int(ch.get("goodsNums") if ch.get("goodsNums") is not None else ch.get("goods_nums"))
+                    child_params["nums"] = int(
+                        ch.get("goodsNums") if ch.get("goodsNums") is not None else ch.get("goods_nums")
+                    )
                     child_sets.append("goods_nums = %(nums)s")
                 except (TypeError, ValueError):
                     pass
@@ -4350,7 +4367,11 @@ def update_order_basic(
                     child_sets.append("goods_price = %(price)s")
                 except (TypeError, ValueError):
                     pass
-            ref_raw = ch.get("referencePrice") if ch.get("referencePrice") is not None else ch.get("reference_price")
+            ref_raw = (
+                ch.get("referencePrice")
+                if ch.get("referencePrice") is not None
+                else ch.get("reference_price")
+            )
             if ref_raw not in (None, ""):
                 try:
                     child_params["ref"] = float(ref_raw)
@@ -4368,6 +4389,53 @@ def update_order_basic(
                     child_sets.append("cost_price = %(cost)s")
                 except (TypeError, ValueError):
                     pass
+            # 实验子单：可改测试人员 / 实验平台 / 预计完成时间
+            tu = ch.get("testUserId") if "testUserId" in ch else ch.get("test_user_id")
+            if tu not in (None,):
+                child_params["tu"] = str(tu).strip()[:64] or None
+                child_sets.append("test_user_id = %(tu)s")
+            lid = ch.get("lineId") if "lineId" in ch else ch.get("line_id")
+            if lid not in (None,):
+                try:
+                    child_params["lid"] = int(lid) if str(lid).strip().isdigit() else None
+                    child_sets.append("line_id = %(lid)s")
+                except (TypeError, ValueError):
+                    pass
+            ft = (
+                ch.get("expectFinishTime")
+                or ch.get("expect_finishtime")
+                or ch.get("finishTime")
+                or ch.get("_finishTime")
+            )
+            if ft not in (None, ""):
+                child_params["ft"] = str(ft).strip()[:19]
+                child_sets.append("expect_finishtime = %(ft)s")
+            # 主单编辑可选商品/项目字段回写
+            for src, col, key in (
+                ("goodsId", "goods_id", "gid"),
+                ("goods_id", "goods_id", "gid"),
+                ("goodsName", "goods_name", "gn"),
+                ("goods_name", "goods_name", "gn"),
+                ("goodsBrandId", "goods_brand_id", "gbid"),
+                ("goodsBrandName", "goods_brand_name", "gbn"),
+                ("projectId", "experiment_project_id", "epid"),
+                ("projectName", "experiment_project_name", "epn"),
+                ("classId", "experiment_class_id", "ecid"),
+                ("className", "experiment_class_name", "ecn"),
+            ):
+                if src not in ch or ch.get(src) in (None, ""):
+                    continue
+                val = ch.get(src)
+                if col.endswith("_id"):
+                    try:
+                        child_params[key] = int(val)
+                        child_sets.append(f"{col} = %({key})s")
+                    except (TypeError, ValueError):
+                        child_params[key] = str(val)[:64]
+                        child_sets.append(f"{col} = %({key})s")
+                else:
+                    child_params[key] = str(val)[:200]
+                    child_sets.append(f"{col} = %({key})s")
             if child_sets:
                 execute(
                     f"""
@@ -4385,8 +4453,123 @@ def update_order_basic(
                     """,
                     child_params,
                 )
+        # 主单编辑：软删本次未提交的原产品行（至少保留一行由前端约束）
+        if ot in ("6", "8") and keep_ids:
+            try:
+                existing = fetch_all(
+                    """
+                    SELECT id FROM experiment_order_child
+                    WHERE order_form_id = %(oid)s AND IFNULL(delete_status, 2) <> 1
+                    """,
+                    {"oid": order_id},
+                )
+                for er in existing or []:
+                    try:
+                        eid = int(er["id"])
+                    except (TypeError, ValueError, KeyError):
+                        continue
+                    if eid in keep_ids:
+                        continue
+                    execute(
+                        """
+                        UPDATE experiment_order_child
+                        SET delete_status = 1
+                        WHERE id = %(id)s AND order_form_id = %(oid)s
+                        """,
+                        {"id": eid, "oid": order_id},
+                    )
+            except Exception:
+                logger.exception("soft-delete edit children failed order=%s", order_id)
     _write_order_log(order_id, "编辑订单", user_id=staff_user_id)
     return True, "保存成功"
+
+
+def _insert_edit_child_line(*, order_id: int, ch: dict[str, Any], order_no: str) -> None:
+    """主单编辑新增产品行。"""
+    cnt = int(
+        scalar(
+            """
+            SELECT COUNT(*) FROM experiment_order_child
+            WHERE order_form_id = %(oid)s AND IFNULL(delete_status, 2) <> 1
+            """,
+            {"oid": order_id},
+            0,
+        )
+        or 0
+    )
+    child_no = f"{order_no}-{cnt + 1}" if order_no else f"{order_id}-{cnt + 1}"
+    goods_id = ch.get("goodsId") or ch.get("goods_id") or ""
+    goods_name = str(ch.get("goodsName") or ch.get("goods_name") or "")[:200]
+    goods_spec = str(ch.get("goodsSpec") or ch.get("goods_spec") or "")[:200]
+    goods_brand_id = ch.get("goodsBrandId") or ch.get("goods_brand_id") or ""
+    goods_brand_name = str(ch.get("goodsBrandName") or ch.get("goods_brand_name") or "")[:100]
+    try:
+        goods_nums = float(ch.get("goodsNums") or ch.get("goods_nums") or 1)
+    except (TypeError, ValueError):
+        goods_nums = 1.0
+    try:
+        goods_price = float(ch.get("goodsPrice") or ch.get("goods_price") or 0)
+    except (TypeError, ValueError):
+        goods_price = 0.0
+    try:
+        reference_price = float(
+            ch.get("referencePrice") or ch.get("reference_price") or goods_price or 0
+        )
+    except (TypeError, ValueError):
+        reference_price = goods_price
+    project_id = ch.get("projectId") or ch.get("experiment_project_id") or ""
+    project_name = str(ch.get("projectName") or ch.get("experiment_project_name") or "")[:200]
+    class_id = ch.get("classId") or ch.get("experiment_class_id") or ""
+    class_name = str(ch.get("className") or ch.get("experiment_class_name") or "")[:200]
+    params = {
+        "oid": order_id,
+        "cno": child_no[:80],
+        "gid": int(goods_id) if str(goods_id).isdigit() else None,
+        "gn": goods_name,
+        "gs": goods_spec,
+        "gbid": int(goods_brand_id) if str(goods_brand_id).isdigit() else None,
+        "gb": goods_brand_name,
+        "nums": goods_nums,
+        "price": goods_price,
+        "ref": reference_price,
+        "epid": int(project_id) if str(project_id).isdigit() else None,
+        "epn": project_name,
+        "ecid": int(class_id) if str(class_id).isdigit() else None,
+        "ecn": class_name,
+    }
+    try:
+        execute(
+            """
+            INSERT INTO experiment_order_child
+                (add_time, delete_status, order_form_id, order_id, order_status, op_status,
+                 goods_id, goods_name, goods_spec, goods_brand_id, goods_brand_name,
+                 goods_nums, goods_price, reference_price,
+                 experiment_project_id, experiment_project_name,
+                 experiment_class_id, experiment_class_name)
+            VALUES
+                (NOW(), 2, %(oid)s, %(cno)s, 0, 1,
+                 %(gid)s, %(gn)s, %(gs)s, %(gbid)s, %(gb)s,
+                 %(nums)s, %(price)s, %(ref)s,
+                 %(epid)s, %(epn)s, %(ecid)s, %(ecn)s)
+            """,
+            params,
+        )
+    except Exception:
+        execute(
+            """
+            INSERT INTO experiment_order_child
+                (add_time, delete_status, order_form_id, order_id, order_status, op_status,
+                 goods_id, goods_name, goods_spec, goods_brand_name,
+                 goods_nums, goods_price, reference_price,
+                 experiment_project_name, experiment_class_name)
+            VALUES
+                (NOW(), 2, %(oid)s, %(cno)s, 0, 1,
+                 %(gid)s, %(gn)s, %(gs)s, %(gb)s,
+                 %(nums)s, %(price)s, %(ref)s,
+                 %(epn)s, %(ecn)s)
+            """,
+            params,
+        )
 
 
 def confirm_ordered(*, order_id: int) -> tuple[bool, str]:

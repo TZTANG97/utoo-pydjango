@@ -271,7 +271,17 @@ export async function fetchExpOrderFileBlob(
       })
       const ct = (res.headers.get('content-type') || '').toLowerCase()
       if (!res.ok) {
-        lastErr = `下载失败(${res.status})`
+        // 网关偶发把附件当 JSON 失败时，尽量读出 message
+        if (ct.includes('json')) {
+          try {
+            const body = (await res.json()) as AjaxBody
+            lastErr = body.resMsg || body.message || `下载失败(${res.status})`
+          } catch {
+            lastErr = `下载失败(${res.status})`
+          }
+        } else {
+          lastErr = `下载失败(${res.status})`
+        }
         continue
       }
       const blob = await res.blob()

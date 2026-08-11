@@ -13,7 +13,10 @@ def as_drf_request(request) -> Request:
 
 
 def as_django_response(resp):
-    """forward_* 在 @api_view 外侧返回时，DRF Response 无 renderer，转 JsonResponse。"""
+    """forward_* 在 @api_view 外侧返回时，DRF Response 无 renderer，转 JsonResponse。
+
+    附件下载等会直接返回 Django HttpResponse，原样透传。
+    """
     if isinstance(resp, Response):
         return JsonResponse(resp.data, status=resp.status_code, safe=False)
     return resp

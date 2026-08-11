@@ -6,6 +6,7 @@ import logging
 
 import httpx
 from django.conf import settings
+from django.http import HttpResponse
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -20,6 +21,43 @@ _FORWARD_HEADERS = (
     "token",
     "X-Channel",  # 中台渠道：admin / pc / wx，透传给上游，不据此拆服务
 )
+
+_BINARY_CT_HINTS = (
+    "application/octet-stream",
+    "application/pdf",
+    "application/zip",
+    "application/msword",
+    "application/vnd.",
+    "image/",
+    "audio/",
+    "video/",
+    "text/csv",
+    "text/plain",
+)
+
+
+def _is_binary_upstream(upstream: httpx.Response) -> bool:
+    """附件下载 / 导出等非 JSON 响应用于透传，避免误报 502。"""
+    ct = (upstream.headers.get("content-type") or "").lower()
+    cd = (upstream.headers.get("content-disposition") or "").lower()
+    if "attachment" in cd or "filename=" in cd or "filename*" in cd:
+        return True
+    return any(h in ct for h in _BINARY_CT_HINTS)
+
+
+def _passthrough_binary(upstream: httpx.Response) -> HttpResponse:
+    ct = upstream.headers.get("content-type") or "application/octet-stream"
+    resp = HttpResponse(upstream.content, status=upstream.status_code, content_type=ct)
+    for header in ("Content-Disposition", "Content-Length", "Cache-Control", "Content-Type"):
+        val = upstream.headers.get(header)
+        if not val:
+            continue
+        try:
+            resp[header] = val
+        except (UnicodeEncodeError, ValueError):
+            # 跳过非法头，仍返回文件体
+            logger.warning("skip upstream header %s", header)
+    return resp
 
 
 def svc_auth_url() -> str:
@@ -52,7 +90,7 @@ def forward_request(
     base_url: str,
     path: str,
     service_name: str = "上游服务",
-) -> Response:
+) -> Response | HttpResponse:
     # forward_*_first 在 @api_view 外侧时拿到的是 WSGIRequest；统一提升为 DRF Request
     request = as_drf_request(request)
     url = f"{base_url.rstrip('/')}{path}"
@@ -65,10 +103,12 @@ def forward_request(
     if "Content-Type" not in headers and request.content_type:
         headers["Content-Type"] = request.content_type
     params = dict(request.query_params)
+    path_l = (path or "").lower()
+    is_download = "downloadfile" in path_l or "export" in path_l or "download" in path_l
     try:
         # 本机微服务转发禁止走系统 HTTP_PROXY，否则上游宕机会变成空 502 被误报为「非 JSON」
-        # 大文件上传（订单/发票资料）需要更长超时
-        timeout = 120.0 if request.method.upper() == "POST" else 30.0
+        # 大文件上传 / 附件下载需要更长超时
+        timeout = 120.0 if (request.method.upper() == "POST" or is_download) else 30.0
         with httpx.Client(timeout=timeout, trust_env=False) as client:
             if request.method.upper() == "GET":
                 upstream = client.get(url, params=params, headers=headers)
@@ -109,9 +149,14 @@ def forward_request(
             {"code": 503, "message": f"{service_name}不可用：{exc}", "data": None},
             status=503,
         )
+    # 附件/导出：直接透传二进制，勿当 JSON
+    if _is_binary_upstream(upstream) and upstream.status_code < 400:
+        return _passthrough_binary(upstream)
     try:
         data = upstream.json()
     except json.JSONDecodeError:
+        if _is_binary_upstream(upstream) and upstream.status_code < 500:
+            return _passthrough_binary(upstream)
         body = (upstream.content or b"").decode("utf-8", errors="replace").strip()
         host = base_url.rstrip("/")
         if upstream.status_code == 413:

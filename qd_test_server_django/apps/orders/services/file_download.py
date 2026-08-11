@@ -167,7 +167,12 @@ def load_accessory_bytes(
 
 
 def content_disposition(filename: str) -> str:
-    """RFC 5987，兼容中文文件名。"""
+    """RFC 5987，兼容中文文件名；filename= 仅 ASCII，避免 HTTP 头 latin-1 崩溃。"""
     safe = filename.replace('"', "").replace("\r", "").replace("\n", "") or "download"
     encoded = quote(safe)
-    return f"attachment; filename=\"{safe}\"; filename*=UTF-8''{encoded}"
+    ascii_name = "".join(
+        c if 32 <= ord(c) < 127 and c not in ";\\" else "_" for c in safe
+    ).strip("._")
+    if not ascii_name:
+        ascii_name = "download"
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{encoded}"

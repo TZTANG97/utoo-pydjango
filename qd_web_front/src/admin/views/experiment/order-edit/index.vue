@@ -121,7 +121,8 @@
           </el-form-item>
         </el-col>
         <el-col v-else :span="12">
-          <el-form-item label="所属公司" required>
+          <!-- 主单编辑对齐 Java experiment_edit_orders：供应商；子单仍为所属公司 -->
+          <el-form-item :label="isMainOrder ? '供应商' : '所属公司'" required>
             <div class="inline-ops">
               <el-select
                 v-model="form.supplierId"
@@ -347,6 +348,7 @@
       <section class="lines-block">
         <div class="lines-head">
           <h3>产品明细</h3>
+          <el-button v-if="isMainOrder" type="primary" @click="addLine">添加产品</el-button>
         </div>
         <!-- type9 对齐 Java experimentsub/purchase_edit_orders：成本单价 -->
         <el-table v-if="isSubcontractSub" :data="lines" border stripe empty-text="暂无产品行">
@@ -361,7 +363,7 @@
             </template>
           </el-table-column>
         </el-table>
-        <!-- type10 对齐 Java 子单详情：无金额列 -->
+        <!-- type10：可改测试人员 / 实验平台 / 预计完成时间 -->
         <el-table v-else-if="isExpSub" :data="lines" border stripe empty-text="暂无产品行">
           <el-table-column prop="goodsName" label="产品名称" min-width="140" show-overflow-tooltip />
           <el-table-column label="产品型号" min-width="120">
@@ -382,16 +384,80 @@
           </el-table-column>
           <el-table-column prop="projectName" label="实验测试项目" min-width="120" show-overflow-tooltip />
           <el-table-column prop="className" label="实验测试分类" min-width="120" show-overflow-tooltip />
-        </el-table>
-        <el-table v-else :data="lines" border stripe empty-text="暂无产品行">
-          <el-table-column label="产品名称" min-width="140" show-overflow-tooltip>
+          <el-table-column label="测试人员" width="160">
             <template #default="{ row }">
-              <span>{{ row.goodsName || '-' }}</span>
+              <el-select
+                v-model="row.testUserId"
+                filterable
+                clearable
+                placeholder="请选择"
+                style="width: 140px"
+              >
+                <el-option label="抢单" value="22" />
+                <el-option
+                  v-for="u in testerOptionsForRow(row)"
+                  :key="String(u.id)"
+                  :label="testerLabel(u)"
+                  :value="String(u.id)"
+                />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column label="实验平台" width="170">
+            <template #default="{ row }">
+              <el-select
+                v-model="row.lineId"
+                filterable
+                clearable
+                placeholder="请选择"
+                style="width: 150px"
+              >
+                <el-option
+                  v-for="p in platformOpts"
+                  :key="String(p.value)"
+                  :label="p.label"
+                  :value="String(p.value)"
+                />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column label="预计完成时间" width="190">
+            <template #default="{ row }">
+              <el-date-picker
+                v-model="row.expectFinishTime"
+                type="datetime"
+                value-format="YYYY-MM-DD HH:mm:ss"
+                placeholder="预计完成"
+                style="width: 178px"
+              />
+            </template>
+          </el-table-column>
+        </el-table>
+        <!-- type6/8 主单：对齐 Java 可加减产品、点选商品/项目 -->
+        <el-table v-else :data="lines" border stripe empty-text="暂无产品行">
+          <el-table-column label="产品名称" min-width="140">
+            <template #default="{ row }">
+              <el-input
+                v-model="row.goodsName"
+                readonly
+                placeholder="点击选择"
+                @click="openGoodsPicker(row)"
+              />
             </template>
           </el-table-column>
           <el-table-column label="产品型号" min-width="120">
             <template #default="{ row }">
-              <el-input v-model="row.goodsSpec" clearable />
+              <el-select
+                v-if="row.specOptions.length"
+                v-model="row.goodsSpec"
+                filterable
+                allow-create
+                clearable
+                style="width: 100%"
+              >
+                <el-option v-for="s in row.specOptions" :key="s" :label="s" :value="s" />
+              </el-select>
+              <el-input v-else v-model="row.goodsSpec" clearable />
             </template>
           </el-table-column>
           <el-table-column prop="goodsBrandName" label="产品品牌" min-width="100" show-overflow-tooltip />
@@ -406,7 +472,16 @@
               />
             </template>
           </el-table-column>
-          <el-table-column prop="projectName" label="实验测试项目" min-width="120" show-overflow-tooltip />
+          <el-table-column label="实验测试项目" min-width="130">
+            <template #default="{ row }">
+              <el-input
+                v-model="row.projectName"
+                readonly
+                placeholder="点击选择"
+                @click="openProjectPicker(row)"
+              />
+            </template>
+          </el-table-column>
           <el-table-column prop="className" label="实验测试分类" min-width="120" show-overflow-tooltip />
           <el-table-column label="实际测试金额" width="130">
             <template #default="{ row }">
@@ -415,12 +490,20 @@
           </el-table-column>
           <el-table-column label="标准测试金额" width="120">
             <template #default="{ row }">
-              <span>{{ row.referencePrice || '-' }}</span>
+              <el-input v-model="row.referencePrice" clearable />
             </template>
           </el-table-column>
           <el-table-column label="总价" width="100">
             <template #default="{ row }">
               <span>{{ lineTotal(row) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="100" fixed="right">
+            <template #default="{ $index }">
+              <el-button type="primary" link @click="addLine">+</el-button>
+              <el-button type="danger" link :disabled="lines.length <= 1" @click="removeLine($index)">
+                -
+              </el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -439,6 +522,50 @@
       </div>
     </el-form>
     <el-empty v-else-if="!loading" description="订单不存在或不可编辑" />
+
+    <el-dialog v-model="goodsDlg.visible" title="选择商品" width="720px" destroy-on-close>
+      <el-form inline class="dlg-filter">
+        <el-form-item label="名称">
+          <el-input v-model="goodsDlg.keyword" clearable @keyup.enter="loadGoods" />
+        </el-form-item>
+        <el-button type="primary" @click="loadGoods">查询</el-button>
+      </el-form>
+      <el-table
+        v-loading="goodsDlg.loading"
+        :data="goodsDlg.rows"
+        border
+        stripe
+        height="360"
+        highlight-current-row
+        @row-click="onPickGoods"
+      >
+        <el-table-column prop="goodsName" label="商品名称" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="brandName" label="品牌" width="120" show-overflow-tooltip />
+        <el-table-column prop="goodsModel" label="型号" min-width="140" show-overflow-tooltip />
+      </el-table>
+    </el-dialog>
+
+    <el-dialog v-model="projectDlg.visible" title="选择实验测试项目" width="720px" destroy-on-close>
+      <el-form inline class="dlg-filter">
+        <el-form-item label="名称">
+          <el-input v-model="projectDlg.keyword" clearable @keyup.enter="loadProjects" />
+        </el-form-item>
+        <el-button type="primary" @click="loadProjects">查询</el-button>
+      </el-form>
+      <el-table
+        v-loading="projectDlg.loading"
+        :data="projectDlg.rows"
+        border
+        stripe
+        height="360"
+        highlight-current-row
+        @row-click="onPickProject"
+      >
+        <el-table-column prop="projectName" label="项目名称" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="className" label="分类" width="140" show-overflow-tooltip />
+        <el-table-column prop="testPrice" label="测试金额" width="120" />
+      </el-table>
+    </el-dialog>
 
     <el-dialog v-model="shareDlg.visible" title="添加分成比例" width="720px" destroy-on-close>
       <div class="share-block">
@@ -508,29 +635,40 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   deleteExpOrderFile,
+  fetchExpGoodsList,
+  fetchProjectList,
   getExpOrderDetail,
   updateExpOrderBasic,
   uploadExpOrderFile,
 } from '@admin/api/experiment'
+import { fetchSelLineList } from '@admin/api/inventory'
 import { fetchCustomerAccounts, fetchCustomerNamesExp } from '@admin/api/member'
 import { fetchBillTypeAll, fetchPaytypeAll, fetchTaxAll } from '@admin/api/order-settings'
-import { fetchSupplierAll, fetchUserList } from '@admin/api/system'
+import { fetchSupplierAll, fetchTestUsers, fetchUserList } from '@admin/api/system'
 import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
 type Opt = { value: string | number; label: string; nums?: number }
 type ShareRow = { userId: string; value: string }
 type LineRow = {
   id: string | number
+  goodsId: string
   goodsName: string
   goodsSpec: string
+  goodsBrandId: string
   goodsBrandName: string
   goodsNums: number
   goodsPrice: string
   referencePrice: string
   costPrice: string
+  projectId: string
   projectName: string
+  classId: string
   className: string
   childOrderId: string
+  specOptions: string[]
+  testUserId: string
+  lineId: string
+  expectFinishTime: string
 }
 
 const route = useRoute()
@@ -591,6 +729,23 @@ const profitRows = ref<ShareRow[]>([{ userId: '', value: '' }])
 const costRows = ref<ShareRow[]>([{ userId: '', value: '' }])
 const shareDlg = reactive({ visible: false })
 const shareSummary = ref('')
+const goodsDlg = reactive({
+  visible: false,
+  loading: false,
+  keyword: '',
+  rows: [] as Record<string, unknown>[],
+  target: null as LineRow | null,
+})
+const projectDlg = reactive({
+  visible: false,
+  loading: false,
+  keyword: '',
+  rows: [] as Record<string, unknown>[],
+  target: null as LineRow | null,
+})
+const platformOpts = ref<Opt[]>([])
+const testerDefault = ref<Record<string, unknown>[]>([])
+const testerByClass = ref<Record<string, Record<string, unknown>[]>>({})
 
 const totalNums = computed(() =>
   lines.value.reduce((s, r) => s + (Number(r.goodsNums) || 0), 0)
@@ -642,13 +797,188 @@ function lineTotal(row: LineRow) {
 }
 
 function recalcTotal() {
-  if (!form.totalPrice || form.totalPrice === '0') {
-    form.totalPrice = totalAmount.value
-  }
+  form.totalPrice = totalAmount.value
 }
 
 function recalcCostTotal() {
   form.totalPrice = totalCostAmount.value
+}
+
+function emptyLine(): LineRow {
+  return {
+    id: '',
+    goodsId: '',
+    goodsName: '',
+    goodsSpec: '',
+    goodsBrandId: '',
+    goodsBrandName: '',
+    goodsNums: 1,
+    goodsPrice: '',
+    referencePrice: '',
+    costPrice: '',
+    projectId: '',
+    projectName: '',
+    classId: '',
+    className: '',
+    childOrderId: '',
+    specOptions: [],
+    testUserId: '',
+    lineId: '',
+    expectFinishTime: '',
+  }
+}
+
+function addLine() {
+  lines.value.push(emptyLine())
+}
+
+function removeLine(idx: number) {
+  if (lines.value.length <= 1) {
+    ElMessage.warning('实验订单至少选择一个产品，不可删除最后一个')
+    return
+  }
+  lines.value.splice(idx, 1)
+  recalcTotal()
+}
+
+function testerLabel(u: Record<string, unknown>) {
+  return String(u.trueName || u.true_name || u.userName || u.user_name || u.id || '')
+}
+
+function testerOptionsForRow(row: LineRow) {
+  const cid = String(row.classId || detail.value?.classId || '')
+  if (cid && testerByClass.value[cid]?.length) return testerByClass.value[cid]
+  return testerDefault.value
+}
+
+async function loadTestersForClasses(classIds: string[]) {
+  const silent = { silentError: true } as const
+  const uniq = Array.from(new Set(classIds.map((x) => String(x || '').trim()).filter(Boolean)))
+  if (!uniq.length) {
+    try {
+      const res = await fetchTestUsers('', silent)
+      testerDefault.value = Array.isArray(res.obj) ? (res.obj as Record<string, unknown>[]) : []
+    } catch {
+      testerDefault.value = []
+    }
+    return
+  }
+  await Promise.all(
+    uniq.map(async (cid) => {
+      if (testerByClass.value[cid]?.length) return
+      try {
+        const res = await fetchTestUsers(cid, silent)
+        testerByClass.value[cid] = Array.isArray(res.obj)
+          ? (res.obj as Record<string, unknown>[])
+          : []
+      } catch {
+        testerByClass.value[cid] = []
+      }
+    })
+  )
+  const first = uniq[0]
+  if (first) testerDefault.value = testerByClass.value[first] || []
+}
+
+async function loadPlatforms() {
+  try {
+    const res = await fetchSelLineList({ start: 0, length: 500, draw: 1 })
+    const list = Array.isArray(res.data) ? res.data : Array.isArray(res.obj) ? res.obj : []
+    platformOpts.value = (list as Record<string, unknown>[])
+      .map((r) => ({
+        value: (r.id ?? '') as string | number,
+        label: String(r.lineNum || r.line_num || r.name || r.id || ''),
+      }))
+      .filter((o) => o.value !== '' && o.value != null)
+  } catch {
+    platformOpts.value = []
+  }
+}
+
+function openGoodsPicker(row: LineRow) {
+  goodsDlg.target = row
+  goodsDlg.keyword = ''
+  goodsDlg.visible = true
+  loadGoods()
+}
+
+async function loadGoods() {
+  goodsDlg.loading = true
+  try {
+    const res = await fetchExpGoodsList({
+      start: 0,
+      length: 50,
+      draw: 1,
+      name: goodsDlg.keyword || '',
+    })
+    goodsDlg.rows = Array.isArray(res.data) ? res.data : []
+  } catch {
+    goodsDlg.rows = []
+  } finally {
+    goodsDlg.loading = false
+  }
+}
+
+function onPickGoods(row: Record<string, unknown>) {
+  const target = goodsDlg.target
+  if (!target) return
+  target.goodsId = String(row.id || '')
+  target.goodsName = String(row.goodsName || '')
+  target.goodsBrandId = String(row.brandId || '')
+  target.goodsBrandName = String(row.brandName || '')
+  const model = String(row.goodsModel || '')
+  target.specOptions = model
+    ? model
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : []
+  target.goodsSpec = target.specOptions[0] || model
+  goodsDlg.visible = false
+  openProjectPicker(target)
+}
+
+function openProjectPicker(row: LineRow) {
+  projectDlg.target = row
+  projectDlg.keyword = ''
+  projectDlg.visible = true
+  loadProjects()
+}
+
+async function loadProjects() {
+  projectDlg.loading = true
+  try {
+    const res = await fetchProjectList({
+      start: 0,
+      length: 50,
+      draw: 1,
+      name: projectDlg.keyword || '',
+    })
+    projectDlg.rows = Array.isArray(res.data) ? res.data : []
+  } catch {
+    projectDlg.rows = []
+  } finally {
+    projectDlg.loading = false
+  }
+}
+
+function onPickProject(row: Record<string, unknown>) {
+  const target = projectDlg.target
+  if (!target) return
+  target.projectId = String(row.id || '')
+  target.projectName = String(row.projectName || '')
+  target.classId = String(row.classId || '')
+  target.className = String(row.className || '')
+  const price = row.testPrice ?? row.test_price ?? row.price
+  if (price != null && price !== '') {
+    const n = Number(price)
+    if (!Number.isNaN(n)) {
+      target.goodsPrice = String(n)
+      target.referencePrice = String(n)
+    }
+  }
+  projectDlg.visible = false
+  recalcTotal()
 }
 
 function shareUserLabel(u: Record<string, unknown>) {
@@ -949,24 +1279,70 @@ async function load() {
     refreshShareSummary()
 
     const children = Array.isArray(obj.children) ? (obj.children as Record<string, unknown>[]) : []
-    lines.value = children.map((ch) => ({
-      id: (ch.id ?? '') as string | number,
-      goodsName: String(ch.goodsName || ''),
-      goodsSpec: String(ch.goodsSpec || ''),
-      goodsBrandName: String(ch.goodsBrandName || ch.goodsBrand || ''),
-      goodsNums: Number(ch.goodsNums || ch.goodsCount || 1) || 1,
-      goodsPrice: ch.price != null ? String(ch.price) : ch.goodsPrice != null ? String(ch.goodsPrice) : '',
-      referencePrice:
-        ch.referencePrice != null
-          ? String(ch.referencePrice)
-          : ch.reference_price != null
-            ? String(ch.reference_price)
-            : '',
-      costPrice: ch.costPrice != null ? String(ch.costPrice) : '',
-      projectName: String(ch.projectName || ch.experimentProjectName || ''),
-      className: String(ch.className || ch.experimentClassName || ch.deviceName || ''),
-      childOrderId: String(ch.childOrderId || ch.orderId || ''),
-    }))
+    lines.value = children.map((ch) => {
+      const spec = String(ch.goodsSpec || '')
+      return {
+        id: (ch.id ?? '') as string | number,
+        goodsId: String(ch.goodsId || ch.goods_id || ''),
+        goodsName: String(ch.goodsName || ''),
+        goodsSpec: spec,
+        goodsBrandId: String(ch.goodsBrandId || ch.goods_brand_id || ''),
+        goodsBrandName: String(ch.goodsBrandName || ch.goodsBrand || ''),
+        goodsNums: Number(ch.goodsNums || ch.goodsCount || 1) || 1,
+        goodsPrice:
+          ch.price != null ? String(ch.price) : ch.goodsPrice != null ? String(ch.goodsPrice) : '',
+        referencePrice:
+          ch.referencePrice != null
+            ? String(ch.referencePrice)
+            : ch.reference_price != null
+              ? String(ch.reference_price)
+              : '',
+        costPrice: ch.costPrice != null ? String(ch.costPrice) : '',
+        projectId: String(ch.projectId || ch.experimentProjectId || ''),
+        projectName: String(ch.projectName || ch.experimentProjectName || ''),
+        classId: String(ch.classId || ch.experimentClassId || ''),
+        className: String(ch.className || ch.experimentClassName || ch.deviceName || ''),
+        childOrderId: String(ch.childOrderId || ch.orderId || ''),
+        specOptions: spec ? [spec] : [],
+        testUserId: ch.testUserId != null ? String(ch.testUserId) : '',
+        lineId: ch.lineId != null ? String(ch.lineId) : ch.line_id != null ? String(ch.line_id) : '',
+        expectFinishTime: String(
+          ch.expectFinishTime || ch.expect_finishtime || ch.finishTime || ''
+        ),
+      }
+    })
+
+    if (String(obj.orderType || obj.order_type || '') === '10') {
+      await loadPlatforms()
+      const classIds = lines.value.map((r) => r.classId).filter(Boolean)
+      if (obj.classId) classIds.push(String(obj.classId))
+      await loadTestersForClasses(classIds)
+      for (const row of lines.value) {
+        if (row.testUserId) {
+          const listRef = row.classId ? testerByClass.value : null
+          const bucket =
+            (row.classId && testerByClass.value[row.classId]) || testerDefault.value
+          if (!bucket.some((u) => String(u.id) === row.testUserId)) {
+            const hit = children.find((c) => String(c.id) === String(row.id))
+            const name = String(hit?.testUserName || hit?.testUser || row.testUserId)
+            const patch = { id: row.testUserId, trueName: name, userName: name }
+            if (row.classId && listRef) {
+              testerByClass.value[row.classId] = [patch, ...bucket]
+            } else {
+              testerDefault.value = [patch, ...bucket]
+            }
+          }
+        }
+        if (row.lineId) {
+          const hit = children.find((c) => String(c.id) === String(row.id))
+          ensureOpt(
+            platformOpts,
+            row.lineId,
+            String(hit?.platformName || hit?.lineNum || hit?.line_num || row.lineId)
+          )
+        }
+      }
+    }
   } finally {
     loading.value = false
   }
@@ -990,7 +1366,7 @@ async function onSave() {
     return
   }
   if (!isSubcontractSub.value && !form.supplierId) {
-    ElMessage.warning('请选择所属公司')
+    ElMessage.warning(isMainOrder.value ? '请选择供应商' : '请选择所属公司')
     return
   }
   if (isExpSub.value && !form.warehouseUserId) {
@@ -1015,6 +1391,35 @@ async function onSave() {
       return
     }
     form.totalPrice = totalCostAmount.value
+  }
+  if (isMainOrder.value) {
+    if (!lines.value.length) {
+      ElMessage.warning('实验订单至少选择一个产品才可提交')
+      return
+    }
+    for (const [i, row] of lines.value.entries()) {
+      if (!row.goodsId && !row.goodsName) {
+        ElMessage.warning(`第 ${i + 1} 行请选择产品`)
+        return
+      }
+      if (!row.projectId && !row.projectName) {
+        ElMessage.warning(`第 ${i + 1} 行请选择测试项目`)
+        return
+      }
+    }
+    recalcTotal()
+  }
+  if (isExpSub.value) {
+    for (const [i, row] of lines.value.entries()) {
+      if (!row.testUserId) {
+        ElMessage.warning(`第 ${i + 1} 行请选择测试人员`)
+        return
+      }
+      if (!row.lineId) {
+        ElMessage.warning(`第 ${i + 1} 行请选择实验平台`)
+        return
+      }
+    }
   }
   if (!isExpSub.value && !form.totalPrice) {
     ElMessage.warning(isSubcontractSub.value ? '请填写实验分包总价' : '请填写订单总价')
@@ -1051,12 +1456,23 @@ async function onSave() {
       customerId: form.customerId,
       customUserId: form.customUserId,
       children: lines.value.map((row) => ({
-        id: row.id,
+        id: row.id || undefined,
+        goodsId: row.goodsId,
+        goodsName: row.goodsName,
+        goodsBrandId: row.goodsBrandId,
+        goodsBrandName: row.goodsBrandName,
         goodsNums: row.goodsNums,
         goodsPrice: row.goodsPrice,
         goodsSpec: row.goodsSpec,
         referencePrice: row.referencePrice,
         costPrice: row.costPrice,
+        projectId: row.projectId,
+        projectName: row.projectName,
+        classId: row.classId,
+        className: row.className,
+        testUserId: row.testUserId,
+        lineId: row.lineId,
+        expectFinishTime: row.expectFinishTime,
       })),
     }
     if (isMainOrder.value) {
@@ -1190,9 +1606,18 @@ onMounted(async () => {
 .lines-block {
   margin: 8px 0 20px;
 }
+.lines-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
 .lines-head h3 {
-  margin: 0 0 12px;
+  margin: 0;
   font-size: 16px;
+}
+.dlg-filter {
+  margin-bottom: 12px;
 }
 .sum-row {
   display: flex;
