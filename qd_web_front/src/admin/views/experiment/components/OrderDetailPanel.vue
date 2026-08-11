@@ -217,12 +217,12 @@
         </el-button>
         <el-button v-if="detail.canMoreInfo" @click="onMoreInfo">更多信息</el-button>
         <el-button
-          v-if="detail.canGenerateAppointment || detail.canRegenerateAppointment"
+          v-if="detail.canGenerateAppointment"
           class="btn-accent"
           :loading="acting"
           @click="onGenerateAppointment"
         >
-          {{ detail.canRegenerateAppointment ? '重新生成预约单' : '生成预约单' }}
+          生成预约单
         </el-button>
         <!-- type=9/10 样品流转 -->
         <el-button
@@ -1357,7 +1357,7 @@
 
     <el-dialog
       v-model="appointmentVisible"
-      :title="(detail?.canRegenerateAppointment ? '重新生成预约单' : '生成预约单') + ' · 选择寄送地址'"
+      title="生成预约单 · 选择寄送地址"
       width="560px"
       destroy-on-close
     >
@@ -1375,7 +1375,7 @@
       <template #footer>
         <el-button @click="appointmentVisible = false">取消</el-button>
         <el-button type="primary" :loading="acting || appointmentLoading" @click="submitAppointment">
-          {{ detail?.canRegenerateAppointment ? '确定重新生成' : '确定生成' }}
+          确定生成
         </el-button>
       </template>
     </el-dialog>

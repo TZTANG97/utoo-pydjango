@@ -1878,8 +1878,8 @@ def get_order(order_id: int) -> dict[str, Any] | None:
     row["canConfirmPay"] = parent_kind and sure_recv
     row["canConfirmCustomer"] = parent_kind and st == 67
     row["canGenerateAppointment"] = parent_kind and is_online == 0 and is_yyd == 0 and st not in (0,)
-    # 已生成也可重新生成（替换 PDF，修正寄送地址/收件人等）
-    row["canRegenerateAppointment"] = parent_kind and is_online == 0 and is_yyd == 1 and st not in (0,)
+    # 预约单只允许生成一次（与 Java 一致，无重新生成）
+    row["canRegenerateAppointment"] = False
     # 创建子单：存在待处理产品行 op_status=1
     if parent_kind and st != 0:
         # 兼容历史：子单已取消但产品行未释放时，自动恢复为可创建
@@ -3746,13 +3746,16 @@ def confirm_online_pay(*, order_id: int, staff_user_id: str = "") -> tuple[bool,
 def generate_appointment(
     *, order_id: int, test_address_id: str = "", staff_user_id: str | int | None = None
 ) -> tuple[bool, str]:
-    """对齐 Java geranateYydForm：写地址、标记 is_yyd、生成预约单 PDF(type=6)。"""
+    """对齐 Java geranateYydForm：写地址、标记 is_yyd、生成预约单 PDF(type=6)。
+
+    预约单只允许生成一次（已生成后不可再生成/重新生成）。
+    """
     row = get_order(order_id)
     if not row:
         return False, "订单不存在"
-    can_gen = bool(row.get("canGenerateAppointment"))
-    can_regen = bool(row.get("canRegenerateAppointment"))
-    if not (can_gen or can_regen):
+    if not bool(row.get("canGenerateAppointment")):
+        if bool(row.get("isYyd")):
+            return False, "预约单已生成，不可重复生成"
         return False, "当前不可生成预约单"
     addr = (test_address_id or "").strip()
     if not addr:
@@ -3780,24 +3783,21 @@ def generate_appointment(
             return False, "更新预约标志失败"
 
     pdf_ok, pdf_msg = _build_appointment_pdf(order_id=order_id, test_address_id=addr_id)
-    action_label = "重新生成预约单" if can_regen else "生成预约单"
     _write_order_log(
         order_id,
-        f"{action_label} 地址:{addr_id}" + ("" if pdf_ok else f"（PDF:{pdf_msg}）"),
+        f"生成预约单 地址:{addr_id}" + ("" if pdf_ok else f"（PDF:{pdf_msg}）"),
         user_id=staff_user_id,
     )
     if not pdf_ok:
-        # 重新生成失败时保留已有 is_yyd，避免把已生成状态清掉
-        if not can_regen:
-            try:
-                execute(
-                    "UPDATE experiment_order SET is_yyd = 0 WHERE id = %(id)s",
-                    {"id": order_id},
-                )
-            except Exception:
-                pass
+        try:
+            execute(
+                "UPDATE experiment_order SET is_yyd = 0 WHERE id = %(id)s",
+                {"id": order_id},
+            )
+        except Exception:
+            pass
         return False, f"PDF 生成失败：{pdf_msg}"
-    return True, f"已{action_label}"
+    return True, "已生成预约单"
 
 
 def _resolve_pdf_font() -> str:
@@ -3839,8 +3839,12 @@ def _resolve_pdf_font() -> str:
 def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool, str]:
     """生成预约单 PDF 并写入 accessory type=6。
 
-    版式照抄 Java ``com.mall.pc.util.PDFUtil``（BillController.geranateYyd）：
-    createPdfHeadTable + createTable（iText PdfPTable）。
+    版式对齐 Java 管理端预约单样张：
+    - 标题 + 右上二维码 + 创建日期
+    - 主信息：实验项目/订单编号/下单时间/寄方信息/寄送地址/
+      是否回收样品/云视频/线下到场/我要上机
+    - 每个样品：EDS主要成分、无法喷金注意事项、样品二维码块
+      （样品编号/名称/数量/预约设备）
     """
     try:
         from datetime import datetime
@@ -3866,6 +3870,9 @@ def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool
     except Exception as exc:
         return False, f"缺少 PDF 依赖: {exc}"
 
+    def _yn(val: Any) -> str:
+        return "是" if _truthy_flag(val) else "否"
+
     rows = print_pdf_repo.fetch_print_pdf_rows(order_id)
     if not rows:
         order = fetch_one(
@@ -3873,7 +3880,8 @@ def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool
             SELECT
                 t.id AS eid, t.order_id AS ord_id, t.addTime,
                 t.test_address_id, t.reverso_context,
-                t.send_address, t.addressee_name, t.addressee_mobile
+                t.send_address, t.addressee_name, t.addressee_mobile,
+                t.is_video, t.is_arrive, t.is_on
             FROM experiment_order t
             WHERE t.id = %(id)s
             LIMIT 1
@@ -3899,27 +3907,24 @@ def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool
         or str(first.get("sc_send_address") or "").strip()
         or str(first.get("send_address") or "").strip()
     )
-    # SampleDelivery.recovery：有寄送信息时输出需要/不需要
-    has_delivery = bool(
-        address_text
-        or first.get("reverso_context") not in (None, "")
-        or first.get("sc_reverso_context") not in (None, "")
-        or addr_id
+    contact_name = (
+        str(addr_row.get("trueName") or "").strip()
+        or str(first.get("userName") or "").strip()
+        or str(first.get("addressee_name") or "").strip()
     )
+    contact_mobile = (
+        str(addr_row.get("mobile") or "").strip()
+        or str(first.get("sc_mobile") or "").strip()
+        or str(first.get("addressee_mobile") or "").strip()
+    )
+
     rev = first.get("reverso_context")
     if rev in (None, "") and first.get("sc_reverso_context") not in (None, ""):
         rev = first.get("sc_reverso_context")
-    try:
-        rev_i = int(rev) if rev not in (None, "") else None
-    except (TypeError, ValueError):
-        rev_i = 1 if str(rev).strip() in ("1", "ON", "是") else 2 if str(rev).strip() else None
-    if not has_delivery and rev_i is None:
-        recovery_label = ""
-    elif rev_i == 2:
-        recovery_label = "不需要"
-    else:
-        # reverso=1 或未区分：需要（对齐样张与业务「回收」）
-        recovery_label = "需要"
+    recovery_label = "是" if _reverso_is_yes(rev) else "否"
+    video_label = _yn(first.get("is_video"))
+    arrive_label = _yn(first.get("is_arrive"))
+    on_label = _yn(first.get("is_on"))
 
     child_list: list[dict[str, Any]] = []
     seen: set[int] = set()
@@ -3942,17 +3947,21 @@ def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool
                 "goodsNums": r.get("goods_nums"),
                 "projectName": str(r.get("experiment_project_name") or ""),
                 "className": str(r.get("experiment_class_name") or ""),
+                "mainComponent": str(r.get("main_component") or ""),
+                "goldDesc": str(r.get("gold_desc") or ""),
             }
         )
     if not child_list:
         for ch in fetch_all(
             """
             SELECT
-                order_id AS orderId, goods_name AS goodsName, goods_nums AS goodsNums,
-                experiment_project_name AS projectName, experiment_class_name AS className
-            FROM experiment_order_child
-            WHERE order_form_id = %(oid)s AND IFNULL(delete_status, 2) <> 1
-            ORDER BY id ASC
+                c.order_id AS orderId, c.goods_name AS goodsName, c.goods_nums AS goodsNums,
+                c.experiment_project_name AS projectName, c.experiment_class_name AS className,
+                osi.main_component AS mainComponent, osi.gold_desc AS goldDesc
+            FROM experiment_order_child c
+            LEFT JOIN order_sample_information osi ON c.sample_id = osi.id
+            WHERE c.order_form_id = %(oid)s AND IFNULL(c.delete_status, 2) <> 1
+            ORDER BY c.id ASC
             LIMIT 100
             """,
             {"oid": order_id},
@@ -3964,10 +3973,11 @@ def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool
                     "goodsNums": ch.get("goodsNums"),
                     "projectName": str(ch.get("projectName") or ""),
                     "className": str(ch.get("className") or ""),
+                    "mainComponent": str(ch.get("mainComponent") or ""),
+                    "goldDesc": str(ch.get("goldDesc") or ""),
                 }
             )
 
-    # Java 标题/实验项目用 experiment_class_name
     class_name = (
         (child_list[0].get("className") if child_list else "")
         or str(first.get("experiment_class_name") or "").strip()
@@ -3978,131 +3988,174 @@ def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool
 
     try:
         buf = BytesIO()
+        page_w, _page_h = A4
+        left_m = 12 * mm
+        right_m = 12 * mm
+        usable = page_w - left_m - right_m
+        label_w = 42 * mm
+        value_w = usable - label_w
+
         doc = SimpleDocTemplate(
             buf,
             pagesize=A4,
-            leftMargin=15 * mm,
-            rightMargin=15 * mm,
-            topMargin=14 * mm,
-            bottomMargin=14 * mm,
+            leftMargin=left_m,
+            rightMargin=right_m,
+            topMargin=12 * mm,
+            bottomMargin=12 * mm,
         )
         title_style = ParagraphStyle(
             "YydTitle",
             fontName=font_name,
-            fontSize=18,
-            leading=24,
+            fontSize=16,
+            leading=20,
             alignment=TA_CENTER,
         )
         body_style = ParagraphStyle(
             "YydBody",
             fontName=font_name,
-            fontSize=12,
-            leading=16,
+            fontSize=11,
+            leading=15,
             alignment=TA_LEFT,
         )
         date_style = ParagraphStyle(
             "YydDate",
             fontName=font_name,
-            fontSize=12,
-            leading=16,
+            fontSize=11,
+            leading=14,
             alignment=TA_RIGHT,
         )
-        sample_style = ParagraphStyle(
-            "YydSample",
+        sample_text_style = ParagraphStyle(
+            "YydSampleText",
             fontName=font_name,
-            fontSize=12,
+            fontSize=11,
             leading=16,
             alignment=TA_LEFT,
         )
 
-        # Java BarcodeQRCode 硬编码 www.baidu.com（80x80）
-        try:
-            import qrcode
+        def _cell(text: str, style: ParagraphStyle | None = None) -> Paragraph:
+            raw = str(text if text is not None else "")
+            safe = (
+                raw.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\n", "<br/>")
+            )
+            return Paragraph(safe, style or body_style)
 
-            qr = qrcode.QRCode(version=2, box_size=4, border=1)
-            qr.add_data("www.baidu.com")
-            qr.make(fit=True)
-            qr_img = qr.make_image(fill_color="black", back_color="white")
-            qr_buf = BytesIO()
-            qr_img.save(qr_buf, format="PNG")
-            qr_buf.seek(0)
-            qr_flowable: Any = Image(qr_buf, width=22 * mm, height=22 * mm)
-        except Exception:
-            qr_flowable = Paragraph(" ", body_style)
+        def _qr_image(payload: str, size_mm: float = 22) -> Any:
+            try:
+                import qrcode
 
+                qr = qrcode.QRCode(version=2, box_size=4, border=1)
+                qr.add_data(payload or " ")
+                qr.make(fit=True)
+                qr_img = qr.make_image(fill_color="black", back_color="white")
+                qr_buf = BytesIO()
+                qr_img.save(qr_buf, format="PNG")
+                qr_buf.seek(0)
+                return Image(qr_buf, width=size_mm * mm, height=size_mm * mm)
+            except Exception:
+                return _cell(" ")
+
+        # 页眉：标题 + 订单二维码；创建日期右对齐
+        head_qr = _qr_image(order_no, 22)
         head = Table(
             [
-                [Paragraph(f"{class_name}-预约单", title_style), qr_flowable],
-                [Paragraph(f"创建日期：{create_date}", date_style), ""],
+                [_cell(f"{class_name}-预约单", title_style), head_qr],
+                [_cell(f"创建日期：{create_date}", date_style), ""],
             ],
-            colWidths=[150 * mm, 30 * mm],
+            colWidths=[usable - 28 * mm, 28 * mm],
         )
         head.setStyle(
             TableStyle(
                 [
                     ("SPAN", (0, 1), (1, 1)),
-                    ("VALIGN", (0, 0), (0, 0), "MIDDLE"),
-                    ("VALIGN", (1, 0), (1, 0), "MIDDLE"),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                     ("ALIGN", (1, 0), (1, 0), "CENTER"),
-                    ("ALIGN", (0, 1), (1, 1), "RIGHT"),
                     ("LEFTPADDING", (0, 0), (-1, -1), 2),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 2),
                     ("TOPPADDING", (0, 0), (-1, -1), 2),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
                 ]
             )
         )
 
-        def _cell(text: str) -> Paragraph:
-            return Paragraph(str(text if text is not None else ""), body_style)
-
-        # 4 列：标签占 1、值占 3
         data: list[list[Any]] = [
-            [_cell("实验项目"), _cell(class_name), "", ""],
-            [_cell("订单编号"), _cell(order_no), "", ""],
-            [_cell("样品寄送地址"), _cell(address_text), "", ""],
-            [_cell("下单时间"), _cell(add_time), "", ""],
-            [_cell("是否回收样品"), _cell(recovery_label), "", ""],
+            [_cell("实验项目"), _cell(class_name)],
+            [_cell("订单编号"), _cell(order_no)],
+            [_cell("下单时间"), _cell(add_time)],
+            [
+                _cell("寄方信息"),
+                _cell(f"联系人姓名: {contact_name}\n联系人电话: {contact_mobile}"),
+            ],
+            [_cell("样品寄送地址"), _cell(address_text)],
+            [_cell("是否回收样品"), _cell(recovery_label)],
+            [_cell("是否云视频"), _cell(video_label)],
+            [_cell("是否线下到场"), _cell(arrive_label)],
+            [_cell("是否我要上机"), _cell(on_label)],
         ]
+
+        span_rows: list[int] = []
         for ch in child_list:
             oid = str(ch.get("orderId") or "")
-            sample_no = oid.split("-", 1)[1] if "-" in oid else oid
             nums = ch.get("goodsNums")
             try:
-                nums_s = str(int(nums)) if nums not in (None, "") else ""
+                nums_s = str(float(nums)).rstrip("0").rstrip(".") if nums not in (None, "") else ""
+                if nums not in (None, "") and float(nums) == int(float(nums)):
+                    nums_s = str(int(float(nums)))
             except (TypeError, ValueError):
                 nums_s = str(nums or "")
-            line = (
-                f"        样品编号：{sample_no}"
-                f"        样品名称：{ch.get('goodsName') or ''}"
-                f"        样品数量：{nums_s}"
-                f"        实验项目：{ch.get('projectName') or ''}"
-            )
-            data.append([Paragraph(line, sample_style), "", "", ""])
+            device = str(ch.get("className") or class_name or "")
+            data.append([_cell("EDS主要成分"), _cell(str(ch.get("mainComponent") or ""))])
+            data.append([_cell("无法喷金注意事项"), _cell(str(ch.get("goldDesc") or ""))])
 
-        table = Table(data, colWidths=[40 * mm, 46.7 * mm, 46.7 * mm, 46.6 * mm])
+            sample_qr = _qr_image(oid or order_no, 28)
+            sample_info = _cell(
+                f"样品编号：{oid}\n"
+                f"样品名称：{ch.get('goodsName') or ''}\n"
+                f"样品数量：{nums_s}\n"
+                f"预约设备：{device}",
+                sample_text_style,
+            )
+            sample_box = Table(
+                [[sample_qr, sample_info]],
+                colWidths=[32 * mm, value_w + label_w - 32 * mm - 4 * mm],
+            )
+            sample_box.setStyle(
+                TableStyle(
+                    [
+                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                        ("TOPPADDING", (0, 0), (-1, -1), 6),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                        ("BOX", (0, 0), (-1, -1), 0.7, colors.black),
+                    ]
+                )
+            )
+            span_rows.append(len(data))
+            data.append([sample_box, ""])
+
+        table = Table(data, colWidths=[label_w, value_w])
         style_cmds: list[Any] = [
             ("FONTNAME", (0, 0), (-1, -1), font_name),
-            ("FONTSIZE", (0, 0), (-1, -1), 12),
+            ("FONTSIZE", (0, 0), (-1, -1), 11),
             ("GRID", (0, 0), (-1, -1), 0.7, colors.black),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
             ("LEFTPADDING", (0, 0), (-1, -1), 6),
             ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-            ("SPAN", (1, 0), (3, 0)),
-            ("SPAN", (1, 1), (3, 1)),
-            ("SPAN", (1, 2), (3, 2)),
-            ("SPAN", (1, 3), (3, 3)),
-            ("SPAN", (1, 4), (3, 4)),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
         ]
-        for i in range(5, len(data)):
-            style_cmds.append(("SPAN", (0, i), (3, i)))
-            style_cmds.append(("TOPPADDING", (0, i), (3, i), 8))
-            style_cmds.append(("BOTTOMPADDING", (0, i), (3, i), 8))
+        for ri in span_rows:
+            style_cmds.append(("SPAN", (0, ri), (1, ri)))
+            style_cmds.append(("LEFTPADDING", (0, ri), (1, ri), 0))
+            style_cmds.append(("RIGHTPADDING", (0, ri), (1, ri), 0))
+            style_cmds.append(("TOPPADDING", (0, ri), (1, ri), 0))
+            style_cmds.append(("BOTTOMPADDING", (0, ri), (1, ri), 0))
         table.setStyle(TableStyle(style_cmds))
 
-        story = [head, Spacer(1, 4 * mm), table]
+        story = [head, Spacer(1, 3 * mm), table]
         doc.build(story)
         pdf_bytes = buf.getvalue()
     except Exception as exc:
@@ -4121,8 +4174,6 @@ def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool
         exp_of_id=order_id,
     )
     return (True, "ok") if ok_flag else (False, msg)
-
-
 
 def auto_generate_appointment_after_online_pay(
     *, order_id: int, staff_user_id: str | int | None = None
