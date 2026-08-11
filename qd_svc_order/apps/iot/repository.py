@@ -34,6 +34,8 @@ def ensure_schema() -> None:
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             bound_by VARCHAR(64) NULL,
+            iot_operator_user_id VARCHAR(64) NULL DEFAULT '',
+            iot_operator_name VARCHAR(128) NULL DEFAULT '',
             UNIQUE KEY uk_child_id (child_id),
             KEY idx_order_id (order_id),
             KEY idx_device (iot_device_id),
@@ -50,6 +52,14 @@ def ensure_schema() -> None:
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """
     )
+    for col, ddl in (
+        ("iot_operator_user_id", "VARCHAR(64) NULL DEFAULT ''"),
+        ("iot_operator_name", "VARCHAR(128) NULL DEFAULT ''"),
+    ):
+        try:
+            execute(f"ALTER TABLE experiment_order_iot_bind ADD COLUMN {col} {ddl}")
+        except Exception:
+            pass
     _SCHEMA_READY = True
 
 
@@ -174,6 +184,8 @@ def upsert_bind(
     device_id: str,
     bound_by: str = "",
     remark: str = "",
+    iot_operator_user_id: str = "",
+    iot_operator_name: str = "",
 ) -> int:
     ensure_schema()
     existing = get_binding_by_child(child_id)
@@ -188,6 +200,8 @@ def upsert_bind(
                 iot_task_sync_status = '',
                 last_event = %(ev)s,
                 bound_by = %(by)s,
+                iot_operator_user_id = %(op_uid)s,
+                iot_operator_name = %(op_name)s,
                 updated_at = NOW()
             WHERE child_id = %(cid)s
             """,
@@ -197,6 +211,8 @@ def upsert_bind(
                 "did": device_id,
                 "ev": (remark or "bind")[:64],
                 "by": (bound_by or "")[:64],
+                "op_uid": (iot_operator_user_id or "")[:64],
+                "op_name": (iot_operator_name or "")[:128],
                 "cid": child_id,
             },
         )
@@ -205,10 +221,12 @@ def upsert_bind(
         """
         INSERT INTO experiment_order_iot_bind
             (order_id, child_id, order_pk_id, iot_device_id, bind_status,
-             iot_task_sync_status, last_event, bound_by, created_at, updated_at)
+             iot_task_sync_status, last_event, bound_by,
+             iot_operator_user_id, iot_operator_name, created_at, updated_at)
         VALUES
             (%(oid)s, %(cid)s, %(pk)s, %(did)s, 'bound',
-             '', %(ev)s, %(by)s, NOW(), NOW())
+             '', %(ev)s, %(by)s,
+             %(op_uid)s, %(op_name)s, NOW(), NOW())
         """,
         {
             "oid": order_id,
@@ -217,6 +235,8 @@ def upsert_bind(
             "did": device_id,
             "ev": (remark or "bind")[:64],
             "by": (bound_by or "")[:64],
+            "op_uid": (iot_operator_user_id or "")[:64],
+            "op_name": (iot_operator_name or "")[:128],
         },
     )
 
@@ -390,6 +410,8 @@ def serialize_bind(row: dict[str, Any] | None) -> dict[str, Any] | None:
         "lastEvent": row.get("last_event"),
         "lastSyncAt": row.get("last_sync_at"),
         "boundBy": row.get("bound_by"),
+        "iotOperatorUserId": row.get("iot_operator_user_id") or "",
+        "iotOperatorName": row.get("iot_operator_name") or "",
         "createdAt": row.get("created_at"),
         "updatedAt": row.get("updated_at"),
     }

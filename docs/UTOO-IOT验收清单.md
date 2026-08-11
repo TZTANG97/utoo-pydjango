@@ -25,4 +25,11 @@ pwsh -File E:\utoo\scripts\utoo-iot-e2e-accept.ps1
 3. 同 eventId 幂等（若已配置订单）  
 4. register → start → finish → runs（需 Token + 订单参数）  
 
-人工补完：管理端绑定 UI、IOT `/main/utoo-tasks` 启停、C 端「试验数据」曲线。
+人工补完：
+
+1. UTOO：授权 IOT 运维账号（错密拒绝）→ 设备列表仅见该账号设备  
+2. 绑→register→IOT pending 可见；越权账号不可见  
+3. IOT `/main/utoo-tasks`：开始=WS+start-run+tasks/start；UTOO 子行→38；回调失败时 IOT 明确失败  
+4. 结束→子行 39；重复 eventId 幂等且不毒化  
+5. 未领用（36）子行：started 回调自动补领用后进 38  
+6. C 端「试验数据」曲线

@@ -1,4 +1,4 @@
-"""IOT HTTP 客户端：register / cancel / get_run。优先 httpx，否则 urllib。"""
+"""IOT HTTP 客户端：login / devices / register / cancel / get_run。"""
 from __future__ import annotations
 
 import json
@@ -31,13 +31,21 @@ def _timeout() -> float:
         return 15.0
 
 
-def _auth_headers() -> dict[str, str]:
+def _service_auth_headers() -> dict[str, str]:
     token = str(getattr(settings, "IOT_SERVICE_TOKEN", "") or "").strip()
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
         headers["X-UTOO-Service-Token"] = token
     return headers
+
+
+def _bearer_headers(access_token: str) -> dict[str, str]:
+    return {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Authorization": f"Bearer {access_token.strip()}",
+    }
 
 
 def _url(path: str) -> str:
@@ -55,6 +63,7 @@ def _request(
     *,
     body: dict | None = None,
     query: dict | None = None,
+    headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     url = _url(path)
     if query:
@@ -62,14 +71,14 @@ def _request(
             {k: v for k, v in query.items() if v is not None}
         )
     payload = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
-    headers = _auth_headers()
+    hdrs = headers if headers is not None else _service_auth_headers()
     timeout = _timeout()
 
     try:
         import httpx
 
         with httpx.Client(timeout=timeout) as client:
-            resp = client.request(method.upper(), url, content=payload, headers=headers)
+            resp = client.request(method.upper(), url, content=payload, headers=hdrs)
             text = resp.text or ""
             try:
                 data = resp.json() if text else {}
@@ -93,7 +102,7 @@ def _request(
     req = urllib.request.Request(
         url,
         data=payload,
-        headers=headers,
+        headers=hdrs,
         method=method.upper(),
     )
     try:
@@ -120,6 +129,16 @@ def _request(
         raise IotClientError(f"IOT 请求失败: {exc}") from exc
 
 
+def login_ops(*, username: str, password: str) -> dict[str, Any]:
+    """POST /nss/api/auth/login — 运维端 loginType=0。"""
+    return _request(
+        "POST",
+        "/nss/api/auth/login",
+        body={"name": username, "password": password, "loginType": "0"},
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+    )
+
+
 def register_task(payload: dict[str, Any]) -> dict[str, Any]:
     """POST /nss/api/v1/tasks/register"""
     return _request("POST", "/nss/api/v1/tasks/register", body=payload)
@@ -139,9 +158,17 @@ def get_run(run_id: str, *, include_series: bool = False) -> dict[str, Any]:
     return _request("GET", f"/nss/api/v1/runs/{rid}", query=q)
 
 
-def list_devices(*, q: str = "", limit: int = 200) -> dict[str, Any]:
-    """GET /nss/api/v1/devices — 设备下拉（pythonId）"""
-    query: dict[str, Any] = {"limit": int(limit or 200)}
+def list_devices(*, q: str = "", limit: int = 200, access_token: str = "") -> dict[str, Any]:
+    """GET /nss/api/v1/devices — 需 IOT 用户 JWT（按账号权限）。"""
+    token = str(access_token or "").strip()
+    if not token:
+        raise IotClientError("缺少 IOT 用户令牌", status=401)
+    query: dict[str, Any] = {"limit": int(limit or 200), "scope": "user"}
     if str(q or "").strip():
         query["q"] = str(q).strip()
-    return _request("GET", "/nss/api/v1/devices", query=query)
+    return _request(
+        "GET",
+        "/nss/api/v1/devices",
+        query=query,
+        headers=_bearer_headers(token),
+    )

@@ -42,7 +42,8 @@
 **实验室墙贴 SOP：**
 
 ```text
-UTOO 领用 → 绑定/下发 → 去 IOT「待试验」找订单 → 核对样品 → 开始
+UTOO：授权 IOT 运维账号 → 按权限选设备 → 绑定/下发
+→ 去 IOT「UTOO待办」找订单 → 核对样品 → 开始（WS 控设备 + 回调）
 列表里没有该单？回 UTOO 点「重新下发」
 不要：IOT 上直接开机再回头找订单
 ```
@@ -102,27 +103,28 @@ flowchart TD
 
 接入 IOT 后：**开始/结束测试以 IOT 回调为准**；UTOO 原按钮仅作离线兜底。
 
-### 阶段 4：绑定 + 下发（必须让 IOT 看得见单）
+### 阶段 4：授权 + 绑定 + 下发（必须让 IOT 看得见单）
 
-**时机：** 领用后、上机前。**原则：先有任务再开机。**
+**时机：** 到货/领用后、上机前。**原则：先有任务再开机。**
 
-| 方式 | 做法 |
+| 步骤 | 做法 |
 |------|------|
-| **A 推荐** | UTOO 绑设备 → **自动** `tasks/register` → IOT 待办出现该单 |
-| B 防错 | IOT 扫订单二维码 → 拉摘要 → 绑本机 → 建任务 |
-| C 显式 | 调度点「下发到 IOT」后再进队列 |
+| 1 授权 | UTOO 订单详情「IOT 设备绑定」→ **授权 IOT 运维账号**（用户名/密码经 UTOO 代理登录，**不落库密码**；会话缓存 JWT） |
+| 2 设备 | `GET /api/iot/device/list` 用该 JWT 拉设备（按 IOT 账号权限过滤；未授权返回 `IOT_AUTH_REQUIRED`） |
+| 3 绑定 | 选产品行 + 设备 → `bind` → Service Token `tasks/register`（写入 `iot_operator_*`） |
+| 4 可见 | IOT「UTOO待办」按设备权限过滤；越权账号不可见 |
 
 下发失败：UTOO 标「未同步」，可重试；**成功前现场不要开测**。
 
-### 阶段 5～8：IOT 开/停试验
+### 阶段 5～8：IOT 开/停试验（真实控设备）
 
 | 步骤 | 在哪 | 做什么 |
 |------|------|--------|
-| 5 | IOT 待试验列表 | 找到订单；**在该任务上**点开始（禁止裸设备盲开） |
-| — | 系统 | 回调 `experiment.started` → 行 **38** |
+| 5 | IOT UTOO待办 | 找到订单；点开始：**WS `startTHEquProg`** → `equipment-rt/start-run` → `tasks/start`（带 `experId`） |
+| — | 系统 | HMAC `experiment.started`；UTOO 若行仍为 36 则自动领用→37 再 `test_start`→**38**；回调非 2xx 时 IOT 报失败（不谎称已回调） |
 | 6 | C 端 | 客户见「测试中」（仍只登 UTOO） |
 | 7 | IOT | 采集曲线；UTOO 不存原始点 |
-| 8 | IOT | 任务上点结束 → 回调 `finished` + dataRef → 行 **39** |
+| 8 | IOT | 点结束：`endTHEquProg` → `stop-run` → `tasks/finish` → 回调 `finished` + dataRef → 行 **39** |
 
 ### 阶段 9～10：看数据与收尾
 
@@ -426,13 +428,14 @@ sequenceDiagram
 | `iot_task_sync_status` | ok / failed |
 | `iot_run_id` | 本次运行 ID |
 | `iot_data_ref` | 查数钥匙 |
+| `iot_operator_user_id` / `iot_operator_name` | 绑定时授权的 IOT 运维账号 |
 | `last_sync_at` / `last_event` | 最近回调 |
 
 | IOT 事件 | UTOO 动作 | 行状态 |
 |----------|-----------|--------|
-| `experiment.started` | 等价 `test_start` | **38** |
-| `experiment.finished` | 等价 `test_end` + 存 dataRef | **39** |
-| `experiment.aborted` | 产品约定 | 待定 |
+| `experiment.started` | 若 36 自动领用→37，再 `test_start`；已 38 幂等 | **38** |
+| `experiment.finished` | 等价 `test_end` + 存 dataRef；已 39 幂等 | **39** |
+| `experiment.aborted` | 尽量 `test_end`，绑定标 aborted | 视结果 |
 
 ---
 
@@ -443,13 +446,17 @@ sequenceDiagram
 | # | 方向 | Method | Path | 鉴权 | 阶段 |
 |---|------|--------|------|------|------|
 | 1 | IOT→UTOO | POST | `/api/iot/callback/experiment-event` | HMAC | A 必备 |
-| 2 | Admin→UTOO | POST | `/api/iot/device/bind` | 管理员 JWT | A 必备 |
+| 1a | Admin→UTOO | POST | `/api/iot/auth/login` | 管理员 JWT | A 必备（代理 IOT 登录，缓存 JWT） |
+| 1b | Admin→UTOO | GET/POST | `/api/iot/auth/status` / `logout` | 管理员 JWT | A |
+| 1c | Admin→UTOO | GET/POST | `/api/iot/device/list` | 管理员 + 已授权 IOT JWT | A 必备 |
+| 2 | Admin→UTOO | POST | `/api/iot/device/bind` | 管理员 + 已授权 IOT | A 必备 |
 | 3 | Admin→UTOO | POST | `/api/iot/device/unbind` | 管理员 JWT | A |
 | 4 | Admin→UTOO | GET | `/api/iot/device/binding` | 管理员 JWT | A |
 | 5 | User→UTOO | GET | `/api/iot/experiment-data` | 用户 JWT | B |
 | 6 | UTOO→IOT | POST | `{IOT}/api/v1/tasks/register` | 服务账号 | **A 必备** |
 | 7 | UTOO→IOT | POST | `{IOT}/api/v1/tasks/cancel` | 服务账号 | A 建议 |
 | 8 | UTOO→IOT | GET | `{IOT}/api/v1/runs/{runId}` | 服务账号 | B 必备 |
+| 8a | UTOO→IOT | GET | `{IOT}/api/v1/devices` | **IOT 用户 JWT**（`scope=user`）；Service Token 仅 `scope=all` | A |
 | 9 | 现有扩展 | GET | `/api/pc/myExperimentOrderList.ajax` 等 | 用户 | 加 iot 字段 |
 | 10 | 可选 | GET | `/api/iot/orders/summary` | HMAC | 扫码认领 |
 
@@ -489,21 +496,29 @@ X-IOT-Signature: <hex>
 | 409 | `STATUS_CONFLICT` | 状态不允许 |
 | 500 | `INTERNAL` | IOT 应重试 |
 
-### 8.3 绑定 / 解绑 / 查询（管理端）
+### 8.3 授权 / 设备列表 / 绑定（管理端）
 
 ```http
+POST /api/iot/auth/login
+{ "username": "iot_ops", "password": "…" }
+→ { authorized, iotUserId, iotUserName, iotTrueName }
+
+POST /api/iot/device/list   # 须已授权，否则 code=IOT_AUTH_REQUIRED
+→ { list: [{ deviceId, name, … }], iotUserName }
+
 POST /api/iot/device/bind
 { "orderId": "…", "childId": 12345, "deviceId": "DEV-001" }
 ```
 
-成功后 **立刻** 调 IOT `tasks/register`；失败则 `iot_task_sync_status=failed`，提供「重新下发」。
+成功后 **立刻** 用 Service Token 调 IOT `tasks/register`（可带 `operatorUserId`）；失败则 `iot_task_sync_status=failed`，提供「重新下发」。绑定 UI 在订单「基本信息」**下方**。
 
 ```http
 POST /api/iot/device/unbind
 GET  /api/iot/device/binding?orderId=&childId=
+POST /api/iot/device/resync
 ```
 
-规则：一行同时一设备；默认一设备不同时多行；38/39 禁止随意换绑。
+规则：一行同时一设备；默认一设备不同时多行；running 禁止换绑/解绑。回调先改状态成功再写 `eventId`（避免毒化重试）。
 
 ### 8.4 试验数据（C 端代理）
 

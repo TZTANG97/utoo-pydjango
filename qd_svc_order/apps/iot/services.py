@@ -6,11 +6,16 @@ import logging
 from typing import Any
 
 from apps.admin_experiment.repositories import sample_flow as sample_flow_repo
+from apps.core.db_utils import fetch_one
 from apps.iot import iot_client, repository as repo
 from apps.iot.iot_client import IotClientError
 from django.conf import settings
+from django.core.cache import cache
+from django.db import transaction
 
 logger = logging.getLogger(__name__)
+
+_IOT_AUTH_TTL = 6 * 3600  # 秒
 
 
 class ServiceError(Exception):
@@ -25,6 +30,10 @@ def _staff_id(user: dict | None) -> str:
     if not isinstance(user, dict):
         return ""
     return str(user.get("user_id") or user.get("id") or user.get("userId") or "").strip()
+
+
+def _iot_auth_cache_key(staff_id: str) -> str:
+    return f"iot_ops_auth:{staff_id}"
 
 
 def _extract_task_id(resp: dict[str, Any]) -> str:
@@ -50,6 +59,7 @@ def _register_payload(
     device_id: str,
     child: dict[str, Any],
     order: dict[str, Any] | None,
+    operator_user_id: str = "",
 ) -> dict[str, Any]:
     project = str(
         child.get("projectName")
@@ -60,7 +70,6 @@ def _register_payload(
     )
     sample = str(child.get("sampleId") or child.get("goodsName") or "")[:500]
     callback = ""
-    # 可选：由环境拼回调；IOT 也可用自身 UTOO_CALLBACK_URL
     base_cb = str(getattr(settings, "IOT_UTOO_CALLBACK_URL", "") or "").strip()
     if base_cb:
         callback = base_cb
@@ -73,20 +82,110 @@ def _register_payload(
         "projectName": project[:255],
         "sampleSummary": sample,
         "callbackUrl": callback or None,
+        "operatorUserId": (operator_user_id or "")[:64] or None,
     }
 
 
-def list_devices(*, q: str = "", limit: int = 200) -> dict[str, Any]:
-    """代理拉取 IOT 设备列表，供管理端下拉选择 pythonId。"""
+def auth_iot_login(*, username: str, password: str, user: dict | None = None) -> dict[str, Any]:
+    """用 IOT 运维账号登录，缓存 JWT（不落库密码）。"""
+    staff = _staff_id(user)
+    if not staff:
+        raise ServiceError("未登录 UTOO", code="UNAUTHORIZED", http_status=401)
+    name = str(username or "").strip()
+    pwd = str(password or "")
+    if not name or not pwd:
+        raise ServiceError("请输入 IOT 运维账号和密码", code="IOT_AUTH_REQUIRED")
     try:
-        resp = iot_client.list_devices(q=q, limit=limit)
+        resp = iot_client.login_ops(username=name, password=pwd)
     except IotClientError as exc:
+        raise ServiceError(f"IOT 登录失败: {exc}", code="IOT_AUTH_FAIL", http_status=401) from exc
+    if int(resp.get("statusCode") or 0) != 200 or not resp.get("access_token"):
+        raise ServiceError(
+            str(resp.get("message") or "IOT 用户名或密码错误"),
+            code="IOT_AUTH_FAIL",
+            http_status=401,
+        )
+    iot_user = resp.get("user") if isinstance(resp.get("user"), dict) else {}
+    sess = {
+        "accessToken": str(resp.get("access_token")),
+        "refreshToken": str(resp.get("refresh_token") or ""),
+        "userId": str(iot_user.get("user_id") or ""),
+        "userName": str(iot_user.get("user_name") or name),
+        "trueName": str(iot_user.get("true_name") or iot_user.get("user_name") or name),
+        "deptId": str(iot_user.get("dept_id") or ""),
+    }
+    cache.set(_iot_auth_cache_key(staff), sess, timeout=_IOT_AUTH_TTL)
+    return {
+        "authorized": True,
+        "iotUserId": sess["userId"],
+        "iotUserName": sess["userName"],
+        "iotTrueName": sess["trueName"],
+        "expiresIn": _IOT_AUTH_TTL,
+    }
+
+
+def auth_iot_status(*, user: dict | None = None) -> dict[str, Any]:
+    staff = _staff_id(user)
+    if not staff:
+        return {"authorized": False}
+    sess = cache.get(_iot_auth_cache_key(staff))
+    if not isinstance(sess, dict) or not sess.get("accessToken"):
+        return {"authorized": False}
+    return {
+        "authorized": True,
+        "iotUserId": sess.get("userId") or "",
+        "iotUserName": sess.get("userName") or "",
+        "iotTrueName": sess.get("trueName") or "",
+    }
+
+
+def auth_iot_logout(*, user: dict | None = None) -> dict[str, Any]:
+    staff = _staff_id(user)
+    if staff:
+        cache.delete(_iot_auth_cache_key(staff))
+    return {"authorized": False}
+
+
+def _require_iot_session(user: dict | None) -> dict[str, Any]:
+    staff = _staff_id(user)
+    if not staff:
+        raise ServiceError("未登录 UTOO", code="UNAUTHORIZED", http_status=401)
+    sess = cache.get(_iot_auth_cache_key(staff))
+    if not isinstance(sess, dict) or not sess.get("accessToken"):
+        raise ServiceError(
+            "请先授权 IOT 运维账号",
+            code="IOT_AUTH_REQUIRED",
+            http_status=401,
+        )
+    return sess
+
+
+def list_devices(*, q: str = "", limit: int = 200, user: dict | None = None) -> dict[str, Any]:
+    """代理拉取 IOT 设备列表（按已授权 IOT 账号权限过滤）。"""
+    sess = _require_iot_session(user)
+    try:
+        resp = iot_client.list_devices(
+            q=q, limit=limit, access_token=str(sess.get("accessToken") or "")
+        )
+    except IotClientError as exc:
+        if exc.status in (401, 403):
+            cache.delete(_iot_auth_cache_key(_staff_id(user)))
+            raise ServiceError(
+                "IOT 授权已失效，请重新登录 IOT 账号",
+                code="IOT_AUTH_REQUIRED",
+                http_status=401,
+            ) from exc
         raise ServiceError(f"拉取 IOT 设备失败: {exc}", code="IOT_DEVICES_FAIL") from exc
     items = resp.get("list") if isinstance(resp, dict) else None
     if not isinstance(items, list):
         data = resp.get("data") if isinstance(resp, dict) else None
         items = data if isinstance(data, list) else []
-    return {"list": items, "total": len(items)}
+    return {
+        "list": items,
+        "total": len(items),
+        "iotUserName": sess.get("userName") or "",
+        "iotTrueName": sess.get("trueName") or "",
+    }
 
 
 def bind_device(
@@ -98,6 +197,7 @@ def bind_device(
     user: dict | None = None,
 ) -> dict[str, Any]:
     repo.ensure_schema()
+    sess = _require_iot_session(user)
     oid = str(order_id or "").strip()
     did = str(device_id or "").strip()
     if not oid or not child_id or not did:
@@ -107,7 +207,6 @@ def bind_device(
     if not child:
         raise ServiceError("子单行不存在")
 
-    # sample_flow 归属校验用 order_form_id；order_id 列若为数字 FK 也可作回退
     order_pk = repo.resolve_order_pk(child)
 
     order = repo.load_order_brief(order_pk=order_pk, business_order_id=oid)
@@ -122,6 +221,8 @@ def bind_device(
         if st == "running":
             raise ServiceError("测试中禁止换绑，请先结束或解绑", code="STATUS_CONFLICT", http_status=409)
 
+    op_uid = str(sess.get("userId") or "")
+    op_name = str(sess.get("trueName") or sess.get("userName") or "")
     repo.upsert_bind(
         order_id=oid,
         child_id=int(child_id),
@@ -129,6 +230,8 @@ def bind_device(
         device_id=did,
         bound_by=_staff_id(user),
         remark=remark or "bind",
+        iot_operator_user_id=op_uid,
+        iot_operator_name=op_name,
     )
 
     sync_status = "failed"
@@ -142,6 +245,7 @@ def bind_device(
                 device_id=did,
                 child=child,
                 order=order,
+                operator_user_id=op_uid,
             )
         )
         task_id = _extract_task_id(resp)
@@ -219,6 +323,7 @@ def resync_device(*, order_id: str = "", child_id: int, user: dict | None = None
                 device_id=did,
                 child=child,
                 order=order,
+                operator_user_id=str(bind.get("iot_operator_user_id") or ""),
             )
         )
         task_id = _extract_task_id(resp) or str(bind.get("iot_task_id") or "")
@@ -271,28 +376,34 @@ def _normalize_event(event: str) -> str:
     return e
 
 
+def _child_status(child: dict[str, Any] | None) -> int:
+    try:
+        return int((child or {}).get("orderStatus") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+@transaction.atomic
 def handle_experiment_event(payload: dict[str, Any]) -> dict[str, Any]:
-    """处理 IOT 回调；返回 body + http_status。"""
+    """处理 IOT 回调；先改状态成功再写 eventId 幂等，避免毒化重试。"""
     repo.ensure_schema()
     event_raw = str(payload.get("event") or "")
     event = _normalize_event(event_raw)
     event_id = str(payload.get("eventId") or "").strip()
     summary = f"{event_raw}:{payload.get('iotTaskId') or ''}:{payload.get('deviceId') or ''}"[:512]
 
-    duplicated = False
+    # 已成功处理过：直接幂等返回当前状态
     if event_id:
-        inserted = repo.try_insert_callback_event(event_id, summary)
-        if not inserted:
-            duplicated = True
+        existed = fetch_one(
+            "SELECT event_id FROM iot_callback_event WHERE event_id = %(id)s LIMIT 1",
+            {"id": event_id},
+        )
+        if existed:
             bind = _locate_bind(payload)
             line_status = None
             if bind:
                 child = repo.get_child(int(bind["child_id"]))
-                if child:
-                    try:
-                        line_status = int(child.get("orderStatus") or 0)
-                    except (TypeError, ValueError):
-                        line_status = None
+                line_status = _child_status(child)
             return {
                 "ok": True,
                 "duplicated": True,
@@ -324,48 +435,93 @@ def handle_experiment_event(payload: dict[str, Any]) -> dict[str, Any]:
     data_ref = payload.get("dataRef")
     task_id = str(payload.get("iotTaskId") or payload.get("taskId") or "").strip() or None
     line_status = None
+    cur = _child_status(child)
 
     if event == "started":
-        line_id = str(child.get("lineId") or "").strip()
-        if not line_id:
-            line_id = f"IOT-{device_id}"[:64]
-            repo.update_child_line_id(child_id, line_id)
-        ok, msg = sample_flow_repo.test_start(
-            order_id=order_pk_int,
-            child_ids=[child_id],
-            line_id=line_id,
-            staff_user_id="iot",
-        )
-        if not ok:
-            raise ServiceError(msg or "状态冲突", code="STATUS_CONFLICT", http_status=409)
-        repo.update_from_callback(
-            child_id,
-            bind_status="running",
-            event=event_raw or "experiment.started",
-            run_id=run_id,
-            data_ref=data_ref,
-            task_id=task_id,
-        )
-        line_status = sample_flow_repo.ST_TESTING
+        # 已在测试中：幂等成功
+        if cur == sample_flow_repo.ST_TESTING:
+            repo.update_from_callback(
+                child_id,
+                bind_status="running",
+                event=event_raw or "experiment.started",
+                run_id=run_id,
+                data_ref=data_ref,
+                task_id=task_id,
+            )
+            line_status = sample_flow_repo.ST_TESTING
+        else:
+            # 到货未领用：自动领用到 37
+            if cur == sample_flow_repo.ST_ARRIVE:
+                ok_pick, msg_pick = sample_flow_repo.sample_pick(
+                    order_id=order_pk_int,
+                    child_ids=[child_id],
+                    staff_user_id="iot",
+                )
+                if not ok_pick:
+                    raise ServiceError(
+                        msg_pick or "自动领用失败",
+                        code="STATUS_CONFLICT",
+                        http_status=409,
+                    )
+                child = repo.get_child(child_id) or child
+                cur = _child_status(child)
+            if cur != sample_flow_repo.ST_PICK and cur != sample_flow_repo.ST_TESTING:
+                raise ServiceError(
+                    f"子单状态不可开始测试(当前 {cur}，需要 37/38)",
+                    code="STATUS_CONFLICT",
+                    http_status=409,
+                )
+            if cur == sample_flow_repo.ST_PICK:
+                line_id = str(child.get("lineId") or "").strip()
+                if not line_id:
+                    line_id = f"IOT-{device_id}"[:64]
+                    repo.update_child_line_id(child_id, line_id)
+                ok, msg = sample_flow_repo.test_start(
+                    order_id=order_pk_int,
+                    child_ids=[child_id],
+                    line_id=line_id,
+                    staff_user_id="iot",
+                )
+                if not ok:
+                    raise ServiceError(msg or "状态冲突", code="STATUS_CONFLICT", http_status=409)
+            repo.update_from_callback(
+                child_id,
+                bind_status="running",
+                event=event_raw or "experiment.started",
+                run_id=run_id,
+                data_ref=data_ref,
+                task_id=task_id,
+            )
+            line_status = sample_flow_repo.ST_TESTING
     elif event == "finished":
-        ok, msg = sample_flow_repo.test_end(
-            order_id=order_pk_int,
-            child_ids=[child_id],
-            staff_user_id="iot",
-        )
-        if not ok:
-            raise ServiceError(msg or "状态冲突", code="STATUS_CONFLICT", http_status=409)
-        repo.update_from_callback(
-            child_id,
-            bind_status="finished",
-            event=event_raw or "experiment.finished",
-            run_id=run_id,
-            data_ref=data_ref,
-            task_id=task_id,
-        )
-        line_status = sample_flow_repo.ST_TEST_DONE
+        if cur == sample_flow_repo.ST_TEST_DONE:
+            repo.update_from_callback(
+                child_id,
+                bind_status="finished",
+                event=event_raw or "experiment.finished",
+                run_id=run_id,
+                data_ref=data_ref,
+                task_id=task_id,
+            )
+            line_status = sample_flow_repo.ST_TEST_DONE
+        else:
+            ok, msg = sample_flow_repo.test_end(
+                order_id=order_pk_int,
+                child_ids=[child_id],
+                staff_user_id="iot",
+            )
+            if not ok:
+                raise ServiceError(msg or "状态冲突", code="STATUS_CONFLICT", http_status=409)
+            repo.update_from_callback(
+                child_id,
+                bind_status="finished",
+                event=event_raw or "experiment.finished",
+                run_id=run_id,
+                data_ref=data_ref,
+                task_id=task_id,
+            )
+            line_status = sample_flow_repo.ST_TEST_DONE
     elif event == "aborted":
-        # 中止：尽量结束测试；失败只记绑定状态
         ok, msg = sample_flow_repo.test_end(
             order_id=order_pk_int,
             child_ids=[child_id],
@@ -380,18 +536,22 @@ def handle_experiment_event(payload: dict[str, Any]) -> dict[str, Any]:
             task_id=task_id,
         )
         child2 = repo.get_child(child_id)
-        try:
-            line_status = int((child2 or {}).get("orderStatus") or 0)
-        except (TypeError, ValueError):
-            line_status = None
+        line_status = _child_status(child2)
         if not ok:
             logger.warning("aborted test_end soft-fail child=%s: %s", child_id, msg)
     else:
         raise ServiceError(f"未知事件: {event_raw}", code="FAIL", http_status=400)
 
+    # 状态成功后再记幂等，失败回滚不会毒化 eventId
+    if event_id:
+        inserted = repo.try_insert_callback_event(event_id, summary)
+        if not inserted:
+            # 并发双成功：仍返回 ok
+            pass
+
     return {
         "ok": True,
-        "duplicated": duplicated,
+        "duplicated": False,
         "lineStatus": line_status,
         "http_status": 200,
     }

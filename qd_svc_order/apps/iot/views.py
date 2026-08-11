@@ -28,6 +28,39 @@ def _callback_error(code: str, message: str, http_status: int) -> JsonResponse:
     )
 
 
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def auth_login(request: Request, user=None):
+    data = merge_payload(request)
+    try:
+        result = services.auth_iot_login(
+            username=str(data.get("username") or data.get("userName") or ""),
+            password=str(data.get("password") or ""),
+            user=user,
+        )
+        return ok(obj=result)
+    except ServiceError as exc:
+        return fail(exc.message, obj={"code": exc.code})
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def auth_status(request: Request, user=None):
+    return ok(obj=services.auth_iot_status(user=user))
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def auth_logout(request: Request, user=None):
+    return ok(obj=services.auth_iot_logout(user=user))
+
+
 @api_view(["GET", "POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
@@ -38,6 +71,7 @@ def device_list(request: Request, user=None):
         result = services.list_devices(
             q=str(data.get("q") or data.get("keyword") or ""),
             limit=to_int(data.get("limit")) or 200,
+            user=user,
         )
         return ok(obj=result)
     except ServiceError as exc:
