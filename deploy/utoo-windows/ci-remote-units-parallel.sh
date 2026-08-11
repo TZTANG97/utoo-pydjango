@@ -9,6 +9,31 @@ PIP_INDEX_URL="${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}"
 export PIP_DISABLE_PIP_VERSION_CHECK=1
 export PIP_DEFAULT_TIMEOUT="${PIP_DEFAULT_TIMEOUT:-120}"
 export PIP_RETRIES="${PIP_RETRIES:-10}"
+LIBS_LOCK="${LIBS_LOCK:-/tmp/utoo_qd_libs_common_pip.lock}"
+
+pip_install_libs_editable() {
+  # Serialize editable installs of the shared source tree — concurrent
+  # `pip install -e qd_libs_common` races on build/metadata (often first cold deploy).
+  if command -v flock >/dev/null 2>&1; then
+    (
+      flock 9
+      .venv/bin/python -m pip install -e "${ROOT}/qd_libs_common" -i "$PIP_INDEX_URL" --retries "$PIP_RETRIES" --timeout "$PIP_DEFAULT_TIMEOUT" --progress-bar off
+    ) 9>"$LIBS_LOCK"
+    return $?
+  fi
+  local lockdir="${LIBS_LOCK}.d" n=0 ec=0
+  while ! mkdir "$lockdir" 2>/dev/null; do
+    n=$((n + 1))
+    if [ "$n" -gt 180 ]; then
+      echo "deploy_libs_lock_timeout:${lockdir}" >&2
+      return 1
+    fi
+    sleep 1
+  done
+  .venv/bin/python -m pip install -e "${ROOT}/qd_libs_common" -i "$PIP_INDEX_URL" --retries "$PIP_RETRIES" --timeout "$PIP_DEFAULT_TIMEOUT" --progress-bar off || ec=$?
+  rmdir "$lockdir" 2>/dev/null || true
+  return "$ec"
+}
 
 run_one() {
   local dir="$1" svc="$2" port="$3"
@@ -26,10 +51,11 @@ run_one() {
     local ok=0 i
     for i in 1 2 3; do
       echo "deploy_pip_attempt:${dir}:$i/3"
-      if .venv/bin/python -m pip install -r requirements.txt gunicorn -i "$PIP_INDEX_URL" --retries "$PIP_RETRIES" --timeout "$PIP_DEFAULT_TIMEOUT" --progress-bar off \
-        && .venv/bin/python -m pip install -e "${ROOT}/qd_libs_common" -i "$PIP_INDEX_URL" --retries "$PIP_RETRIES" --timeout "$PIP_DEFAULT_TIMEOUT" --progress-bar off; then
-        ok=1
-        break
+      if .venv/bin/python -m pip install -r requirements.txt gunicorn -i "$PIP_INDEX_URL" --retries "$PIP_RETRIES" --timeout "$PIP_DEFAULT_TIMEOUT" --progress-bar off; then
+        if pip_install_libs_editable; then
+          ok=1
+          break
+        fi
       fi
       if [ "$i" -eq 3 ]; then
         echo "deploy_pip_failed:${dir}"
@@ -73,9 +99,20 @@ for item in "${ITEMS[@]}"; do
 done
 
 ec=0
+failed_dirs=()
 for i in "${!pids[@]}"; do
   if ! wait "${pids[$i]}"; then
     ec=1
+    failed_dirs+=("${dirs[$i]}")
+  fi
+done
+
+echo "----- deploy units summary -----"
+for dir in "${dirs[@]}"; do
+  if grep -q 'deploy_health_ok:' "/tmp/utoo_unit_${dir}.log" 2>/dev/null; then
+    echo "OK: ${dir}"
+  else
+    echo "FAILED: ${dir}"
   fi
 done
 
@@ -85,7 +122,12 @@ for dir in "${dirs[@]}"; do
 done
 
 if [ "$ec" -ne 0 ]; then
-  echo "deploy_units_parallel_failed" >&2
+  echo "----- failed units highlights -----" >&2
+  for dir in "${failed_dirs[@]}"; do
+    echo "### ${dir}" >&2
+    grep -E 'deploy_pip_failed|deploy_health_fail|Error|ERROR|Traceback|FAILED|Exception' "/tmp/utoo_unit_${dir}.log" 2>/dev/null | tail -n 50 >&2 || true
+  done
+  echo "deploy_units_parallel_failed dirs=${failed_dirs[*]}" >&2
   exit 1
 fi
 echo "deploy_units_parallel_ok"

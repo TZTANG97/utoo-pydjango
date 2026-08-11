@@ -349,12 +349,14 @@ try {
 			try {
 				Invoke-RemoteSudo $wrap
 			} catch {
+				Write-Host ('[deploy] remote bash failed: {0}' -f $_.Exception.Message) -ForegroundColor Yellow
 				try {
-					$tail = Invoke-RemoteSudoCapture 'for f in /tmp/utoo_unit_*.log; do [ -f "$f" ] || continue; echo ===== "$f" =====; tail -n 40 "$f"; done; true'
-					if (-not [string]::IsNullOrWhiteSpace($tail)) {
-						Write-Host '[deploy] ---- remote /tmp/utoo_unit_*.log (tail) ----' -ForegroundColor Yellow
-						Write-Host $tail
-						Write-Host '[deploy] ---- end unit log tail ----' -ForegroundColor Yellow
+					# Surface which unit failed; avoid only showing the last healthy services' tails.
+					$summary = Invoke-RemoteSudoCapture 'echo "===== unit log files ====="; ls -la /tmp/utoo_unit_*.log 2>/dev/null || true; echo "===== unit fail markers ====="; grep -HE "deploy_pip_failed|deploy_health_fail|deploy_units_parallel_failed|Traceback|ERROR|FAILED:" /tmp/utoo_unit_*.log 2>/dev/null | tail -n 120 || true; echo "===== unit status lines ====="; grep -HE "deploy_(pip_ok|django_check_ok|health_ok|pip_failed|health_fail|unit_start)" /tmp/utoo_unit_*.log 2>/dev/null || true; echo "===== per-unit tail ====="; for f in /tmp/utoo_unit_*.log; do [ -f "$f" ] || continue; echo "----- $f -----"; tail -n 100 "$f"; done; true'
+					if (-not [string]::IsNullOrWhiteSpace($summary)) {
+						Write-Host '[deploy] ---- remote unit failure summary ----' -ForegroundColor Yellow
+						Write-Host $summary
+						Write-Host '[deploy] ---- end unit failure summary ----' -ForegroundColor Yellow
 					}
 				} catch {
 					# ignore log fetch failures
