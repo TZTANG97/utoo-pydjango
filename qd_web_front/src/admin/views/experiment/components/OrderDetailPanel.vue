@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div v-loading="loading" class="detail-panel">
     <template v-if="detail">
       <header class="hero">
@@ -625,132 +625,159 @@
       <section v-if="isChildKind && !isGrabMode" class="card">
         <h3 class="card-title">IOT 试验任务</h3>
         <p class="iot-hint">
-          样品领用后授权 IOT 运维账号，选择产品行创建试验任务（不选设备）；在 IOT 侧分配试验箱并开测，状态回写本订单。
+          样品领用后授权 IOT 运维账号；可勾选一条或多条产品行创建/下发，也可一键处理全部可创建行。设备在 IOT
+          侧分配，状态回写对应产品行。
         </p>
         <div class="iot-step-bar">
           <el-tag :type="iotAuthAuthorized ? 'success' : 'info'" effect="plain">
             {{ iotAuthAuthorized ? '已授权' : '未授权' }}
           </el-tag>
-          <el-tag
-            :type="iotPipelineStep === 'created' || iotPipelineStep === 'synced' || iotPipelineStep === 'bound' || iotPipelineStep === 'running' || iotPipelineStep === 'finished' ? 'success' : 'info'"
-            effect="plain"
-          >
-            {{
-              iotPipelineStep === 'created' || iotPipelineStep === 'synced' || iotPipelineStep === 'bound' || iotPipelineStep === 'running' || iotPipelineStep === 'finished'
-                ? '已创建任务'
-                : '未创建'
-            }}
+          <el-tag type="info" effect="plain">产品行 {{ iotOverviewRows.length }}</el-tag>
+          <el-tag v-if="iotSummaryCreated > 0" type="success" effect="plain">
+            已建任务 {{ iotSummaryCreated }}
           </el-tag>
-          <el-tag
-            :type="iotPipelineStep === 'synced' || iotPipelineStep === 'bound' || iotPipelineStep === 'running' || iotPipelineStep === 'finished' ? 'success' : iotSyncFailed ? 'danger' : 'info'"
-            effect="plain"
-          >
-            {{ iotSyncFailed ? '下发失败' : iotPipelineStep === 'synced' || iotPipelineStep === 'bound' || iotPipelineStep === 'running' || iotPipelineStep === 'finished' ? '已下发' : '未下发' }}
-          </el-tag>
-          <el-tag
-            v-if="iotPipelineStep === 'running'"
-            type="warning"
-            effect="plain"
-          >
-            运行中
-          </el-tag>
-          <el-tag
-            v-else-if="iotPipelineStep === 'finished'"
-            type="success"
-            effect="plain"
-          >
-            已完成
+          <el-tag v-if="iotSummaryFailed > 0" type="danger" effect="plain">
+            下发失败 {{ iotSummaryFailed }}
           </el-tag>
           <span v-if="iotLastError" class="iot-last-error">{{ iotLastError }}</span>
         </div>
-        <el-form label-width="110px" class="iot-bind-form" @submit.prevent>
-          <el-form-item label="IOT 运维账号">
-            <template v-if="iotAuthAuthorized">
-              <span>
-                {{ iotAuthTrueName || iotAuthUserName }}
-                <span v-if="iotAuthUserName" class="iot-auth-sub">({{ iotAuthUserName }})</span>
-              </span>
-              <el-button class="iot-refresh-btn" link type="primary" @click="openIotAuthDialog">
-                重新授权
-              </el-button>
-              <el-button link type="danger" :loading="iotActing" @click="onIotAuthLogout">
-                退出授权
-              </el-button>
-            </template>
-            <template v-else>
-              <el-button type="primary" @click="openIotAuthDialog">授权 IOT 运维账号</el-button>
-            </template>
-          </el-form-item>
-          <el-form-item label="产品行">
-            <el-select
-              v-model="iotChildId"
-              filterable
-              placeholder="选择要创建任务的产品行"
-              style="max-width: 420px; width: 100%"
-              @change="onIotChildChange"
-            >
-              <el-option
-                v-for="row in editChildren"
-                :key="String(row.id)"
-                :label="iotChildOptionLabel(row)"
-                :value="Number(row.id)"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="任务状态">
-            <span>{{ iotBindStatusLabel }}</span>
-            <span v-if="iotBinding?.iotOperatorName" class="iot-auth-sub">
-              · 运维 {{ iotBinding.iotOperatorName }}
+        <div class="iot-auth-row">
+          <template v-if="iotAuthAuthorized">
+            <span>
+              运维 {{ iotAuthTrueName || iotAuthUserName }}
+              <span v-if="iotAuthUserName" class="iot-auth-sub">({{ iotAuthUserName }})</span>
             </span>
-          </el-form-item>
-          <el-form-item label="任务 ID">
-            <span class="mono">{{ iotBinding?.iotTaskId || '-' }}</span>
-          </el-form-item>
-          <el-form-item label="已分配设备">
-            <span class="mono">{{ iotBinding?.iotDeviceId || '（IOT 侧分配）' }}</span>
-          </el-form-item>
-          <el-form-item label="同步状态">
-            <span>{{ iotSyncStatusLabel }}</span>
-          </el-form-item>
-          <el-form-item label="最近同步">
-            <span>{{ iotBinding?.lastSyncAt || '-' }}</span>
-          </el-form-item>
-          <el-alert
-            v-if="iotSyncFailed"
+            <el-button class="iot-refresh-btn" link type="primary" @click="openIotAuthDialog">
+              重新授权
+            </el-button>
+            <el-button link type="danger" :loading="iotActing" @click="onIotAuthLogout">
+              退出授权
+            </el-button>
+          </template>
+          <template v-else>
+            <el-button type="primary" @click="openIotAuthDialog">授权 IOT 运维账号</el-button>
+          </template>
+          <el-button link type="primary" :loading="iotActing" @click="loadIotOverview">刷新</el-button>
+        </div>
+        <div class="iot-toolbar">
+          <el-button
+            type="primary"
+            :disabled="!iotAuthAuthorized || !iotSelectedIds.length"
+            :loading="iotActing"
+            @click="onIotCreateSelected"
+          >
+            创建选中 ({{ iotSelectedIds.length || 0 }})
+          </el-button>
+          <el-button
+            type="primary"
+            plain
+            :disabled="!iotAuthAuthorized || !iotCreatableCount"
+            :loading="iotActing"
+            @click="onIotCreateAll"
+          >
+            创建全部可建 ({{ iotCreatableCount }})
+          </el-button>
+          <el-button
             type="warning"
-            :closable="false"
-            show-icon
-            class="iot-sync-alert"
-            title="IOT 任务下发失败，请检查后点击「重新下发」"
-          />
-          <el-form-item>
-            <el-button
-              type="primary"
-              :disabled="!iotAuthAuthorized"
-              :loading="iotActing"
-              @click="onIotCreateTask"
-            >
-              创建试验任务
-            </el-button>
-            <el-button
-              type="success"
-              :disabled="!iotCanOpenIot"
-              :loading="iotActing"
-              @click="onIotOpenJump"
-            >
-              打开 IOT
-            </el-button>
-            <el-button :loading="iotActing" @click="onIotUnbind">取消任务</el-button>
-            <el-button
-              v-if="iotSyncFailed || iotBinding?.iotTaskId"
-              type="warning"
-              :loading="iotActing"
-              @click="onIotResync"
-            >
-              重新下发
-            </el-button>
-          </el-form-item>
-        </el-form>
+            :disabled="!iotAuthAuthorized || !iotSelectedIds.length"
+            :loading="iotActing"
+            @click="onIotResyncSelected"
+          >
+            重新下发选中
+          </el-button>
+          <el-button
+            type="warning"
+            plain
+            :disabled="!iotAuthAuthorized || !iotResyncableCount"
+            :loading="iotActing"
+            @click="onIotResyncAll"
+          >
+            重新下发全部
+          </el-button>
+          <el-button
+            type="success"
+            :disabled="!iotAuthAuthorized || !iotCanOpenIotAny"
+            :loading="iotActing"
+            @click="onIotOpenJump()"
+          >
+            打开 IOT
+          </el-button>
+        </div>
+        <el-table
+          :data="iotOverviewRows"
+          border
+          stripe
+          class="detail-table iot-overview-table"
+          row-key="childId"
+          @selection-change="onIotSelectionChange"
+        >
+          <el-table-column type="selection" width="44" :selectable="iotRowSelectable" />
+          <el-table-column prop="childOrderId" label="子单号" min-width="120" show-overflow-tooltip />
+          <el-table-column prop="goodsName" label="产品" min-width="120" show-overflow-tooltip />
+          <el-table-column prop="projectName" label="测试项目" min-width="120" show-overflow-tooltip />
+          <el-table-column label="任务状态" width="110">
+            <template #default="{ row }">
+              {{ iotRowBindLabel(row) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="同步" width="90">
+            <template #default="{ row }">
+              <span :class="{ 'iot-sync-fail': iotRowSyncFailed(row) }">
+                {{ iotRowSyncLabel(row) }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column label="设备" min-width="140" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span class="mono">{{ row.binding?.iotDeviceId || '（IOT 侧分配）' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="任务 ID" min-width="100" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span class="mono">{{ row.binding?.iotTaskId || '-' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="220" fixed="right">
+            <template #default="{ row }">
+              <el-button
+                link
+                type="primary"
+                :disabled="!iotAuthAuthorized || !row.canCreate"
+                :loading="iotActing"
+                @click="onIotCreateOne(row)"
+              >
+                创建
+              </el-button>
+              <el-button
+                link
+                type="success"
+                :disabled="!iotAuthAuthorized || !row.binding?.iotTaskId || iotRowSyncFailed(row)"
+                :loading="iotActing"
+                @click="onIotOpenJump(row)"
+              >
+                打开
+              </el-button>
+              <el-button
+                link
+                type="warning"
+                :disabled="!iotAuthAuthorized || !row.canResync"
+                :loading="iotActing"
+                @click="onIotResyncOne(row)"
+              >
+                下发
+              </el-button>
+              <el-button
+                link
+                type="danger"
+                :disabled="!row.binding || row.binding.bindStatus === 'unbound' || row.binding.bindStatus === 'running'"
+                :loading="iotActing"
+                @click="onIotUnbindOne(row)"
+              >
+                取消
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
         <el-dialog
           v-model="iotAuthDialogVisible"
           title="授权 IOT 运维账号"
@@ -1415,10 +1442,12 @@ import {
   iotAuthLogout,
   iotAuthStatus,
   iotCreateTask,
+  iotCreateTasksBatch,
+  iotTaskOverview,
   iotSsoJump,
   iotUnbindDevice,
-  iotGetBinding,
   iotResyncDevice,
+  iotResyncTasksBatch,
 } from '@admin/api/experiment'
 import { fetchIncomeUsers, fetchSampleOrderOptions, fetchSampleStorePositions, fetchRemainSampleStoreOptions, fetchRemainSampleStorePositions } from '@admin/api/inventory'
 import { fetchTestAddressList } from '@admin/api/system'
@@ -1525,8 +1554,19 @@ const sampleRetainStorePosId = ref('')
 const remainStoreOptions = ref<Record<string, unknown>[]>([])
 const remainPosOptions = ref<Record<string, unknown>[]>([])
 
-const iotChildId = ref<number | null>(null)
-const iotBinding = ref<Record<string, unknown> | null>(null)
+const iotOverviewRows = ref<
+  {
+    childId: number
+    childOrderId?: string
+    goodsName?: string
+    projectName?: string
+    lineStatus?: number
+    canCreate?: boolean
+    canResync?: boolean
+    binding?: Record<string, unknown> | null
+  }[]
+>([])
+const iotSelectedRows = ref<typeof iotOverviewRows.value>([])
 const iotActing = ref(false)
 const iotLastError = ref('')
 const iotAuthAuthorized = ref(false)
@@ -1536,9 +1576,6 @@ const iotAuthDialogVisible = ref(false)
 const iotAuthUsername = ref('')
 const iotAuthPassword = ref('')
 const iotAuthSubmitting = ref(false)
-const iotSyncFailed = computed(
-  () => String(iotBinding.value?.iotTaskSyncStatus || '') === 'failed'
-)
 const IOT_BIND_STATUS_LABEL: Record<string, string> = {
   task_created: '已创建任务',
   bound: '已分配设备',
@@ -1552,33 +1589,32 @@ const IOT_SYNC_STATUS_LABEL: Record<string, string> = {
   failed: '下发失败',
   pending: '待下发',
 }
-const iotBindStatusLabel = computed(() => {
-  const raw = String(iotBinding.value?.bindStatus || '').trim()
-  if (!raw) return '-'
-  return IOT_BIND_STATUS_LABEL[raw] || raw
-})
-const iotSyncStatusLabel = computed(() => {
-  const raw = String(iotBinding.value?.iotTaskSyncStatus || '').trim()
-  if (!raw) return '-'
-  return IOT_SYNC_STATUS_LABEL[raw] || raw
-})
-const iotCanOpenIot = computed(() => {
-  if (!iotAuthAuthorized.value) return false
-  if (iotSyncFailed.value) return false
-  return Boolean(iotBinding.value?.iotTaskId)
-})
-const iotPipelineStep = computed(() => {
-  if (!iotAuthAuthorized.value) return 'unauthorized'
-  const bs = String(iotBinding.value?.bindStatus || '').trim()
-  if (bs === 'running') return 'running'
-  if (bs === 'finished' || bs === 'aborted') return 'finished'
-  const sync = String(iotBinding.value?.iotTaskSyncStatus || '')
-  const hasTask = Boolean(iotBinding.value?.iotTaskId)
-  if ((bs === 'task_created' || bs === 'bound') && sync === 'ok' && hasTask) return 'synced'
-  if (bs === 'bound') return 'bound'
-  if (bs === 'task_created') return 'created'
-  return 'authorized'
-})
+const iotSelectedIds = computed(() =>
+  iotSelectedRows.value.map((r) => Number(r.childId)).filter(Boolean)
+)
+const iotCreatableCount = computed(
+  () => iotOverviewRows.value.filter((r) => r.canCreate).length
+)
+const iotResyncableCount = computed(
+  () => iotOverviewRows.value.filter((r) => r.canResync).length
+)
+const iotSummaryCreated = computed(
+  () =>
+    iotOverviewRows.value.filter((r) => {
+      const bs = String(r.binding?.bindStatus || '')
+      return Boolean(r.binding?.iotTaskId) && bs !== 'unbound'
+    }).length
+)
+const iotSummaryFailed = computed(
+  () => iotOverviewRows.value.filter((r) => iotRowSyncFailed(r)).length
+)
+const iotCanOpenIotAny = computed(
+  () =>
+    iotAuthAuthorized.value &&
+    iotOverviewRows.value.some(
+      (r) => Boolean(r.binding?.iotTaskId) && !iotRowSyncFailed(r)
+    )
+)
 
 const logs = computed(() => (detail.value?.logs as Record<string, unknown>[]) || [])
 const linkedOrders = computed(
@@ -1793,12 +1829,11 @@ async function load() {
     const orderNo = String(detail.value.orderId || '')
     syncDetailTagTitle(ot, orderNo)
     if (['9', '10'].includes(ot) && String(route.query.from || '') !== 'grab-orders') {
-      ensureIotChildDefault()
       await refreshIotAuthStatus()
-      await loadIotBinding()
+      await loadIotOverview()
     } else {
-      iotBinding.value = null
-      iotChildId.value = null
+      iotOverviewRows.value = []
+      iotSelectedRows.value = []
       iotLastError.value = ''
     }
   } finally {
@@ -1806,31 +1841,8 @@ async function load() {
   }
 }
 
-function ensureIotChildDefault() {
-  if (iotChildId.value && editChildren.value.some((r) => Number(r.id) === iotChildId.value)) {
-    return
-  }
-  const first = editChildren.value[0]?.id
-  iotChildId.value = first != null && first !== '' ? Number(first) : null
-}
-
-function iotChildPk(): number {
-  if (iotChildId.value) return Number(iotChildId.value)
-  const lineId = editChildren.value[0]?.id
-  if (lineId != null && lineId !== '') return Number(lineId)
-  if (detail.value?.id != null && detail.value.id !== '') return Number(detail.value.id)
-  return Number(props.orderId)
-}
-
 function iotOrderNo(): string {
   return String(detail.value?.orderId || '')
-}
-
-function iotChildOptionLabel(row: Record<string, unknown>) {
-  const childNo = String(row.childOrderId || row.id || '')
-  const goods = String(row.goodsName || '')
-  const project = String(row.projectName || '')
-  return [childNo, goods, project].filter(Boolean).join(' / ')
 }
 
 function iotFailCode(res: { obj?: unknown } | undefined): string {
@@ -1839,6 +1851,37 @@ function iotFailCode(res: { obj?: unknown } | undefined): string {
     return String((obj as { code?: string }).code || '')
   }
   return ''
+}
+
+function iotRowBindLabel(row: (typeof iotOverviewRows.value)[0]) {
+  const raw = String(row.binding?.bindStatus || '').trim()
+  if (!raw) return '未创建'
+  return IOT_BIND_STATUS_LABEL[raw] || raw
+}
+
+function iotRowSyncLabel(row: (typeof iotOverviewRows.value)[0]) {
+  const raw = String(row.binding?.iotTaskSyncStatus || '').trim()
+  if (!raw) return '-'
+  return IOT_SYNC_STATUS_LABEL[raw] || raw
+}
+
+function iotRowSyncFailed(row: (typeof iotOverviewRows.value)[0]) {
+  return String(row.binding?.iotTaskSyncStatus || '') === 'failed'
+}
+
+function iotRowSelectable(row: (typeof iotOverviewRows.value)[0]) {
+  return Boolean(row.canCreate || row.canResync)
+}
+
+function onIotSelectionChange(rows: typeof iotOverviewRows.value) {
+  iotSelectedRows.value = rows || []
+}
+
+function summarizeBatchResult(obj: Record<string, unknown> | null | undefined, action: string) {
+  if (!obj) return `${action}完成`
+  const okN = Number(obj.success || 0)
+  const failN = Number(obj.failed || 0)
+  return `${action}完成：成功 ${okN}，失败 ${failN}`
 }
 
 async function refreshIotAuthStatus() {
@@ -1905,38 +1948,30 @@ async function onIotAuthLogout() {
   }
 }
 
-async function onIotChildChange() {
-  await loadIotBinding()
-}
-
-async function loadIotBinding() {
-  ensureIotChildDefault()
-  const childId = iotChildPk()
-  if (!childId) {
-    iotBinding.value = null
+async function loadIotOverview() {
+  const orderId = iotOrderNo()
+  if (!orderId) {
+    iotOverviewRows.value = []
     return
   }
   try {
-    const res = await iotGetBinding({ orderId: iotOrderNo(), childId })
+    const res = await iotTaskOverview({ orderId })
     if (isAjaxOk(res) && res.obj) {
-      iotBinding.value = res.obj as Record<string, unknown>
+      const items = (res.obj as { items?: typeof iotOverviewRows.value }).items
+      iotOverviewRows.value = Array.isArray(items) ? items : []
     } else {
-      iotBinding.value = null
+      iotOverviewRows.value = []
     }
   } catch {
-    iotBinding.value = null
+    iotOverviewRows.value = []
   }
+  iotSelectedRows.value = []
 }
 
-async function onIotCreateTask() {
+async function onIotCreateOne(row: (typeof iotOverviewRows.value)[0]) {
   if (!iotAuthAuthorized.value) {
     ElMessage.warning('请先授权 IOT 运维账号')
     openIotAuthDialog()
-    return
-  }
-  const childId = iotChildPk()
-  if (!childId) {
-    ElMessage.warning('缺少子单行 id')
     return
   }
   iotActing.value = true
@@ -1944,7 +1979,7 @@ async function onIotCreateTask() {
   try {
     const res = await iotCreateTask({
       orderId: iotOrderNo(),
-      childId,
+      childId: Number(row.childId),
     })
     if (!isAjaxOk(res)) {
       const code = iotFailCode(res)
@@ -1958,28 +1993,82 @@ async function onIotCreateTask() {
       return
     }
     ElMessage.success(String(res.resMsg || '试验任务已创建'))
-    iotBinding.value = (res.obj as Record<string, unknown>) || null
-    await loadIotBinding()
+    await loadIotOverview()
   } finally {
     iotActing.value = false
   }
 }
 
-async function onIotOpenJump() {
+async function onIotCreateSelected() {
+  if (!iotSelectedIds.value.length) {
+    ElMessage.warning('请先勾选产品行')
+    return
+  }
+  await runIotBatchCreate(iotSelectedIds.value)
+}
+
+async function onIotCreateAll() {
+  await runIotBatchCreate(null)
+}
+
+async function runIotBatchCreate(childIds: number[] | null) {
   if (!iotAuthAuthorized.value) {
     ElMessage.warning('请先授权 IOT 运维账号')
     openIotAuthDialog()
     return
   }
-  if (!iotCanOpenIot.value) {
+  iotActing.value = true
+  iotLastError.value = ''
+  try {
+    const payload: Record<string, unknown> = { orderId: iotOrderNo() }
+    if (childIds && childIds.length) payload.childIds = childIds
+    else payload.all = 1
+    const res = await iotCreateTasksBatch(payload)
+    if (!isAjaxOk(res)) {
+      const code = iotFailCode(res)
+      const msg = ajaxErrorMessage(res, '批量创建失败')
+      if (code === 'IOT_AUTH_REQUIRED') {
+        iotAuthAuthorized.value = false
+        openIotAuthDialog()
+      }
+      iotLastError.value = msg
+      ElMessage.error(msg)
+      return
+    }
+    const obj = res.obj as Record<string, unknown>
+    const msg = summarizeBatchResult(obj, '创建')
+    if (Number(obj?.failed || 0) > 0) {
+      ElMessage.warning(msg)
+      iotLastError.value = msg
+    } else {
+      ElMessage.success(msg)
+    }
+    await loadIotOverview()
+  } finally {
+    iotActing.value = false
+  }
+}
+
+async function onIotOpenJump(row?: (typeof iotOverviewRows.value)[0]) {
+  if (!iotAuthAuthorized.value) {
+    ElMessage.warning('请先授权 IOT 运维账号')
+    openIotAuthDialog()
+    return
+  }
+  const taskId = String(
+    row?.binding?.iotTaskId ||
+      iotSelectedRows.value.find((r) => r.binding?.iotTaskId)?.binding?.iotTaskId ||
+      iotOverviewRows.value.find((r) => r.binding?.iotTaskId)?.binding?.iotTaskId ||
+      ''
+  )
+  if (!taskId && !iotCanOpenIotAny.value) {
     ElMessage.warning('请先成功创建试验任务后再打开 IOT')
     return
   }
   iotActing.value = true
   iotLastError.value = ''
   try {
-    const taskId = String(iotBinding.value?.iotTaskId || '')
-    const res = await iotSsoJump({ taskId })
+    const res = await iotSsoJump(taskId ? { taskId } : {})
     if (!isAjaxOk(res)) {
       const code = iotFailCode(res)
       const msg = ajaxErrorMessage(res, '打开 IOT 失败')
@@ -2002,16 +2091,16 @@ async function onIotOpenJump() {
   }
 }
 
-async function onIotUnbind() {
-  const childId = iotChildPk()
-  if (!childId) {
-    ElMessage.warning('缺少子单行 id')
-    return
-  }
-  await ElMessageBox.confirm('确认取消该 IOT 试验任务？', '取消任务', { type: 'warning' })
+async function onIotUnbindOne(row: (typeof iotOverviewRows.value)[0]) {
+  await ElMessageBox.confirm('确认取消该产品行的 IOT 试验任务？', '取消任务', {
+    type: 'warning',
+  })
   iotActing.value = true
   try {
-    const res = await iotUnbindDevice({ orderId: iotOrderNo(), childId })
+    const res = await iotUnbindDevice({
+      orderId: iotOrderNo(),
+      childId: Number(row.childId),
+    })
     if (!isAjaxOk(res)) {
       const msg = ajaxErrorMessage(res, '取消失败')
       iotLastError.value = msg
@@ -2019,23 +2108,20 @@ async function onIotUnbind() {
       return
     }
     ElMessage.success(String(res.resMsg || '已取消'))
-    iotBinding.value = (res.obj as Record<string, unknown>) || null
-    await loadIotBinding()
+    await loadIotOverview()
   } finally {
     iotActing.value = false
   }
 }
 
-async function onIotResync() {
-  const childId = iotChildPk()
-  if (!childId) {
-    ElMessage.warning('缺少子单行 id')
-    return
-  }
+async function onIotResyncOne(row: (typeof iotOverviewRows.value)[0]) {
   iotActing.value = true
   iotLastError.value = ''
   try {
-    const res = await iotResyncDevice({ orderId: iotOrderNo(), childId })
+    const res = await iotResyncDevice({
+      orderId: iotOrderNo(),
+      childId: Number(row.childId),
+    })
     if (!isAjaxOk(res)) {
       const msg = ajaxErrorMessage(res, '重新下发失败')
       iotLastError.value = msg
@@ -2043,8 +2129,57 @@ async function onIotResync() {
       return
     }
     ElMessage.success(String(res.resMsg || '已重新下发'))
-    iotBinding.value = (res.obj as Record<string, unknown>) || null
-    await loadIotBinding()
+    await loadIotOverview()
+  } finally {
+    iotActing.value = false
+  }
+}
+
+async function onIotResyncSelected() {
+  if (!iotSelectedIds.value.length) {
+    ElMessage.warning('请先勾选产品行')
+    return
+  }
+  await runIotBatchResync(iotSelectedIds.value)
+}
+
+async function onIotResyncAll() {
+  await runIotBatchResync(null)
+}
+
+async function runIotBatchResync(childIds: number[] | null) {
+  if (!iotAuthAuthorized.value) {
+    ElMessage.warning('请先授权 IOT 运维账号')
+    openIotAuthDialog()
+    return
+  }
+  iotActing.value = true
+  iotLastError.value = ''
+  try {
+    const payload: Record<string, unknown> = { orderId: iotOrderNo() }
+    if (childIds && childIds.length) payload.childIds = childIds
+    else payload.all = 1
+    const res = await iotResyncTasksBatch(payload)
+    if (!isAjaxOk(res)) {
+      const code = iotFailCode(res)
+      const msg = ajaxErrorMessage(res, '批量下发失败')
+      if (code === 'IOT_AUTH_REQUIRED') {
+        iotAuthAuthorized.value = false
+        openIotAuthDialog()
+      }
+      iotLastError.value = msg
+      ElMessage.error(msg)
+      return
+    }
+    const obj = res.obj as Record<string, unknown>
+    const msg = summarizeBatchResult(obj, '下发')
+    if (Number(obj?.failed || 0) > 0) {
+      ElMessage.warning(msg)
+      iotLastError.value = msg
+    } else {
+      ElMessage.success(msg)
+    }
+    await loadIotOverview()
   } finally {
     iotActing.value = false
   }
@@ -3207,14 +3342,27 @@ defineExpose({ reload: load })
   color: var(--muted);
   font-size: 12px;
 }
-.iot-bind-form {
-  max-width: 640px;
+.iot-auth-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.iot-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.iot-overview-table {
+  margin-top: 4px;
+}
+.iot-sync-fail {
+  color: var(--el-color-danger);
 }
 .iot-refresh-btn {
-  margin-left: 8px;
-}
-.iot-sync-alert {
-  margin: 0 0 12px;
+  margin-left: 0;
 }
 
 .soft-desc :deep(.el-descriptions__label) {

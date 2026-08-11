@@ -74,12 +74,71 @@ def get_child(child_id: int) -> dict[str, Any] | None:
             c.order_status AS orderStatus,
             c.goods_name AS goodsName,
             c.experiment_project_name AS projectName,
-            c.sample_id AS sampleId
+            c.sample_id AS sampleId,
+            c.order_id AS childOrderId
         FROM experiment_order_child c
         WHERE c.id = %(id)s AND IFNULL(c.delete_status, 2) <> 1
         LIMIT 1
         """,
         {"id": child_id},
+    )
+
+
+def list_children_by_business_order(order_id: str) -> list[dict[str, Any]]:
+    """按业务单号列出产品行（实验子单明细）。"""
+    oid = str(order_id or "").strip()
+    if not oid:
+        return []
+    return fetch_all(
+        """
+        SELECT
+            c.id,
+            c.order_id AS orderIdCol,
+            c.order_form_id AS orderFormId,
+            c.line_id AS lineId,
+            c.order_status AS orderStatus,
+            c.goods_name AS goodsName,
+            c.experiment_project_name AS projectName,
+            c.sample_id AS sampleId,
+            c.order_id AS childOrderId
+        FROM experiment_order_child c
+        INNER JOIN experiment_order o ON c.order_form_id = o.id
+        WHERE o.order_id = %(oid)s
+          AND IFNULL(c.delete_status, 2) <> 1
+        ORDER BY c.id ASC
+        """,
+        {"oid": oid},
+    )
+
+
+def list_bindings_by_order(order_id: str) -> list[dict[str, Any]]:
+    ensure_schema()
+    oid = str(order_id or "").strip()
+    if not oid:
+        return []
+    return fetch_all(
+        """
+        SELECT * FROM experiment_order_iot_bind
+        WHERE order_id = %(oid)s
+        ORDER BY id DESC
+        """,
+        {"oid": oid},
+    )
+
+
+def list_bindings_by_child_ids(child_ids: list[int]) -> list[dict[str, Any]]:
+    ensure_schema()
+    ids = [int(x) for x in child_ids if x is not None]
+    if not ids:
+        return []
+    placeholders = ", ".join(f"%({i})s" for i in range(len(ids)))
+    params = {str(i): cid for i, cid in enumerate(ids)}
+    return fetch_all(
+        f"""
+        SELECT * FROM experiment_order_iot_bind
+        WHERE child_id IN ({placeholders})
+        """,
+        params,
     )
 
 

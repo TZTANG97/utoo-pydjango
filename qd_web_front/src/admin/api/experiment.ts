@@ -1,4 +1,4 @@
-﻿import request, {
+import request, {
   type AjaxBody,
   type RequestConfig,
   ajaxErrorMessage,
@@ -372,9 +372,14 @@ export const iotListDevices = (data?: Record<string, unknown>) =>
   postAjax(`/iot/device/list`, data || {})
 export const iotBindDevice = (data: Record<string, unknown>) =>
   postAjax(`/iot/device/bind`, data)
-/** 创建 IOT 试验任务（不选设备） */
+/** 创建 IOT 试验任务（不选设备）；可传 childId 单行，或 childIds / all=1 批量 */
 export const iotCreateTask = (data: Record<string, unknown>) =>
   postAjax(`/iot/task/create`, data)
+export const iotCreateTasksBatch = (data: Record<string, unknown>) =>
+  postAjax(`/iot/task/create-batch`, data)
+/** 一单多行任务总览 */
+export const iotTaskOverview = (data: Record<string, unknown>) =>
+  postAjax(`/iot/task/overview`, data)
 /** 免登跳转 IOT（授权缓存换 ticket） */
 export const iotSsoJump = (data?: Record<string, unknown>) =>
   postAjax(`/iot/sso/jump`, data || {})
@@ -384,3 +389,5 @@ export const iotGetBinding = (data: Record<string, unknown>) =>
   postAjax(`/iot/device/binding`, data)
 export const iotResyncDevice = (data: Record<string, unknown>) =>
   postAjax(`/iot/device/resync`, data)
+export const iotResyncTasksBatch = (data: Record<string, unknown>) =>
+  postAjax(`/iot/device/resync-batch`, data)

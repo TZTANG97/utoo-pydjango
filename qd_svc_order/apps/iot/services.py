@@ -232,14 +232,15 @@ def create_task(
 
     op_uid = str(sess.get("userId") or "")
     op_name = str(sess.get("trueName") or sess.get("userName") or "")
-    existing_device = str((existing or {}).get("iot_device_id") or "").strip()
+    # 创建/重建一律不带设备：试验箱由 IOT 侧分配，避免沿用绑定表旧 device
+    device_id = ""
 
     try:
         resp = iot_client.register_task(
             _register_payload(
                 order_id=oid,
                 child_id=int(child_id),
-                device_id=existing_device,
+                device_id=device_id,
                 child=child,
                 order=order,
                 operator_user_id=op_uid,
@@ -252,7 +253,7 @@ def create_task(
             order_id=oid,
             child_id=int(child_id),
             order_pk_id=order_pk,
-            device_id=existing_device,
+            device_id=device_id,
             bind_status="task_created",
             bound_by=_staff_id(user),
             remark=remark or "create_task_fail",
@@ -279,8 +280,8 @@ def create_task(
         order_id=oid,
         child_id=int(child_id),
         order_pk_id=order_pk,
-        device_id=existing_device,
-        bind_status="task_created" if not existing_device else "bound",
+        device_id=device_id,
+        bind_status="task_created",
         bound_by=_staff_id(user),
         remark=remark or "create_task",
         iot_operator_user_id=op_uid,
@@ -357,18 +358,33 @@ def build_sso_jump(
     if not ticket:
         raise ServiceError("IOT 未返回 ticket", code="IOT_SSO_FAIL")
 
-    web = str(getattr(settings, "IOT_WEB_URL", "") or getattr(settings, "IOT_BASE_URL", "") or "").rstrip("/")
+    web = _resolve_iot_web_base()
     if not web:
         raise ServiceError("IOT_WEB_URL 未配置", code="CONFIG")
 
     tid = str(task_id or "").strip()
     redir = str(redirect or "").strip()
     if not redir:
+        # vue-router 路径不含 /app 前缀（BASE_URL 已处理）
         redir = f"/main/utoo-tasks?taskId={tid}" if tid else "/main/utoo-tasks"
     from urllib.parse import quote
 
     jump = f"{web}/sso?ticket={quote(ticket)}&redirect={quote(redir)}"
     return {"jumpUrl": jump, "ticket": ticket, "redirect": redir}
+
+
+def _resolve_iot_web_base() -> str:
+    """运维前端根地址。UAT/正式 nginx 静态资源在 /app/，勿用裸域名。"""
+    web = str(getattr(settings, "IOT_WEB_URL", "") or getattr(settings, "IOT_BASE_URL", "") or "").rstrip("/")
+    if not web:
+        return ""
+    # 已是 /app 结尾，或本地 Vite，保持原样
+    if web.endswith("/app") or "127.0.0.1" in web or "localhost" in web:
+        return web
+    # laidecloud 部署：根路径 /sso 会打到 FastAPI 404，必须走 /app/sso
+    if "laidecloud.com" in web:
+        return f"{web}/app"
+    return web
 
 
 def unbind_device(*, order_id: str = "", child_id: int, user: dict | None = None) -> dict[str, Any]:
@@ -400,6 +416,155 @@ def unbind_device(*, order_id: str = "", child_id: int, user: dict | None = None
 def get_binding(*, order_id: str = "", child_id: int) -> dict[str, Any] | None:
     repo.ensure_schema()
     return repo.serialize_bind(repo.get_binding_by_child(int(child_id)))
+
+
+def list_order_task_overview(*, order_id: str) -> dict[str, Any]:
+    """一单多产品行 IOT 任务总览。"""
+    repo.ensure_schema()
+    oid = str(order_id or "").strip()
+    if not oid:
+        raise ServiceError("参数错误：orderId 必填")
+    children = repo.list_children_by_business_order(oid)
+    child_ids = [int(c["id"]) for c in children if c.get("id") is not None]
+    bind_rows = repo.list_bindings_by_child_ids(child_ids)
+    # 同一 child 只取最新（list 无序时再按 id）
+    bind_by_child: dict[int, dict[str, Any]] = {}
+    for row in sorted(bind_rows, key=lambda r: int(r.get("id") or 0)):
+        try:
+            bind_by_child[int(row["child_id"])] = row
+        except (TypeError, ValueError, KeyError):
+            continue
+    items: list[dict[str, Any]] = []
+    for child in children:
+        cid = int(child["id"])
+        bind = repo.serialize_bind(bind_by_child.get(cid))
+        line_status = _child_status(child)
+        bs = str((bind or {}).get("bindStatus") or "")
+        can_create = line_status >= sample_flow_repo.ST_PICK and bs != "running"
+        can_resync = bool((bind or {}).get("iotTaskId")) and bs not in ("running", "unbound")
+        items.append(
+            {
+                "childId": cid,
+                "childOrderId": child.get("childOrderId") or "",
+                "goodsName": child.get("goodsName") or "",
+                "projectName": child.get("projectName") or "",
+                "lineStatus": line_status,
+                "canCreate": can_create,
+                "canResync": can_resync,
+                "binding": bind,
+            }
+        )
+    return {"orderId": oid, "total": len(items), "items": items}
+
+
+def create_tasks_batch(
+    *,
+    order_id: str,
+    child_ids: list[int] | None = None,
+    remark: str = "",
+    user: dict | None = None,
+) -> dict[str, Any]:
+    """批量创建试验任务；childIds 为空则对本单全部可创建产品行执行。"""
+    _require_iot_session(user)
+    oid = str(order_id or "").strip()
+    if not oid:
+        raise ServiceError("参数错误：orderId 必填")
+    overview = list_order_task_overview(order_id=oid)
+    wanted: set[int] | None = None
+    if child_ids:
+        wanted = {int(x) for x in child_ids if x is not None}
+    targets: list[int] = []
+    for row in overview.get("items") or []:
+        cid = int(row["childId"])
+        if wanted is not None and cid not in wanted:
+            continue
+        if wanted is None and not row.get("canCreate"):
+            continue
+        targets.append(cid)
+    if wanted is not None and not targets:
+        raise ServiceError("未选中有效产品行", code="NO_CHILD")
+    if not targets:
+        raise ServiceError("没有可创建试验任务的产品行（需已领用且非测试中）", code="NO_ELIGIBLE")
+
+    items: list[dict[str, Any]] = []
+    ok_n = 0
+    for cid in targets:
+        try:
+            bind = create_task(
+                order_id=oid,
+                child_id=cid,
+                remark=remark or "batch_create",
+                user=user,
+            )
+            ok_n += 1
+            items.append({"childId": cid, "ok": True, "bind": bind})
+        except ServiceError as exc:
+            items.append(
+                {
+                    "childId": cid,
+                    "ok": False,
+                    "code": exc.code,
+                    "message": exc.message,
+                }
+            )
+    return {
+        "orderId": oid,
+        "total": len(targets),
+        "success": ok_n,
+        "failed": len(targets) - ok_n,
+        "items": items,
+    }
+
+
+def resync_tasks_batch(
+    *,
+    order_id: str,
+    child_ids: list[int] | None = None,
+    user: dict | None = None,
+) -> dict[str, Any]:
+    """批量重新下发；childIds 为空则对本单已有任务且可下发的产品行执行。"""
+    _require_iot_session(user)
+    oid = str(order_id or "").strip()
+    if not oid:
+        raise ServiceError("参数错误：orderId 必填")
+    overview = list_order_task_overview(order_id=oid)
+    wanted: set[int] | None = None
+    if child_ids:
+        wanted = {int(x) for x in child_ids if x is not None}
+    targets: list[int] = []
+    for row in overview.get("items") or []:
+        cid = int(row["childId"])
+        if wanted is not None and cid not in wanted:
+            continue
+        if wanted is None and not row.get("canResync"):
+            continue
+        targets.append(cid)
+    if not targets:
+        raise ServiceError("没有可重新下发的产品行", code="NO_ELIGIBLE")
+
+    items: list[dict[str, Any]] = []
+    ok_n = 0
+    for cid in targets:
+        try:
+            bind = resync_device(order_id=oid, child_id=cid, user=user)
+            ok_n += 1
+            items.append({"childId": cid, "ok": True, "bind": bind})
+        except ServiceError as exc:
+            items.append(
+                {
+                    "childId": cid,
+                    "ok": False,
+                    "code": exc.code,
+                    "message": exc.message,
+                }
+            )
+    return {
+        "orderId": oid,
+        "total": len(targets),
+        "success": ok_n,
+        "failed": len(targets) - ok_n,
+        "items": items,
+    }
 
 
 def resync_device(*, order_id: str = "", child_id: int, user: dict | None = None) -> dict[str, Any]:

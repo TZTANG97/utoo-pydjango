@@ -105,9 +105,53 @@ def device_bind(request: Request, user=None):
 def create_task(request: Request, user=None):
     data = merge_payload(request)
     try:
+        # 兼容：传 childIds 数组则走批量
+        raw_ids = data.get("childIds") or data.get("child_ids")
+        if isinstance(raw_ids, list) and raw_ids:
+            ids = [to_int(x) for x in raw_ids if to_int(x)]
+            result = services.create_tasks_batch(
+                order_id=str(data.get("orderId") or data.get("order_id") or ""),
+                child_ids=ids,
+                remark=str(data.get("remark") or ""),
+                user=user,
+            )
+            return ok(obj=result)
+        # all=1 且无 childId：整单批量
+        if str(data.get("all") or "").strip() in ("1", "true", "True", "yes") and not to_int(
+            data.get("childId") or data.get("child_id")
+        ):
+            result = services.create_tasks_batch(
+                order_id=str(data.get("orderId") or data.get("order_id") or ""),
+                child_ids=None,
+                remark=str(data.get("remark") or ""),
+                user=user,
+            )
+            return ok(obj=result)
         result = services.create_task(
             order_id=str(data.get("orderId") or data.get("order_id") or ""),
             child_id=to_int(data.get("childId") or data.get("child_id")),
+            remark=str(data.get("remark") or ""),
+            user=user,
+        )
+        return ok(obj=result)
+    except ServiceError as exc:
+        return fail(exc.message, obj={"code": getattr(exc, "code", None) or "FAIL"})
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def create_tasks_batch(request: Request, user=None):
+    data = merge_payload(request)
+    raw_ids = data.get("childIds") or data.get("child_ids")
+    ids = None
+    if isinstance(raw_ids, list):
+        ids = [to_int(x) for x in raw_ids if to_int(x)]
+    try:
+        result = services.create_tasks_batch(
+            order_id=str(data.get("orderId") or data.get("order_id") or ""),
+            child_ids=ids,
             remark=str(data.get("remark") or ""),
             user=user,
         )
@@ -147,7 +191,7 @@ def device_unbind(request: Request, user=None):
         )
         return ok(obj=result)
     except ServiceError as exc:
-        return fail(exc.message, obj={"code": exc.code})
+        return fail(exc.message, obj={"code": getattr(exc, "code", None) or "FAIL"})
 
 
 @api_view(["GET", "POST"])
@@ -156,16 +200,39 @@ def device_unbind(request: Request, user=None):
 @admin_ajax_view()
 def device_binding(request: Request, user=None):
     data = merge_payload(request)
+    order_id = str(data.get("orderId") or data.get("order_id") or "").strip()
     child_id = to_int(data.get("childId") or data.get("child_id"))
+    # 仅 orderId：返回整单总览
+    if order_id and not child_id:
+        try:
+            result = services.list_order_task_overview(order_id=order_id)
+            return ok(obj=result)
+        except ServiceError as exc:
+            return fail(exc.message, obj={"code": getattr(exc, "code", None) or "FAIL"})
     if not child_id:
-        return fail("参数错误：childId 必填")
+        return fail("参数错误：childId 或 orderId 必填")
     result = services.get_binding(
-        order_id=str(data.get("orderId") or data.get("order_id") or ""),
+        order_id=order_id,
         child_id=child_id,
     )
     if not result:
         return fail("未找到绑定", obj={"code": "BIND_NOT_FOUND"})
     return ok(obj=result)
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def task_overview(request: Request, user=None):
+    data = merge_payload(request)
+    try:
+        result = services.list_order_task_overview(
+            order_id=str(data.get("orderId") or data.get("order_id") or ""),
+        )
+        return ok(obj=result)
+    except ServiceError as exc:
+        return fail(exc.message, obj={"code": getattr(exc, "code", None) or "FAIL"})
 
 
 @api_view(["POST"])
@@ -174,7 +241,25 @@ def device_binding(request: Request, user=None):
 @admin_ajax_view()
 def device_resync(request: Request, user=None):
     data = merge_payload(request)
+    raw_ids = data.get("childIds") or data.get("child_ids")
     try:
+        if isinstance(raw_ids, list) and raw_ids:
+            ids = [to_int(x) for x in raw_ids if to_int(x)]
+            result = services.resync_tasks_batch(
+                order_id=str(data.get("orderId") or data.get("order_id") or ""),
+                child_ids=ids,
+                user=user,
+            )
+            return ok(obj=result)
+        if str(data.get("all") or "").strip() in ("1", "true", "True", "yes") and not to_int(
+            data.get("childId") or data.get("child_id")
+        ):
+            result = services.resync_tasks_batch(
+                order_id=str(data.get("orderId") or data.get("order_id") or ""),
+                child_ids=None,
+                user=user,
+            )
+            return ok(obj=result)
         result = services.resync_device(
             order_id=str(data.get("orderId") or data.get("order_id") or ""),
             child_id=to_int(data.get("childId") or data.get("child_id")),
@@ -182,7 +267,28 @@ def device_resync(request: Request, user=None):
         )
         return ok(obj=result)
     except ServiceError as exc:
-        return fail(exc.message, obj={"code": exc.code})
+        return fail(exc.message, obj={"code": getattr(exc, "code", None) or "FAIL"})
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def resync_tasks_batch(request: Request, user=None):
+    data = merge_payload(request)
+    raw_ids = data.get("childIds") or data.get("child_ids")
+    ids = None
+    if isinstance(raw_ids, list):
+        ids = [to_int(x) for x in raw_ids if to_int(x)]
+    try:
+        result = services.resync_tasks_batch(
+            order_id=str(data.get("orderId") or data.get("order_id") or ""),
+            child_ids=ids,
+            user=user,
+        )
+        return ok(obj=result)
+    except ServiceError as exc:
+        return fail(exc.message, obj={"code": getattr(exc, "code", None) or "FAIL"})
 
 
 @api_view(["POST"])
