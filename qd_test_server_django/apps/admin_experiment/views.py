@@ -35,6 +35,25 @@ def _staff_id(user) -> str:
     return str(user.get("user_id") or user.get("id") or user.get("userId") or "").strip()
 
 
+def _parse_children_payload(data: dict) -> list | None:
+    """解析编辑保存的产品行；兼容 list / JSON 字符串。"""
+    raw = data.get("children")
+    if raw is None and "children" not in data:
+        return None
+    if isinstance(raw, list):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        import json
+
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                return parsed
+        except Exception:
+            return None
+    return None
+
+
 # ---------- health ----------
 @api_view(["GET", "POST"])
 @authentication_classes([])
@@ -1433,9 +1452,39 @@ def order_update_basic(request: Request, user=None):
     ok_flag, msg = order_repo.update_order_basic(
         order_id=oid,
         mark=str(data.get("mark") if data.get("mark") is not None else ""),
-        ship_user=str(data.get("shipUser") or data.get("ship_user") or ""),
-        ship_phone=str(data.get("shipPhone") or data.get("ship_phone") or ""),
-        ship_address=str(data.get("shipAddress") or data.get("ship_address") or ""),
+        ship_user=(
+            data.get("shipUser")
+            if "shipUser" in data
+            else data.get("ship_user")
+            if "ship_user" in data
+            else data.get("addressee_name")
+            if "addressee_name" in data
+            else data.get("addresseeName")
+            if "addresseeName" in data
+            else None
+        ),
+        ship_phone=(
+            data.get("shipPhone")
+            if "shipPhone" in data
+            else data.get("ship_phone")
+            if "ship_phone" in data
+            else data.get("addressee_mobile")
+            if "addressee_mobile" in data
+            else data.get("addresseeMobile")
+            if "addresseeMobile" in data
+            else None
+        ),
+        ship_address=(
+            data.get("shipAddress")
+            if "shipAddress" in data
+            else data.get("ship_address")
+            if "ship_address" in data
+            else data.get("send_address")
+            if "send_address" in data
+            else data.get("sendAddress")
+            if "sendAddress" in data
+            else None
+        ),
         total_price=data.get("totalPrice") if "totalPrice" in data or "total_price" in data else None,
         delivery_time=str(data.get("deliveryTime") or data.get("delivery_time") or ""),
         order_time=str(data.get("orderTime") or data.get("order_time") or ""),
@@ -1507,7 +1556,7 @@ def order_update_basic(request: Request, user=None):
         in_bill_type_id=data.get("inBillTypeId")
         if "inBillTypeId" in data or "in_bill_type_id" in data
         else None,
-        children=data.get("children") if isinstance(data.get("children"), list) else None,
+        children=_parse_children_payload(data),
         staff_user_id=_staff_id(user),
     )
     return ok(res_msg=msg) if ok_flag else fail(msg)

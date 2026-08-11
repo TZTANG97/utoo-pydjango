@@ -12,7 +12,7 @@
 
     <el-form v-if="detail" label-width="130px" class="form-card" @submit.prevent>
       <el-row :gutter="16">
-        <el-col :span="12">
+        <el-col v-if="!isExpSub && !isSubcontractSub" :span="12">
           <el-form-item label="订单编号">
             <el-input :model-value="String(detail.orderId || '')" disabled />
           </el-form-item>
@@ -22,7 +22,7 @@
             <el-input :model-value="String(detail.parentOrderId || '')" disabled />
           </el-form-item>
         </el-col>
-        <el-col v-else :span="12">
+        <el-col v-if="!isSubcontractSub && !isExpSub" :span="12">
           <el-form-item label="制单人员">
             <el-input :model-value="String(detail.addUser || '')" disabled />
           </el-form-item>
@@ -48,6 +48,7 @@
                 clearable
                 placeholder="请选择"
                 style="flex: 1"
+                @change="onCustomerChange"
               >
                 <el-option
                   v-for="o in customerOpts"
@@ -59,6 +60,25 @@
               <el-button type="primary" link @click="openAddCustomer">添加</el-button>
               <el-button type="primary" link @click="reloadCustomers">刷新</el-button>
             </div>
+          </el-form-item>
+        </el-col>
+
+        <el-col v-if="isMainOrder" :span="12">
+          <el-form-item label="订单类型" required>
+            <el-select
+              v-model="form.classId"
+              filterable
+              clearable
+              placeholder="请选择"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="o in classOpts"
+                :key="String(o.value)"
+                :label="o.label"
+                :value="o.value"
+              />
+            </el-select>
           </el-form-item>
         </el-col>
 
@@ -122,8 +142,11 @@
           </el-form-item>
         </el-col>
         <el-col v-else :span="12">
-          <!-- 主单编辑对齐 Java experiment_edit_orders：供应商；子单仍为所属公司 -->
-          <el-form-item :label="isMainOrder ? '供应商' : '所属公司'" required>
+          <!-- 主单编辑：type6=供应商；type8=所属公司（对齐 Java） -->
+          <el-form-item
+            :label="isSubcontractMain ? '所属公司' : isMainOrder ? '供应商' : '所属公司'"
+            required
+          >
             <div class="inline-ops">
               <el-select
                 v-model="form.supplierId"
@@ -144,7 +167,7 @@
             </div>
           </el-form-item>
         </el-col>
-        <el-col v-if="isExpSub" :span="12">
+        <el-col v-if="isMainOrder || isExpSub" :span="12">
           <el-form-item label="客户账号">
             <el-select
               v-model="form.customUserId"
@@ -316,6 +339,36 @@
               </el-select>
             </el-form-item>
           </el-col>
+        </template>
+
+        <template v-if="isMainOrder">
+          <el-col :span="12">
+            <el-form-item label="样品是否回收">
+              <el-switch
+                v-model="form.reversoOn"
+                inline-prompt
+                active-text="ON"
+                inactive-text="OFF"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col v-if="form.reversoOn" :span="12">
+            <el-form-item label="样品回收地址">
+              <el-input v-model="form.sendAddress" clearable />
+            </el-form-item>
+          </el-col>
+          <template v-if="form.reversoOn">
+            <el-col :span="12">
+              <el-form-item label="收件人姓名">
+                <el-input v-model="form.addresseeName" clearable />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="收件人电话">
+                <el-input v-model="form.addresseeMobile" clearable />
+              </el-form-item>
+            </el-col>
+          </template>
         </template>
 
         <el-col :span="24">
@@ -638,6 +691,7 @@ import { ElMessage } from 'element-plus'
 import {
   deleteExpOrderFile,
   fetchExpGoodsList,
+  fetchManageOptions,
   fetchProjectList,
   getExpOrderDetail,
   updateExpOrderBasic,
@@ -649,7 +703,7 @@ import { fetchBillTypeAll, fetchPaytypeAll, fetchTaxAll } from '@admin/api/order
 import { fetchSupplierAll, fetchTestUsers, fetchUserList } from '@admin/api/system'
 import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
-type Opt = { value: string | number; label: string; nums?: number }
+type Opt = { value: string; label: string; nums?: number }
 type ShareRow = { userId: string; value: string }
 type LineRow = {
   id: string | number
@@ -700,18 +754,22 @@ const form = reactive({
   deliveryTime: '',
   orderTime: '',
   currencyType: 1 as number,
-  payWay: '' as string | number | '',
+  payWay: '',
   invoiceType: false,
-  taxes: '' as string | number | '',
-  outBillTypeId: '' as string | number | '',
-  inBillTypeId: '' as string | number | '',
-  saleManagerId: '' as string | number | '',
-  saleUserId: '' as string | number | '',
-  supplierId: '' as string | number | '',
-  stockCompanyId: '' as string | number | '',
-  customerId: '' as string | number | '',
-  customUserId: '' as string | number | '',
-  warehouseUserId: '' as string | number | '',
+  taxes: '',
+  outBillTypeId: '',
+  inBillTypeId: '',
+  saleManagerId: '',
+  saleUserId: '',
+  supplierId: '',
+  stockCompanyId: '',
+  customerId: '',
+  customUserId: '',
+  warehouseUserId: '',
+  classId: '',
+  sendAddress: '',
+  addresseeName: '',
+  addresseeMobile: '',
   userScaleInfo: '',
   salecbUserScaleInfo: '',
   reversoOn: false,
@@ -720,6 +778,7 @@ const form = reactive({
 const supplierOpts = ref<Opt[]>([])
 const customerOpts = ref<Opt[]>([])
 const accountOpts = ref<Opt[]>([])
+const classOpts = ref<Opt[]>([])
 const managerOpts = ref<Opt[]>([])
 const saleUserOpts = ref<Opt[]>([])
 const payWayOpts = ref<Opt[]>([])
@@ -772,25 +831,40 @@ function openAddSupplier() {
   window.open(router.resolve({ name: 'SystemCompanies' }).href, '_blank')
 }
 
-function asOptValue(v: unknown): string | number | '' {
+/** 统一成 string，避免 el-select 因 number/string 不一致只显示裸 id */
+function asOptValue(v: unknown): string {
   if (v == null || v === '') return ''
-  return typeof v === 'number' ? v : String(v)
+  return String(v)
+}
+
+function displayLabel(v: unknown): string {
+  const s = String(v ?? '').trim()
+  return !s || s === '-' ? '' : s
 }
 
 function ensureOpt(opts: { value: Opt[] }, value: string | number | '', label?: string) {
   if (value === '' || value == null) return
   const key = String(value)
-  if (opts.value.some((o) => String(o.value) === key)) return
-  opts.value.unshift({ value, label: (label || key).trim() || key })
+  const text = displayLabel(label)
+  const idx = opts.value.findIndex((o) => String(o.value) === key)
+  if (idx >= 0) {
+    const cur = opts.value[idx]
+    const weakLabel = !cur.label || cur.label === key || String(cur.label) === String(cur.value)
+    if (cur.value !== key || (text && weakLabel)) {
+      opts.value[idx] = { ...cur, value: key, label: text && weakLabel ? text : cur.label || text || key }
+    }
+    return
+  }
+  opts.value.unshift({ value: key, label: text || key })
 }
 
 function mapUserRows(rows: Record<string, unknown>[]): Opt[] {
   return rows
     .map((u) => ({
-      value: (u.id ?? '') as string | number,
+      value: String(u.id ?? ''),
       label: String(u.trueName || u.true_name || u.userName || u.user_name || u.id || ''),
     }))
-    .filter((o) => o.value !== '' && o.value != null)
+    .filter((o) => o.value !== '')
 }
 
 function lineTotal(row: LineRow) {
@@ -888,7 +962,7 @@ async function loadPlatforms() {
     const list = Array.isArray(res.data) ? res.data : Array.isArray(res.obj) ? res.obj : []
     platformOpts.value = (list as Record<string, unknown>[])
       .map((r) => ({
-        value: (r.id ?? '') as string | number,
+        value: String(r.id ?? ''),
         label: String(r.lineNum || r.line_num || r.name || r.id || ''),
       }))
       .filter((o) => o.value !== '' && o.value != null)
@@ -1075,13 +1149,33 @@ async function reloadCustomers() {
     const list = Array.isArray(res.obj) ? res.obj : Array.isArray(res.data) ? res.data : []
     customerOpts.value = (list as Record<string, unknown>[])
       .map((r) => ({
-        value: (r.id ?? '') as string | number,
+        value: String(r.id ?? ''),
         label: String(r.name || r.companyName || r.company_name || ''),
       }))
-      .filter((o) => o.value !== '' && o.value != null && o.label)
+      .filter((o) => o.value !== '' && o.label)
   } catch {
     /* ignore */
   }
+}
+
+async function reloadAccounts(parentId?: string | number) {
+  try {
+    const res = await fetchCustomerAccounts(parentId || '')
+    const list = Array.isArray(res.obj) ? res.obj : Array.isArray(res.data) ? res.data : []
+    accountOpts.value = (list as Record<string, unknown>[])
+      .map((r) => ({
+        value: String(r.id ?? ''),
+        label: String(r.mobile || r.userName || r.trueName || r.name || r.id || ''),
+      }))
+      .filter((o) => o.value !== '')
+  } catch {
+    accountOpts.value = []
+  }
+}
+
+async function onCustomerChange(id: string | number | '') {
+  form.customUserId = ''
+  await reloadAccounts(id || '')
 }
 
 async function reloadSuppliers() {
@@ -1090,7 +1184,7 @@ async function reloadSuppliers() {
     const list = Array.isArray(res.obj) ? res.obj : Array.isArray(res.data) ? res.data : []
     supplierOpts.value = (list as Record<string, unknown>[])
       .map((r) => ({
-        value: (r.id ?? '') as string | number,
+        value: String(r.id ?? ''),
         label: String(r.companyName || r.company_name || r.name || r.id || ''),
       }))
       .filter((o) => o.value !== '' && o.value != null)
@@ -1103,6 +1197,18 @@ async function loadOptions() {
   const silent = { silentError: true } as const
   await reloadCustomers()
   await reloadSuppliers()
+  try {
+    const cls = await fetchManageOptions(3)
+    const list = Array.isArray(cls.obj) ? (cls.obj as Record<string, unknown>[]) : []
+    classOpts.value = list
+      .map((r) => ({
+        value: String(r.id ?? r.value ?? ''),
+        label: String(r.name || r.label || r.id || ''),
+      }))
+      .filter((o) => o.value !== '')
+  } catch {
+    classOpts.value = []
+  }
   try {
     const mgr = await fetchUserList({ start: 0, length: 500, type: 1, draw: 1 }, silent)
     managerOpts.value = mapUserRows(Array.isArray(mgr.data) ? mgr.data : [])
@@ -1124,7 +1230,7 @@ async function loadOptions() {
       .map((r) => {
         const row = r as Record<string, unknown>
         return {
-          value: (row.id ?? '') as string | number,
+          value: String(row.id ?? ''),
           label: String(row.name || row.payName || row.id || ''),
           nums: Number(row.nums || row.payNums || row.pay_nums || 0) || 0,
         }
@@ -1140,7 +1246,7 @@ async function loadOptions() {
       .map((r) => {
         const row = r as Record<string, unknown>
         return {
-          value: (row.id ?? '') as string | number,
+          value: String(row.id ?? ''),
           label: String(row.name || row.id || ''),
         }
       })
@@ -1155,7 +1261,7 @@ async function loadOptions() {
       .map((r) => {
         const row = r as Record<string, unknown>
         return {
-          value: (row.id ?? '') as string | number,
+          value: String(row.id ?? ''),
           label: String(row.name || row.id || ''),
         }
       })
@@ -1172,7 +1278,7 @@ async function loadOptions() {
         : []
     taxOpts.value = list
       .map((r) => ({
-        value: (r.taxValue ?? r.tax_value ?? r.id ?? '') as string | number,
+        value: String(r.taxValue ?? r.tax_value ?? r.id ?? ''),
         label: String(
           r.name ||
             (r.taxValue != null || r.tax_value != null
@@ -1224,47 +1330,45 @@ async function load() {
     form.customerId = asOptValue(obj.customerId)
     form.customUserId = asOptValue(obj.customUserId)
     form.warehouseUserId = asOptValue(obj.warehouseUserId || obj.stockUserId)
+    form.classId = asOptValue(obj.classId)
     form.userScaleInfo = String(obj.userScaleInfo || obj.scaleInfo || '')
     form.salecbUserScaleInfo = String(obj.salecbUserScaleInfo || '')
     form.reversoOn =
       String(obj.reversoContext || '').toUpperCase() === 'ON' ||
       String(obj.reversoLabel || '') === '是' ||
       Number(obj.reversoContext) === 1
+    form.sendAddress = String(obj.shipAddress || obj.sendAddress || '')
+    form.addresseeName = String(obj.shipUser || obj.addresseeName || '')
+    form.addresseeMobile = String(obj.shipPhone || obj.addresseeMobile || obj.mobile || '')
 
-    ensureOpt(supplierOpts, form.supplierId, String(obj.supplierName || ''))
+    ensureOpt(supplierOpts, form.supplierId, displayLabel(obj.supplierName))
     ensureOpt(
       supplierOpts,
       form.stockCompanyId,
-      String(obj.stockCompanyName || obj.supplierName || '')
+      displayLabel(obj.stockCompanyName || obj.supplierName)
     )
-    ensureOpt(customerOpts, form.customerId, String(obj.customerName || obj.companyName || ''))
-    ensureOpt(managerOpts, form.saleManagerId, String(obj.saleManager || ''))
-    ensureOpt(saleUserOpts, form.saleUserId, String(obj.saleUser || ''))
+    ensureOpt(customerOpts, form.customerId, displayLabel(obj.customerName || obj.companyName))
+    ensureOpt(classOpts, form.classId, displayLabel(obj.testClassName || obj.className))
+    ensureOpt(managerOpts, form.saleManagerId, displayLabel(obj.saleManager || obj.saleManagerTrueName || obj.saleManagerName))
+    ensureOpt(saleUserOpts, form.saleUserId, displayLabel(obj.saleUser || obj.saleUserTrueName || obj.saleUserName))
     ensureOpt(
       saleUserOpts,
       form.warehouseUserId,
-      String(obj.warehouseUser || obj.stockUser || '')
+      displayLabel(obj.warehouseUser || obj.stockUser || obj.warehouseUserTrueName || obj.warehouseUserName)
     )
-    ensureOpt(payWayOpts, form.payWay, String(obj.payWayName || ''))
-    ensureOpt(outBillOpts, form.outBillTypeId, String(obj.outBillTypeName || ''))
-    ensureOpt(inBillOpts, form.inBillTypeId, String(obj.inBillTypeName || ''))
+    ensureOpt(payWayOpts, form.payWay, displayLabel(obj.payWayName))
+    ensureOpt(outBillOpts, form.outBillTypeId, displayLabel(obj.outBillTypeName))
+    ensureOpt(inBillOpts, form.inBillTypeId, displayLabel(obj.inBillTypeName))
     if (form.taxes !== '') ensureOpt(taxOpts, form.taxes, String(form.taxes))
 
     if (form.customerId) {
-      try {
-        const acc = await fetchCustomerAccounts(form.customerId)
-        const list = Array.isArray(acc.obj) ? acc.obj : Array.isArray(acc.data) ? acc.data : []
-        accountOpts.value = (list as Record<string, unknown>[])
-          .map((r) => ({
-            value: (r.id ?? '') as string | number,
-            label: String(r.mobile || r.userName || r.id || ''),
-          }))
-          .filter((o) => o.value !== '' && o.value != null)
-        ensureOpt(accountOpts, form.customUserId, String(obj.customMobile || obj.mobile || ''))
-      } catch {
-        /* ignore */
-      }
+      await reloadAccounts(form.customerId)
     }
+    ensureOpt(
+      accountOpts,
+      form.customUserId,
+      displayLabel(obj.customMobile || obj.customUserMobile || obj.customUserName || obj.mobile)
+    )
 
     const coll = String(obj.collectionTime || '')
     onPayWayChange(form.payWay)
@@ -1423,6 +1527,14 @@ async function onSave() {
       }
     }
   }
+  if (isMainOrder.value && !form.classId) {
+    ElMessage.warning('请选择订单类型')
+    return
+  }
+  if (isMainOrder.value && !form.supplierId) {
+    ElMessage.warning('请选择供应商')
+    return
+  }
   if (!isExpSub.value && !form.totalPrice) {
     ElMessage.warning(isSubcontractSub.value ? '请填写实验分包总价' : '请填写订单总价')
     return
@@ -1458,7 +1570,8 @@ async function onSave() {
       customerId: form.customerId,
       customUserId: form.customUserId,
       children: lines.value.map((row) => ({
-        id: row.id || undefined,
+        // 新行显式传 null，避免后端把空串当成已有 id
+        id: row.id !== '' && row.id != null ? row.id : null,
         goodsId: row.goodsId,
         goodsName: row.goodsName,
         goodsBrandId: row.goodsBrandId,
@@ -1478,10 +1591,15 @@ async function onSave() {
       })),
     }
     if (isMainOrder.value) {
+      payload.classId = form.classId
       payload.supplierId = form.supplierId
       payload.outBillTypeId = form.invoiceType ? form.outBillTypeId : ''
       payload.userScaleInfo = form.userScaleInfo
       payload.salecbUserScaleInfo = isSubcontractMain.value ? '' : form.salecbUserScaleInfo
+      payload.reversoContext = form.reversoOn ? 1 : 2
+      payload.shipAddress = form.reversoOn ? form.sendAddress : ''
+      payload.shipUser = form.reversoOn ? form.addresseeName : ''
+      payload.shipPhone = form.reversoOn ? form.addresseeMobile : ''
     } else if (isSubcontractSub.value) {
       payload.stockCompanyId = form.stockCompanyId
       payload.inBillTypeId = form.invoiceType ? form.inBillTypeId : ''

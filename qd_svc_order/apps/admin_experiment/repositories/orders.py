@@ -4137,9 +4137,9 @@ def update_order_basic(
     *,
     order_id: int,
     mark: str = "",
-    ship_user: str = "",
-    ship_phone: str = "",
-    ship_address: str = "",
+    ship_user: Any = None,
+    ship_phone: Any = None,
+    ship_address: Any = None,
     total_price: Any = None,
     delivery_time: str = "",
     order_time: str = "",
@@ -4179,15 +4179,16 @@ def update_order_basic(
         sets.append("mark = %(mark)s")
         sets.append("msg = %(mark)s")
         params["mark"] = mark[:1000]
+    # ship_* / 回收地址：仅调用方显式传入时才更新（None=不改），避免子单编辑误清空
     if ship_user is not None:
         sets.append("addressee_name = %(ship_user)s")
-        params["ship_user"] = ship_user[:100]
+        params["ship_user"] = str(ship_user)[:100]
     if ship_phone is not None:
         sets.append("addressee_mobile = %(ship_phone)s")
-        params["ship_phone"] = ship_phone[:50]
+        params["ship_phone"] = str(ship_phone)[:50]
     if ship_address is not None:
         sets.append("send_address = %(ship_address)s")
-        params["ship_address"] = ship_address[:500]
+        params["ship_address"] = str(ship_address)[:500]
     if delivery_time is not None and str(delivery_time).strip():
         sets.append("delivery_time = %(delivery_time)s")
         params["delivery_time"] = str(delivery_time).strip()[:19]
@@ -4375,9 +4376,14 @@ def update_order_basic(
                 if ot not in ("6", "8"):
                     continue
                 try:
-                    _insert_edit_child_line(order_id=order_id, ch=ch, order_no=str(row.get("orderId") or ""))
-                except Exception:
+                    new_cid = _insert_edit_child_line(
+                        order_id=order_id, ch=ch, order_no=str(row.get("orderId") or "")
+                    )
+                    if new_cid:
+                        keep_ids.add(int(new_cid))
+                except Exception as exc:
                     logger.exception("insert edit child failed order=%s", order_id)
+                    return False, f"新增产品行失败：{exc}"
                 continue
             try:
                 cid_i = int(cid)
@@ -4488,7 +4494,7 @@ def update_order_basic(
                     child_params,
                 )
         # 主单编辑：软删本次未提交的原产品行（至少保留一行由前端约束）
-        if ot in ("6", "8") and keep_ids:
+        if ot in ("6", "8"):
             try:
                 existing = fetch_all(
                     """
@@ -4518,25 +4524,42 @@ def update_order_basic(
     return True, "保存成功"
 
 
-def _insert_edit_child_line(*, order_id: int, ch: dict[str, Any], order_no: str) -> None:
-    """主单编辑新增产品行。"""
+def _insert_edit_child_line(*, order_id: int, ch: dict[str, Any], order_no: str) -> int:
+    """主单编辑新增产品行；对齐创建订单 insert，失败抛错由上层返回。"""
+    # 含已软删行计数，避免 order_id 子单号与历史行冲突导致插入失败却静默成功
     cnt = int(
         scalar(
             """
             SELECT COUNT(*) FROM experiment_order_child
-            WHERE order_form_id = %(oid)s AND IFNULL(delete_status, 2) <> 1
+            WHERE order_form_id = %(oid)s
             """,
             {"oid": order_id},
             0,
         )
         or 0
     )
-    child_no = f"{order_no}-{cnt + 1}" if order_no else f"{order_id}-{cnt + 1}"
+    base_no = order_no or str(order_id)
+    child_no = f"{base_no}-{cnt + 1}"
+    # 若仍冲突则顺延
+    for _ in range(20):
+        hit = fetch_one(
+            """
+            SELECT id FROM experiment_order_child
+            WHERE order_id = %(cno)s LIMIT 1
+            """,
+            {"cno": child_no},
+        )
+        if not hit:
+            break
+        cnt += 1
+        child_no = f"{base_no}-{cnt + 1}"
     goods_id = ch.get("goodsId") or ch.get("goods_id") or ""
     goods_name = str(ch.get("goodsName") or ch.get("goods_name") or "")[:200]
     goods_spec = str(ch.get("goodsSpec") or ch.get("goods_spec") or "")[:200]
     goods_brand_id = ch.get("goodsBrandId") or ch.get("goods_brand_id") or ""
-    goods_brand_name = str(ch.get("goodsBrandName") or ch.get("goods_brand_name") or "")[:100]
+    goods_brand_name = str(
+        ch.get("goodsBrandName") or ch.get("goods_brand_name") or ch.get("goodsBrand") or ""
+    )[:100]
     try:
         goods_nums = float(ch.get("goodsNums") or ch.get("goods_nums") or 1)
     except (TypeError, ValueError):
@@ -4555,6 +4578,10 @@ def _insert_edit_child_line(*, order_id: int, ch: dict[str, Any], order_no: str)
     project_name = str(ch.get("projectName") or ch.get("experiment_project_name") or "")[:200]
     class_id = ch.get("classId") or ch.get("experiment_class_id") or ""
     class_name = str(ch.get("className") or ch.get("experiment_class_name") or "")[:200]
+    try:
+        currency_type = int(ch.get("currencyType") or ch.get("currency_type") or 1)
+    except (TypeError, ValueError):
+        currency_type = 1
     params = {
         "oid": order_id,
         "cno": child_no[:80],
@@ -4570,40 +4597,51 @@ def _insert_edit_child_line(*, order_id: int, ch: dict[str, Any], order_no: str)
         "epn": project_name,
         "ecid": int(class_id) if str(class_id).isdigit() else None,
         "ecn": class_name,
+        "ct": currency_type,
     }
+    # 与创建订单一致：order_status=1 / op_status=1 / delete_status=2
+    child_pk = 0
     try:
-        execute(
+        child_pk = execute_insert(
             """
             INSERT INTO experiment_order_child
                 (add_time, delete_status, order_form_id, order_id, order_status, op_status,
                  goods_id, goods_name, goods_spec, goods_brand_id, goods_brand_name,
                  goods_nums, goods_price, reference_price,
                  experiment_project_id, experiment_project_name,
-                 experiment_class_id, experiment_class_name)
+                 experiment_class_id, experiment_class_name,
+                 in_status, fcsq, is_meeting, currency_type)
             VALUES
-                (NOW(), 2, %(oid)s, %(cno)s, 0, 1,
+                (NOW(), 2, %(oid)s, %(cno)s, 1, 1,
                  %(gid)s, %(gn)s, %(gs)s, %(gbid)s, %(gb)s,
                  %(nums)s, %(price)s, %(ref)s,
-                 %(epid)s, %(epn)s, %(ecid)s, %(ecn)s)
+                 %(epid)s, %(epn)s, %(ecid)s, %(ecn)s,
+                 0, 0, 0, %(ct)s)
             """,
             params,
         )
     except Exception:
-        execute(
+        child_pk = execute_insert(
             """
             INSERT INTO experiment_order_child
                 (add_time, delete_status, order_form_id, order_id, order_status, op_status,
                  goods_id, goods_name, goods_spec, goods_brand_name,
                  goods_nums, goods_price, reference_price,
-                 experiment_project_name, experiment_class_name)
+                 experiment_project_id, experiment_project_name,
+                 experiment_class_id, experiment_class_name,
+                 currency_type)
             VALUES
-                (NOW(), 2, %(oid)s, %(cno)s, 0, 1,
+                (NOW(), 2, %(oid)s, %(cno)s, 1, 1,
                  %(gid)s, %(gn)s, %(gs)s, %(gb)s,
                  %(nums)s, %(price)s, %(ref)s,
-                 %(epn)s, %(ecn)s)
+                 %(epid)s, %(epn)s, %(ecid)s, %(ecn)s,
+                 %(ct)s)
             """,
             params,
         )
+    if not child_pk:
+        raise RuntimeError("产品明细写入未返回主键")
+    return int(child_pk)
 
 
 def confirm_ordered(*, order_id: int) -> tuple[bool, str]:
