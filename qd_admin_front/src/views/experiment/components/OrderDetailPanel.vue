@@ -1272,11 +1272,14 @@
           v-if="
             (sampleAction === 'ship' ||
               (sampleAction === 'retain' && sampleRetainMode === 'scrap')) &&
-            sampleConfirmLocation
+            sampleSelected.length === 1
           "
           label="确认位置"
         >
-          <el-input :model-value="sampleConfirmLocation" disabled />
+          <el-input
+            :model-value="sampleConfirmLocation || '该子行暂无仓库位置记录，请上方选择后确认'"
+            disabled
+          />
         </el-form-item>
         <el-form-item v-if="sampleAction === 'ship'" label="快递公司" required>
           <el-input v-model="sampleExpressName" placeholder="必填" clearable />
