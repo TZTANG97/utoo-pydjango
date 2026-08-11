@@ -22,4 +22,5 @@ urlpatterns = [
     path("api/pc/", include("apps.pc_order.urls")),
     path("api/", include("apps.admin_experiment.urls")),
     path("api/", include("apps.admin_experiment.mp_catalog_urls")),
+    path("api/iot/", include("apps.iot.urls")),
 ]

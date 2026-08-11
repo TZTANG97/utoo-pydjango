@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     "apps.payments",
     "apps.pc_order",
     "apps.admin_experiment",
+    "apps.iot",
 ]
 
 MIDDLEWARE = [
@@ -110,6 +111,15 @@ WEIXIN_MP_APPID = env("WEIXIN_MP_APPID", default="")
 WEIXIN_GZH_APPID = env("WEIXIN_GZH_APPID", default="")
 WEIXIN_GZH_SECRET = env("WEIXIN_GZH_SECRET", default="")
 WEIXIN_GZH_SEND = env("WEIXIN_GZH_SEND", default="1")
+
+# UTOO × IOT（正式 .env + 本机 .env.local 叠加；见 docs/UTOO-IOT本机交叉配置.md）
+IOT_BASE_URL = env("IOT_BASE_URL", default="")
+IOT_SERVICE_TOKEN = env("IOT_SERVICE_TOKEN", default="")
+IOT_HMAC_SECRET = env("IOT_HMAC_SECRET", default="")
+IOT_APP_ID = env("IOT_APP_ID", default="utoo-iot")
+IOT_CALLBACK_IP_WHITELIST = env("IOT_CALLBACK_IP_WHITELIST", default="")
+IOT_HTTP_TIMEOUT = env.int("IOT_HTTP_TIMEOUT", default=15)
+IOT_UTOO_CALLBACK_URL = env("IOT_UTOO_CALLBACK_URL", default="")
 
 LANGUAGE_CODE = "zh-hans"
 TIME_ZONE = "Asia/Shanghai"

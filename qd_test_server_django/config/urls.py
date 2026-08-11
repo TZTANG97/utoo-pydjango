@@ -78,6 +78,10 @@ def _order_extra_patterns():
                 r"^api/experimentGoods/(?P<subpath>.+)$",
                 proxy_order_request,
             ),
+            re_path(
+                r"^api/iot/(?P<subpath>.+)$",
+                proxy_order_request,
+            ),
         ]
     return [
         path("api/ordersampleinfomation/", include("apps.orders.sample_urls")),

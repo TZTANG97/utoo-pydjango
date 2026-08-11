@@ -177,3 +177,11 @@ export function redeemGoodsDetail(params) {
     params
   })
 }
+
+/** IOT 试验数据（C 端代理，baseURL 已含 /api） */
+export function getIotExperimentDataApi(params) {
+  return request({
+    url: '/iot/experiment-data',
+    params
+  })
+}

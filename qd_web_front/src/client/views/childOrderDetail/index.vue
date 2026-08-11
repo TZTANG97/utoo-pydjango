@@ -1,5 +1,11 @@
 <script>
-import {getTestChildOrderDetailApi, submitEvaluateApi, againTestApi, confirmCompleteApi} from '@client/api/order'
+import {
+  getTestChildOrderDetailApi,
+  submitEvaluateApi,
+  againTestApi,
+  confirmCompleteApi,
+  getIotExperimentDataApi,
+} from '@client/api/order'
 import {alterTime} from '@client/utils/index'
 import { downloadOrderFileApi } from '@client/api/index'
 
@@ -20,8 +26,28 @@ export default {
       },
       evaluating: false,
       dialogTitle: '评价',
-      productId: ''
+      productId: '',
+      iotDialogVisible: false,
+      iotLoading: false,
+      iotData: null,
     }
+  },
+  computed: {
+    iotSeries() {
+      const series = this.iotData && this.iotData.series
+      return Array.isArray(series) ? series : []
+    },
+    iotSummaryText() {
+      if (!this.iotData) return ''
+      const s = this.iotData.summary
+      if (s == null) return ''
+      if (typeof s === 'string') return s
+      try {
+        return JSON.stringify(s, null, 2)
+      } catch (_) {
+        return String(s)
+      }
+    },
   },
   mounted() {
     this.id = this.$route.params.id
@@ -51,6 +77,42 @@ export default {
           })
         }
       })
+    },
+
+    openIotExperimentData() {
+      if (!this.detail) return
+      this.iotDialogVisible = true
+      this.iotLoading = true
+      this.iotData = null
+      const orderId = this.detail.orderId || this.detail.order_id || ''
+      const childId =
+        (this.goodsDetail[0] && this.goodsDetail[0].id) || this.id
+      getIotExperimentDataApi({
+        orderId,
+        childId,
+        includeSeries: 1,
+      })
+        .then((res) => {
+          if (res.res) {
+            this.iotData = res.obj || null
+          } else {
+            this.$notify({
+              type: 'error',
+              title: '提示',
+              message: res.resMsg || '获取试验数据失败',
+            })
+          }
+        })
+        .catch((err) => {
+          this.$notify({
+            type: 'error',
+            title: '提示',
+            message: (err && err.message) || '获取试验数据失败',
+          })
+        })
+        .finally(() => {
+          this.iotLoading = false
+        })
     },
 
     handleClose() {
@@ -135,6 +197,13 @@ export default {
     <el-card class="box-card" v-if="detail">
       <div slot="header" class="clearfix">
         <span>子订单详情</span>
+        <el-button
+          style="float: right; padding: 3px 0"
+          type="text"
+          @click="openIotExperimentData"
+        >
+          试验数据
+        </el-button>
       </div>
       <div class="row">
         <div class="text item">
@@ -274,6 +343,52 @@ export default {
       </span>
     </el-dialog>
 
+    <el-dialog
+      title="试验数据"
+      :visible.sync="iotDialogVisible"
+      width="720px"
+      :close-on-click-modal="false"
+    >
+      <div v-loading="iotLoading">
+        <template v-if="iotData">
+          <div class="iot-block">
+            <div class="iot-label">摘要</div>
+            <pre class="iot-summary">{{ iotSummaryText || '-' }}</pre>
+          </div>
+          <div class="iot-block">
+            <div class="iot-label">序列点数</div>
+            <span>{{ iotSeries.length }}</span>
+          </div>
+          <div class="iot-block" v-if="iotData.reportUrl">
+            <div class="iot-label">报告</div>
+            <a :href="iotData.reportUrl" target="_blank" rel="noopener">{{ iotData.reportUrl }}</a>
+          </div>
+          <el-table
+            v-if="iotSeries.length"
+            :data="iotSeries.slice(0, 50)"
+            border
+            stripe
+            max-height="320"
+            style="width: 100%; margin-top: 12px"
+          >
+            <el-table-column
+              v-for="col in Object.keys(iotSeries[0] || {})"
+              :key="col"
+              :prop="col"
+              :label="col"
+              min-width="100"
+              show-overflow-tooltip
+            />
+          </el-table>
+          <p v-if="iotSeries.length > 50" class="iot-hint">仅展示前 50 条序列点</p>
+        </template>
+        <el-empty v-else-if="!iotLoading" description="暂无试验数据" />
+      </div>
+      <span slot="footer" class="dialog-footer">
+        <el-button @click="iotDialogVisible = false">关 闭</el-button>
+      </span>
+    </el-dialog>
+
     <el-timeline style="margin-top: 40px">
       <el-timeline-item
         v-for="(activity, index) in logs"
@@ -352,5 +467,31 @@ export default {
 
 .container {
   padding: 20px;
+}
+
+.iot-block {
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+.iot-label {
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 4px;
+}
+.iot-summary {
+  margin: 0;
+  padding: 8px 10px;
+  background: #f7f8fa;
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 12px;
+  max-height: 180px;
+  overflow: auto;
+}
+.iot-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #999;
 }
 </style>

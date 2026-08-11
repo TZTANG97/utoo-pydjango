@@ -219,125 +219,6 @@ export const uploadExpOrderFile = (formData: FormData) =>
 export const deleteExpOrderFile = (id: string | number) =>
   postAjax(`${BASE}/order/deleteFile.ajax`, { id })
 
-/** 对齐 Java downloadFile.ajax：blob 强制下载，避免 window.open 预览 */
-export async function downloadExpOrderFile(
-  id: string | number,
-  displayName?: string
-): Promise<{ ok: boolean; message?: string }> {
-  const result = await fetchExpOrderFileBlob(id, displayName)
-  if (!result.ok || !result.blob) {
-    return { ok: false, message: result.message || '下载失败' }
-  }
-  const objUrl = URL.createObjectURL(result.blob)
-  const a = document.createElement('a')
-  a.href = objUrl
-  a.download = result.filename || displayName || `file-${id}`
-  a.style.display = 'none'
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(objUrl)
-  return { ok: true }
-}
-
-/** 拉取附件字节（本地盘 / OSS），供下载与预览共用 */
-export async function fetchExpOrderFileBlob(
-  id: string | number,
-  displayName?: string
-): Promise<{ ok: boolean; blob?: Blob; filename?: string; message?: string }> {
-  const { getToken } = await import('@admin/utils/auth')
-  const token = getToken() || ''
-  const base = (import.meta.env.VITE_APP_BASE_API as string) || '/api'
-  const qs = new URLSearchParams({
-    id: String(id),
-    ...(displayName ? { name: displayName } : {}),
-  })
-  const urls = [
-    `${base}/experimentOrder/downloadFile.ajax?${qs}`,
-    `${base}/pc/downloadFile.ajax?${qs}`,
-  ]
-  let lastErr = '下载失败'
-  for (const url of urls) {
-    try {
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: {
-          Accept: 'application/octet-stream,*/*',
-          'X-Channel': 'admin',
-          ...(token
-            ? { token, Authorization: `Bearer ${token}` }
-            : {}),
-        },
-      })
-      const ct = (res.headers.get('content-type') || '').toLowerCase()
-      if (!res.ok) {
-        // 网关偶发把附件当 JSON 失败时，尽量读出 message
-        if (ct.includes('json')) {
-          try {
-            const body = (await res.json()) as AjaxBody
-            lastErr = body.resMsg || body.message || `下载失败(${res.status})`
-          } catch {
-            lastErr = `下载失败(${res.status})`
-          }
-        } else {
-          lastErr = `下载失败(${res.status})`
-        }
-        continue
-      }
-      const blob = await res.blob()
-      if (ct.includes('json') || blob.type.includes('json')) {
-        const text = await blob.text()
-        try {
-          const body = JSON.parse(text) as AjaxBody
-          lastErr = body.resMsg || body.message || lastErr
-        } catch {
-          lastErr = text || lastErr
-        }
-        continue
-      }
-      const cd = res.headers.get('content-disposition') || ''
-      let filename = displayName || `file-${id}`
-      const m = /filename\*=UTF-8''([^;]+)|filename=\"?([^\";]+)\"?/i.exec(cd)
-      if (m) {
-        filename = decodeURIComponent((m[1] || m[2] || filename).trim())
-      }
-      const lower = filename.toLowerCase()
-      let mime = blob.type || 'application/octet-stream'
-      if (lower.endsWith('.pdf')) mime = 'application/pdf'
-      else if (lower.endsWith('.png')) mime = 'image/png'
-      else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) mime = 'image/jpeg'
-      const typed =
-        mime && mime !== blob.type
-          ? new Blob([blob], { type: mime })
-          : blob
-      return { ok: true, blob: typed, filename }
-    } catch (e) {
-      lastErr = e instanceof Error ? e.message : lastErr
-    }
-  }
-  return { ok: false, message: lastErr }
-}
-
-/** 预览附件：经后端取流后新开页，避免直链 OSS NoSuchKey */
-export async function previewExpOrderFile(
-  id: string | number,
-  displayName?: string
-): Promise<{ ok: boolean; message?: string }> {
-  const result = await fetchExpOrderFileBlob(id, displayName)
-  if (!result.ok || !result.blob) {
-    return { ok: false, message: result.message || '预览失败' }
-  }
-  const objUrl = URL.createObjectURL(result.blob)
-  const win = window.open(objUrl, '_blank')
-  if (!win) {
-    URL.revokeObjectURL(objUrl)
-    return { ok: false, message: '浏览器拦截了预览窗口，请允许弹窗后重试' }
-  }
-  // 延迟释放，给新标签加载时间
-  window.setTimeout(() => URL.revokeObjectURL(objUrl), 60_000)
-  return { ok: true }
-}
-
 export const updateExpOrderMsg = (id: string | number, msg: string) =>
   postAjax(`${BASE}/order/updateMsg.ajax`, { id, msg })
 
@@ -346,3 +227,13 @@ export const fetchGrabOrderList = (p: Record<string, unknown>) =>
 /** 对齐 Java competitionOrder：参数为子单 id */
 export const grabExpOrder = (childId: string | number) =>
   postAjax(`${BASE}/grab/competition.ajax`, { ofId: childId, id: childId })
+
+// IOT 设备绑定（baseURL 已含 /api，路径勿再加 /api）
+export const iotBindDevice = (data: Record<string, unknown>) =>
+  postAjax(`/iot/device/bind`, data)
+export const iotUnbindDevice = (data: Record<string, unknown>) =>
+  postAjax(`/iot/device/unbind`, data)
+export const iotGetBinding = (data: Record<string, unknown>) =>
+  postAjax(`/iot/device/binding`, data)
+export const iotResyncDevice = (data: Record<string, unknown>) =>
+  postAjax(`/iot/device/resync`, data)
