@@ -685,7 +685,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onActivated, onDeactivated, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -851,6 +851,8 @@ async function closeEditAndRefreshDetail() {
     },
   })
   tagsViewStore.delView(editPath)
+  // 离开后再作废编辑页 keep-alive，避免下次仍用「新增行 id 为空」的脏缓存
+  tagsViewStore.refreshView(editPath)
   tagsViewStore.refreshView(router.currentRoute.value.path)
 }
 
@@ -1691,6 +1693,20 @@ async function removeOrderFile(idx: number) {
   orderFiles.value.splice(idx, 1)
   ElMessage.success('已删除')
 }
+
+/** keep-alive 停用标记：再次进入时必须重新拉详情，否则新增行 id 为空会导致删除不落库 */
+const editActive = ref(true)
+onActivated(async () => {
+  const fromCache = !editActive.value
+  editActive.value = true
+  if (fromCache && orderId) {
+    await loadOptions()
+    await load()
+  }
+})
+onDeactivated(() => {
+  editActive.value = false
+})
 
 onMounted(async () => {
   await loadOptions()

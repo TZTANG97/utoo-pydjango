@@ -4649,12 +4649,22 @@ def update_order_basic(
                     """,
                     child_params,
                 )
-        # 主单编辑：软删本次未提交的原产品行（至少保留一行由前端约束）
-        if ot in ("6", "8"):
+        # 主单编辑：软删本次未提交的原产品行（对齐 Java editSaveSaleOrdersExp）
+        # 同时查 order_form_id / 采购关联，避免新增行关联方式不一致导致漏删
+        if str(ot).strip() in ("6", "8"):
             existing = fetch_all(
                 """
-                SELECT id FROM experiment_order_child
-                WHERE order_form_id = %(oid)s AND IFNULL(delete_status, 2) <> 1
+                SELECT c.id
+                FROM experiment_order_child c
+                WHERE IFNULL(c.delete_status, 2) <> 1
+                  AND (
+                    c.order_form_id = %(oid)s
+                    OR EXISTS (
+                      SELECT 1 FROM exp_qd_purchase_order_child poc
+                      WHERE poc.order_child_id = c.id
+                        AND poc.purchase_order_id = %(oid)s
+                    )
+                  )
                 """,
                 {"oid": order_id},
             )
@@ -4670,9 +4680,9 @@ def update_order_basic(
                     """
                     UPDATE experiment_order_child
                     SET delete_status = 1
-                    WHERE id = %(id)s AND order_form_id = %(oid)s
+                    WHERE id = %(id)s
                     """,
-                    {"id": eid, "oid": order_id},
+                    {"id": eid},
                 )
                 removed += int(n or 0)
             if removed:
@@ -4682,7 +4692,7 @@ def update_order_basic(
                     removed,
                     sorted(keep_ids),
                 )
-    # 前端显式传入的删除行（兼容 keep_ids 漏删）
+    # 前端显式传入的删除行（兼容 keep_ids 漏删；含新增后未刷新仍带旧 id 的场景）
     for raw_id in deleted_child_ids or []:
         try:
             did = int(raw_id)
