@@ -4320,6 +4320,7 @@ def update_order_basic(
     stock_company_id: Any = None,
     in_bill_type_id: Any = None,
     children: list[dict[str, Any]] | None = None,
+    deleted_child_ids: list[Any] | None = None,
     staff_user_id: str | int | None = None,
 ) -> tuple[bool, str]:
     """编辑订单主字段；对齐 Java：编辑后按原状态回退以便再次审核，日志追加不清空。"""
@@ -4455,7 +4456,7 @@ def update_order_basic(
     if next_st is not None:
         sets.append("order_status = %(next_st)s")
         params["next_st"] = next_st
-    if not sets and not children:
+    if not sets and children is None and not deleted_child_ids:
         return False, "无变更"
     # mark/msg 可能重复；去重保留顺序
     if sets:
@@ -4650,31 +4651,61 @@ def update_order_basic(
                 )
         # 主单编辑：软删本次未提交的原产品行（至少保留一行由前端约束）
         if ot in ("6", "8"):
-            try:
-                existing = fetch_all(
+            existing = fetch_all(
+                """
+                SELECT id FROM experiment_order_child
+                WHERE order_form_id = %(oid)s AND IFNULL(delete_status, 2) <> 1
+                """,
+                {"oid": order_id},
+            )
+            removed = 0
+            for er in existing or []:
+                try:
+                    eid = int(er["id"])
+                except (TypeError, ValueError, KeyError):
+                    continue
+                if eid in keep_ids:
+                    continue
+                n = execute(
                     """
-                    SELECT id FROM experiment_order_child
-                    WHERE order_form_id = %(oid)s AND IFNULL(delete_status, 2) <> 1
+                    UPDATE experiment_order_child
+                    SET delete_status = 1
+                    WHERE id = %(id)s AND order_form_id = %(oid)s
                     """,
-                    {"oid": order_id},
+                    {"id": eid, "oid": order_id},
                 )
-                for er in existing or []:
-                    try:
-                        eid = int(er["id"])
-                    except (TypeError, ValueError, KeyError):
-                        continue
-                    if eid in keep_ids:
-                        continue
-                    execute(
-                        """
-                        UPDATE experiment_order_child
-                        SET delete_status = 1
-                        WHERE id = %(id)s AND order_form_id = %(oid)s
-                        """,
-                        {"id": eid, "oid": order_id},
-                    )
-            except Exception:
-                logger.exception("soft-delete edit children failed order=%s", order_id)
+                removed += int(n or 0)
+            if removed:
+                logger.info(
+                    "edit soft-delete children order=%s removed=%s keep=%s",
+                    order_id,
+                    removed,
+                    sorted(keep_ids),
+                )
+    # 前端显式传入的删除行（兼容 keep_ids 漏删）
+    for raw_id in deleted_child_ids or []:
+        try:
+            did = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        if did <= 0:
+            continue
+        execute(
+            """
+            UPDATE experiment_order_child
+            SET delete_status = 1
+            WHERE id = %(id)s
+              AND (
+                order_form_id = %(oid)s
+                OR EXISTS (
+                  SELECT 1 FROM exp_qd_purchase_order_child poc
+                  WHERE poc.order_child_id = %(id)s
+                    AND poc.purchase_order_id = %(oid)s
+                )
+              )
+            """,
+            {"id": did, "oid": order_id},
+        )
     _write_order_log(order_id, "编辑订单", user_id=staff_user_id)
     return True, "保存成功"
 

@@ -54,6 +54,33 @@ def _parse_children_payload(data: dict) -> list | None:
     return None
 
 
+def _parse_id_list(data: dict, *keys: str) -> list:
+    """解析 deletedChildIds 等 id 列表。"""
+    raw = None
+    for k in keys:
+        if k in data:
+            raw = data.get(k)
+            break
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return raw
+    if isinstance(raw, (int, float)):
+        return [raw]
+    if isinstance(raw, str) and raw.strip():
+        s = raw.strip()
+        if s.startswith("["):
+            import json
+
+            try:
+                parsed = json.loads(s)
+                return parsed if isinstance(parsed, list) else []
+            except Exception:
+                return []
+        return [p.strip() for p in s.split(",") if p.strip()]
+    return []
+
+
 # ---------- health ----------
 @api_view(["GET", "POST"])
 @authentication_classes([])
@@ -1557,6 +1584,9 @@ def order_update_basic(request: Request, user=None):
         if "inBillTypeId" in data or "in_bill_type_id" in data
         else None,
         children=_parse_children_payload(data),
+        deleted_child_ids=_parse_id_list(
+            data, "deletedChildIds", "deleted_child_ids", "deletedIds", "deleted_ids"
+        ),
         staff_user_id=_staff_id(user),
     )
     return ok(res_msg=msg) if ok_flag else fail(msg)

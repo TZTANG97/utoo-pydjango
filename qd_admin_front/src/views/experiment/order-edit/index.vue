@@ -701,6 +701,7 @@ import { fetchSelLineList } from '@/api/inventory'
 import { fetchCustomerAccounts, fetchCustomerNamesExp } from '@/api/member'
 import { fetchBillTypeAll, fetchPaytypeAll, fetchTaxAll } from '@/api/order-settings'
 import { fetchSupplierAll, fetchTestUsers, fetchUserList } from '@/api/system'
+import { detailFromByOrderType, useTagsViewStore } from '@/stores/tags-view'
 import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
 
 type Opt = { value: string; label: string; nums?: number }
@@ -729,6 +730,7 @@ type LineRow = {
 
 const route = useRoute()
 const router = useRouter()
+const tagsViewStore = useTagsViewStore()
 const orderId = String(route.params.id || '')
 
 const loading = ref(false)
@@ -736,6 +738,8 @@ const saving = ref(false)
 const uploading = ref(false)
 const detail = ref<Record<string, unknown> | null>(null)
 const lines = ref<LineRow[]>([])
+/** 编辑页点「-」移除的已有产品行 id，保存时显式软删 */
+const removedLineIds = ref<(string | number)[]>([])
 const orderFiles = ref<Record<string, unknown>[]>([])
 const collectionTimes = ref<string[]>([])
 const payWayLocked = ref(false)
@@ -821,7 +825,33 @@ const totalCostAmount = computed(() =>
 )
 
 function goBack() {
-  router.push({ name: 'ExperimentOrderDetail', params: { id: orderId } })
+  router.push({
+    name: 'ExperimentOrderDetail',
+    params: { id: orderId },
+    query: {
+      from: detailFromByOrderType(orderType.value),
+      ...(detail.value?.orderId
+        ? { orderNo: String(detail.value.orderId) }
+        : {}),
+    },
+  })
+}
+
+/** 保存成功：关闭编辑标签 → 打开详情并强制刷新 */
+async function closeEditAndRefreshDetail() {
+  const editPath = route.path
+  const orderNo = String(detail.value?.orderId || '').trim()
+  const from = detailFromByOrderType(orderType.value)
+  await router.push({
+    name: 'ExperimentOrderDetail',
+    params: { id: orderId },
+    query: {
+      from,
+      ...(orderNo ? { orderNo } : {}),
+    },
+  })
+  tagsViewStore.delView(editPath)
+  tagsViewStore.refreshView(router.currentRoute.value.path)
 }
 
 function openAddCustomer() {
@@ -912,6 +942,10 @@ function removeLine(idx: number) {
   if (lines.value.length <= 1) {
     ElMessage.warning('实验订单至少选择一个产品，不可删除最后一个')
     return
+  }
+  const row = lines.value[idx]
+  if (row && row.id !== '' && row.id != null) {
+    removedLineIds.value.push(row.id)
   }
   lines.value.splice(idx, 1)
   recalcTotal()
@@ -1385,6 +1419,7 @@ async function load() {
     refreshShareSummary()
 
     const children = Array.isArray(obj.children) ? (obj.children as Record<string, unknown>[]) : []
+    removedLineIds.value = []
     lines.value = children.map((ch) => {
       const spec = String(ch.goodsSpec || '')
       return {
@@ -1589,6 +1624,7 @@ async function onSave() {
         lineId: row.lineId,
         expectFinishTime: row.expectFinishTime,
       })),
+      deletedChildIds: [...removedLineIds.value],
     }
     if (isMainOrder.value) {
       payload.classId = form.classId
@@ -1614,7 +1650,8 @@ async function onSave() {
       return
     }
     ElMessage.success('保存成功')
-    goBack()
+    removedLineIds.value = []
+    await closeEditAndRefreshDetail()
   } finally {
     saving.value = false
   }
