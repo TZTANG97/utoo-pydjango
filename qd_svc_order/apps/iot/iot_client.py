@@ -137,3 +137,11 @@ def get_run(run_id: str, *, include_series: bool = False) -> dict[str, Any]:
         raise IotClientError("runId 为空")
     q = {"includeSeries": "1" if include_series else "0"}
     return _request("GET", f"/nss/api/v1/runs/{rid}", query=q)
+
+
+def list_devices(*, q: str = "", limit: int = 200) -> dict[str, Any]:
+    """GET /nss/api/v1/devices — 设备下拉（pythonId）"""
+    query: dict[str, Any] = {"limit": int(limit or 200)}
+    if str(q or "").strip():
+        query["q"] = str(q).strip()
+    return _request("GET", "/nss/api/v1/devices", query=query)

@@ -3,6 +3,8 @@ from django.urls import path
 from apps.iot import views
 
 urlpatterns = [
+    path("device/list", views.device_list),
+    path("device/list/", views.device_list),
     path("device/bind", views.device_bind),
     path("device/bind/", views.device_bind),
     path("device/unbind", views.device_unbind),

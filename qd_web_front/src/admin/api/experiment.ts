@@ -362,6 +362,8 @@ export const grabExpOrder = (childId: string | number) =>
   postAjax(`${BASE}/grab/competition.ajax`, { ofId: childId, id: childId })
 
 // IOT 设备绑定（baseURL 已含 /api，路径勿再加 /api）
+export const iotListDevices = (data?: Record<string, unknown>) =>
+  postAjax(`/iot/device/list`, data || {})
 export const iotBindDevice = (data: Record<string, unknown>) =>
   postAjax(`/iot/device/bind`, data)
 export const iotUnbindDevice = (data: Record<string, unknown>) =>

@@ -76,6 +76,19 @@ def _register_payload(
     }
 
 
+def list_devices(*, q: str = "", limit: int = 200) -> dict[str, Any]:
+    """代理拉取 IOT 设备列表，供管理端下拉选择 pythonId。"""
+    try:
+        resp = iot_client.list_devices(q=q, limit=limit)
+    except IotClientError as exc:
+        raise ServiceError(f"拉取 IOT 设备失败: {exc}", code="IOT_DEVICES_FAIL") from exc
+    items = resp.get("list") if isinstance(resp, dict) else None
+    if not isinstance(items, list):
+        data = resp.get("data") if isinstance(resp, dict) else None
+        items = data if isinstance(data, list) else []
+    return {"list": items, "total": len(items)}
+
+
 def bind_device(
     *,
     order_id: str,

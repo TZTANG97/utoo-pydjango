@@ -28,6 +28,22 @@ def _callback_error(code: str, message: str, http_status: int) -> JsonResponse:
     )
 
 
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def device_list(request: Request, user=None):
+    data = merge_payload(request)
+    try:
+        result = services.list_devices(
+            q=str(data.get("q") or data.get("keyword") or ""),
+            limit=to_int(data.get("limit")) or 200,
+        )
+        return ok(obj=result)
+    except ServiceError as exc:
+        return fail(exc.message, obj={"code": exc.code})
+
+
 @api_view(["POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])

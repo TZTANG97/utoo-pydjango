@@ -309,23 +309,49 @@
 
       <section v-if="isChildKind && !isGrabMode" class="card">
         <h3 class="card-title">IOT 设备绑定</h3>
+        <p class="iot-hint">
+          在本页选择设备并绑定即可（无需登录 IOT）。绑定成功后，IOT 工程师在「UTOO
+          待办」中启动/结束试验，状态会自动回写到本订单。
+        </p>
         <el-form label-width="100px" class="iot-bind-form" @submit.prevent>
-          <el-form-item label="设备 ID">
-            <el-input
+          <el-form-item label="试验设备">
+            <el-select
               v-model="iotDeviceId"
+              filterable
               clearable
-              placeholder="请输入 IOT deviceId"
-              style="max-width: 320px"
-            />
+              remote
+              reserve-keyword
+              :remote-method="onIotDeviceSearch"
+              :loading="iotDevicesLoading"
+              placeholder="搜索设备名称或 pythonId"
+              style="max-width: 420px; width: 100%"
+              @focus="ensureIotDevicesLoaded"
+            >
+              <el-option
+                v-for="d in iotDeviceOptions"
+                :key="String(d.deviceId)"
+                :label="String(d.label || d.name || d.deviceId)"
+                :value="String(d.deviceId)"
+              />
+            </el-select>
+            <el-button
+              class="iot-refresh-btn"
+              link
+              type="primary"
+              :loading="iotDevicesLoading"
+              @click="loadIotDevices()"
+            >
+              刷新列表
+            </el-button>
           </el-form-item>
           <el-form-item label="绑定状态">
-            <span>{{ iotBinding?.bindStatus || '-' }}</span>
+            <span>{{ iotBindStatusLabel }}</span>
           </el-form-item>
           <el-form-item label="任务 ID">
             <span class="mono">{{ iotBinding?.iotTaskId || '-' }}</span>
           </el-form-item>
           <el-form-item label="同步状态">
-            <span>{{ iotBinding?.iotTaskSyncStatus || '-' }}</span>
+            <span>{{ iotSyncStatusLabel }}</span>
           </el-form-item>
           <el-form-item label="最近同步">
             <span>{{ iotBinding?.lastSyncAt || '-' }}</span>
@@ -1301,6 +1327,7 @@ import {
   iotBindDevice,
   iotUnbindDevice,
   iotGetBinding,
+  iotListDevices,
   iotResyncDevice,
 } from '@admin/api/experiment'
 import { fetchIncomeUsers, fetchSampleOrderOptions, fetchSampleStorePositions, fetchRemainSampleStoreOptions, fetchRemainSampleStorePositions } from '@admin/api/inventory'
@@ -1407,9 +1434,33 @@ const remainPosOptions = ref<Record<string, unknown>[]>([])
 const iotDeviceId = ref('')
 const iotBinding = ref<Record<string, unknown> | null>(null)
 const iotActing = ref(false)
+const iotDevicesLoading = ref(false)
+const iotDeviceOptions = ref<Record<string, unknown>[]>([])
+const iotDevicesLoaded = ref(false)
 const iotSyncFailed = computed(
   () => String(iotBinding.value?.iotTaskSyncStatus || '') === 'failed'
 )
+const IOT_BIND_STATUS_LABEL: Record<string, string> = {
+  bound: '已绑定',
+  unbound: '已解绑',
+  running: '测试中',
+  finished: '已完成',
+}
+const IOT_SYNC_STATUS_LABEL: Record<string, string> = {
+  ok: '已下发',
+  failed: '下发失败',
+  pending: '待下发',
+}
+const iotBindStatusLabel = computed(() => {
+  const raw = String(iotBinding.value?.bindStatus || '').trim()
+  if (!raw) return '-'
+  return IOT_BIND_STATUS_LABEL[raw] || raw
+})
+const iotSyncStatusLabel = computed(() => {
+  const raw = String(iotBinding.value?.iotTaskSyncStatus || '').trim()
+  if (!raw) return '-'
+  return IOT_SYNC_STATUS_LABEL[raw] || raw
+})
 
 const logs = computed(() => (detail.value?.logs as Record<string, unknown>[]) || [])
 const linkedOrders = computed(
@@ -1642,6 +1693,47 @@ function iotOrderNo(): string {
   return String(detail.value?.orderId || '')
 }
 
+async function loadIotDevices(q = '') {
+  iotDevicesLoading.value = true
+  try {
+    const res = await iotListDevices({ q, limit: 200 })
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '加载 IOT 设备失败'))
+      return
+    }
+    const obj = (res.obj || {}) as { list?: Record<string, unknown>[] }
+    iotDeviceOptions.value = Array.isArray(obj.list) ? obj.list : []
+    iotDevicesLoaded.value = true
+    // 已绑定设备若不在列表中，补一条便于展示
+    const boundId = String(iotDeviceId.value || iotBinding.value?.iotDeviceId || '').trim()
+    if (boundId && !iotDeviceOptions.value.some((d) => String(d.deviceId) === boundId)) {
+      iotDeviceOptions.value.unshift({
+        deviceId: boundId,
+        name: boundId,
+        label: `${boundId}（当前绑定）`,
+      })
+    }
+  } catch {
+    ElMessage.error('加载 IOT 设备失败')
+  } finally {
+    iotDevicesLoading.value = false
+  }
+}
+
+let iotSearchTimer: ReturnType<typeof setTimeout> | null = null
+function onIotDeviceSearch(q: string) {
+  if (iotSearchTimer) clearTimeout(iotSearchTimer)
+  iotSearchTimer = setTimeout(() => {
+    void loadIotDevices(q)
+  }, 280)
+}
+
+function ensureIotDevicesLoaded() {
+  if (!iotDevicesLoaded.value && !iotDevicesLoading.value) {
+    void loadIotDevices()
+  }
+}
+
 async function loadIotBinding() {
   const childId = iotChildPk()
   if (!childId) {
@@ -1660,12 +1752,13 @@ async function loadIotBinding() {
   } catch {
     iotBinding.value = null
   }
+  void loadIotDevices()
 }
 
 async function onIotBind() {
   const deviceId = iotDeviceId.value.trim()
   if (!deviceId) {
-    ElMessage.warning('请输入设备 ID')
+    ElMessage.warning('请选择试验设备')
     return
   }
   const childId = iotChildPk()
@@ -2862,8 +2955,17 @@ defineExpose({ reload: load })
 .sample-extra {
   margin-bottom: 8px;
 }
+.iot-hint {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
 .iot-bind-form {
   max-width: 640px;
+}
+.iot-refresh-btn {
+  margin-left: 8px;
 }
 .iot-sync-alert {
   margin: 0 0 12px;
