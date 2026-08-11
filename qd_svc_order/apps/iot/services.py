@@ -213,6 +213,24 @@ def list_devices(*, q: str = "", limit: int = 200, user: dict | None = None) -> 
     }
 
 
+def _binding_blocks_redispatch(bind: dict[str, Any] | None) -> bool:
+    """IOT 已接收的有效任务禁止重建；仅 unbound/aborted 或下发失败可再创建/重试。"""
+    if not bind:
+        return False
+    bs = str(bind.get("bind_status") or "").strip()
+    if bs in ("unbound", "aborted"):
+        return False
+    sync = str(bind.get("iot_task_sync_status") or "").strip()
+    if sync == "failed":
+        return False
+    if bs == "running":
+        return True
+    has_task = bool(str(bind.get("iot_task_id") or "").strip())
+    if has_task:
+        return True
+    return bs in ("task_created", "bound", "device_assigned", "finished")
+
+
 def create_task(
     *,
     order_id: str,
@@ -249,9 +267,14 @@ def create_task(
             order = repo.load_order_brief(order_pk=order_pk)
 
     existing = repo.get_binding_by_child(int(child_id))
-    if existing and str(existing.get("bind_status") or "") in ("running", "finished"):
-        if str(existing.get("bind_status")) == "running":
-            raise ServiceError("测试中禁止重建任务", code="STATUS_CONFLICT", http_status=409)
+    if existing and str(existing.get("bind_status") or "") == "running":
+        raise ServiceError("测试中禁止重建任务", code="STATUS_CONFLICT", http_status=409)
+    if _binding_blocks_redispatch(existing):
+        raise ServiceError(
+            "任务已下发且 IOT 已接收，请先在 UTOO 或 IOT 取消后再重新创建",
+            code="TASK_ACTIVE",
+            http_status=409,
+        )
 
     op_uid = str(sess.get("userId") or "")
     op_name = str(sess.get("trueName") or sess.get("userName") or "")
@@ -460,11 +483,19 @@ def list_order_task_overview(*, order_id: str) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     for child in children:
         cid = int(child["id"])
-        bind = repo.serialize_bind(bind_by_child.get(cid))
+        raw_bind = bind_by_child.get(cid)
+        bind = repo.serialize_bind(raw_bind)
         line_status = _child_status(child)
         bs = str((bind or {}).get("bindStatus") or "")
-        can_create = line_status >= sample_flow_repo.ST_PICK and bs != "running"
-        can_resync = bool((bind or {}).get("iotTaskId")) and bs not in ("running", "unbound")
+        sync = str((bind or {}).get("iotTaskSyncStatus") or "")
+        # 已领用且无有效 IOT 任务（或已取消/失败）才可创建
+        can_create = (
+            line_status >= sample_flow_repo.ST_PICK
+            and bs != "running"
+            and not _binding_blocks_redispatch(raw_bind)
+        )
+        # 重新下发仅用于「IOT 未成功接收」的失败重试
+        can_resync = sync == "failed" and bs not in ("running", "unbound")
         items.append(
             {
                 "childId": cid,
@@ -591,17 +622,27 @@ def resync_tasks_batch(
 
 
 def resync_device(*, order_id: str = "", child_id: int, user: dict | None = None) -> dict[str, Any]:
-    """重新下发任务到 IOT（允许空设备）。"""
+    """仅对下发失败的任务重试注册；IOT 已接收的不可重发。"""
     repo.ensure_schema()
     _require_iot_session(user)
     bind = repo.get_binding_by_child(int(child_id))
     if not bind or str(bind.get("bind_status") or "") == "unbound":
         raise ServiceError("未找到有效任务绑定", code="BIND_NOT_FOUND", http_status=404)
+    if str(bind.get("bind_status") or "") == "running":
+        raise ServiceError("测试中禁止重新下发", code="STATUS_CONFLICT", http_status=409)
+    sync = str(bind.get("iot_task_sync_status") or "").strip()
+    if sync != "failed":
+        raise ServiceError(
+            "任务已下发且 IOT 已接收，请先在 UTOO 或 IOT 取消后再重新创建",
+            code="TASK_ACTIVE",
+            http_status=409,
+        )
     child = repo.get_child(int(child_id))
     if not child:
         raise ServiceError("子单行不存在")
     oid = str(order_id or bind.get("order_id") or "").strip()
-    did = str(bind.get("iot_device_id") or "").strip()
+    # 失败重试也不带旧设备，由 IOT 重新分配
+    did = ""
     order = repo.load_order_brief(
         order_pk=bind.get("order_pk_id"),
         business_order_id=oid,
@@ -675,6 +716,14 @@ def _normalize_event(event: str) -> str:
         return "finished"
     if e in ("experiment.aborted", "aborted", "abort"):
         return "aborted"
+    if e in (
+        "experiment.cancelled",
+        "cancelled",
+        "cancel",
+        "task.cancelled",
+        "task_cancelled",
+    ):
+        return "cancelled"
     if e in ("device.assigned", "device_assigned", "deviceassigned", "assigned"):
         return "device_assigned"
     return e
@@ -856,6 +905,20 @@ def handle_experiment_event(payload: dict[str, Any]) -> dict[str, Any]:
         line_status = _child_status(child2)
         if not ok:
             logger.warning("aborted test_end soft-fail child=%s: %s", child_id, msg)
+    elif event == "cancelled":
+        # IOT 端取消：释放 UTOO 绑定，之后可重新创建下发
+        if str(bind.get("bind_status") or "") == "running":
+            raise ServiceError("测试中禁止取消", code="STATUS_CONFLICT", http_status=409)
+        repo.update_from_callback(
+            child_id,
+            bind_status="unbound",
+            event=event_raw or "experiment.cancelled",
+            run_id=run_id,
+            data_ref=data_ref,
+            task_id=task_id,
+        )
+        child2 = repo.get_child(child_id)
+        line_status = _child_status(child2)
     else:
         raise ServiceError(f"未知事件: {event_raw}", code="FAIL", http_status=400)
 

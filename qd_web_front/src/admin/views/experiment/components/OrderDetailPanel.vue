@@ -625,7 +625,8 @@
       <section v-if="isChildKind && !isGrabMode" class="card">
         <h3 class="card-title">IOT 试验任务</h3>
         <p class="iot-hint">
-          样品领用后授权 IOT 运维账号；可勾选一条或多条产品行创建/下发，也可一键处理全部可创建行。设备在 IOT
+          样品领用后授权 IOT 运维账号；可勾选产品行创建任务。已下发且 IOT 已接收的不可重新下发，需先在
+          UTOO「取消」或 IOT「取消任务」后再创建。仅「下发失败」可点重试。设备在 IOT
           侧分配，状态回写对应产品行。
         </p>
         <div class="iot-step-bar">
@@ -683,7 +684,7 @@
             :loading="iotActing"
             @click="onIotResyncSelected"
           >
-            重新下发选中
+            重试失败选中
           </el-button>
           <el-button
             type="warning"
@@ -692,7 +693,7 @@
             :loading="iotActing"
             @click="onIotResyncAll"
           >
-            重新下发全部
+            重试失败全部
           </el-button>
           <el-button
             type="success"
@@ -764,12 +765,12 @@
                 :loading="iotActing"
                 @click="onIotResyncOne(row)"
               >
-                下发
+                重试
               </el-button>
               <el-button
                 link
                 type="danger"
-                :disabled="!row.binding || row.binding.bindStatus === 'unbound' || row.binding.bindStatus === 'running'"
+                :disabled="!row.binding || row.binding.bindStatus === 'unbound' || row.binding.bindStatus === 'running' || row.binding.bindStatus === 'finished'"
                 :loading="iotActing"
                 @click="onIotUnbindOne(row)"
               >
@@ -2311,12 +2312,12 @@ async function onIotResyncOne(row: (typeof iotOverviewRows.value)[0]) {
       childId: Number(row.childId),
     })
     if (!isAjaxOk(res)) {
-      const msg = ajaxErrorMessage(res, '重新下发失败')
+      const msg = ajaxErrorMessage(res, '重试失败')
       iotLastError.value = msg
       ElMessage.error(msg)
       return
     }
-    ElMessage.success(String(res.resMsg || '已重新下发'))
+    ElMessage.success(String(res.resMsg || '已重试下发'))
     await loadIotOverview()
   } finally {
     iotActing.value = false
