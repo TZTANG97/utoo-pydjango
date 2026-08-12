@@ -453,7 +453,7 @@
             {{ detail.testClassName || orderTypeLabel }}
           </el-descriptions-item>
           <el-descriptions-item label="客户名称">
-            {{ detail.customerName || detail.companyName || '-' }}
+            {{ detail.customerName || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="所属公司">{{ detail.supplierName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="实验室主管">{{ detail.saleManager || '-' }}</el-descriptions-item>
@@ -489,7 +489,7 @@
             {{ detail.testClassName || orderTypeLabel }}
           </el-descriptions-item>
           <el-descriptions-item label="客户名称">
-            {{ detail.customerName || detail.companyName || '-' }}
+            {{ detail.customerName || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="所属公司">{{ detail.supplierName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="实验室主管">{{ detail.saleManager || '-' }}</el-descriptions-item>
@@ -532,7 +532,7 @@
           <el-descriptions-item label="销售主管">{{ detail.saleManager || '-' }}</el-descriptions-item>
           <el-descriptions-item label="销售人员">{{ detail.saleUser || '-' }}</el-descriptions-item>
           <el-descriptions-item label="客户名称">
-            {{ detail.customerName || detail.companyName || '-' }}
+            {{ detail.customerName || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="客户账号">{{ detail.customMobile || detail.mobile || '-' }}</el-descriptions-item>
           <el-descriptions-item label="订单币种">{{ detail.currencyLabel || '-' }}</el-descriptions-item>
@@ -1041,12 +1041,19 @@
       <section v-if="!isGrabMode && consultList.length" class="card">
         <h3 class="card-title">业务咨询</h3>
         <el-table :data="consultList" border stripe class="detail-table">
-          <el-table-column
-            prop="appointmentNo"
-            label="预约单号"
-            min-width="200"
-            show-overflow-tooltip
-          />
+          <el-table-column label="预约单号" min-width="200" show-overflow-tooltip>
+            <template #default="{ row }">
+              <el-button
+                v-if="row.id"
+                link
+                type="primary"
+                @click="goConsultDetail(row)"
+              >
+                {{ row.appointmentNo || row.id }}
+              </el-button>
+              <span v-else>{{ row.appointmentNo || '-' }}</span>
+            </template>
+          </el-table-column>
           <el-table-column prop="consultTime" label="咨询时间" width="170" />
           <el-table-column prop="className" label="测试分类" min-width="140" show-overflow-tooltip />
           <el-table-column prop="userName" label="姓名" width="120" show-overflow-tooltip />
@@ -1940,6 +1947,11 @@ async function onDeleteFile(f: Record<string, unknown>) {
 
 async function onUploadOrderFile(options: { file: File }) {
   if (!props.orderId) return
+  const maxBytes = 100 * 1024 * 1024
+  if (options.file.size > maxBytes) {
+    ElMessage.error('文件大小不能超过100MB，请压缩后重试')
+    return
+  }
   const fd = new FormData()
   fd.append('orderdata', options.file)
   fd.append('id', String(props.orderId))
@@ -1957,6 +1969,11 @@ async function onUploadOrderFile(options: { file: File }) {
 
 async function onUploadInvoiceFile(options: { file: File }) {
   if (!props.orderId) return
+  const maxBytes = 100 * 1024 * 1024
+  if (options.file.size > maxBytes) {
+    ElMessage.error('文件大小不能超过100MB，请压缩后重试')
+    return
+  }
   const fd = new FormData()
   fd.append('orderdata', options.file)
   fd.append('id', String(props.orderId))
@@ -2110,6 +2127,19 @@ async function goDetail(
       from: detailFromByOrderType(ot),
       ...(no ? { orderNo: no } : {}),
     },
+  })
+}
+
+function goConsultDetail(row: Record<string, unknown>) {
+  const cid = row?.id
+  if (cid == null || cid === '') {
+    ElMessage.warning('无法打开该预约单')
+    return
+  }
+  router.push({
+    name: 'ServiceConsultDetail',
+    params: { id: String(cid) },
+    query: { mode: 'view' },
   })
 }
 

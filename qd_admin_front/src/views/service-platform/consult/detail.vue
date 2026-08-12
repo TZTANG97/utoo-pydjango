@@ -185,6 +185,24 @@
             <el-switch v-model="form.invoiceType" />
           </el-form-item>
         </el-col>
+        <el-col v-if="form.invoiceType" :span="6">
+          <el-form-item label="出项开票类型">
+            <el-select
+              v-model="form.out_bill_type_id"
+              filterable
+              clearable
+              placeholder="请选择"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="o in outBillOpts"
+                :key="String(o.value)"
+                :label="o.label"
+                :value="o.value"
+              />
+            </el-select>
+          </el-form-item>
+        </el-col>
         <el-col :span="6">
           <el-form-item label="是否云视频">
             <el-switch v-model="form.is_video" />
@@ -406,6 +424,7 @@ import {
   saveConsultOrder,
   updateConsult,
 } from '@/api/service-platform'
+import { fetchBillTypeAll } from '@/api/order-settings'
 import {
   fetchCompanyAccountList,
   fetchSupplierAll,
@@ -451,6 +470,7 @@ const form = reactive({
   test_address_id: '' as string | number | '',
   company_account_id: '' as string | number | '',
   invoiceType: false,
+  out_bill_type_id: '' as string | number | '',
   is_video: false,
   is_arrive: false,
   is_on: false,
@@ -467,6 +487,7 @@ const supplierOpts = ref<Opt[]>([])
 const managerOpts = ref<Opt[]>([])
 const addressOpts = ref<Opt[]>([])
 const accountOpts = ref<Opt[]>([])
+const outBillOpts = ref<Opt[]>([])
 
 const goodsDialogVisible = ref(false)
 const goodsLoading = ref(false)
@@ -806,6 +827,7 @@ function buildPayload(): unknown[] {
     test_address_id: form.test_address_id,
     company_account_id: form.company_account_id,
     invoiceType: form.invoiceType ? 'ON' : 'OFF',
+    out_bill_type_id: form.invoiceType ? form.out_bill_type_id : '',
     is_video: form.is_video ? 1 : 0,
     is_arrive: form.is_arrive ? 1 : 0,
     is_on: form.is_on ? 1 : 0,
@@ -895,6 +917,24 @@ async function loadOptions() {
         ),
       }
     }).filter((o) => o.value !== '' && o.value != null)
+  } catch {
+    /* ignore */
+  }
+  try {
+    const bills = await fetchBillTypeAll(1)
+    const rows = Array.isArray(bills.data) ? bills.data : []
+    outBillOpts.value = rows
+      .map((r) => {
+        const row = r as Record<string, unknown>
+        return {
+          value: asOptValue(row.id ?? ''),
+          label: String(row.name || row.id || ''),
+        }
+      })
+      .filter((o) => o.value !== '' && o.value != null)
+    if (!form.out_bill_type_id && outBillOpts.value.length) {
+      form.out_bill_type_id = outBillOpts.value[0].value
+    }
   } catch {
     /* ignore */
   }

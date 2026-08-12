@@ -1452,8 +1452,9 @@ def get_order(order_id: int) -> dict[str, Any] | None:
         row["companyName"] = q_name or "-"
         row["customerName"] = q_name or "-"
     else:
-        row["companyName"] = q_name or stock or "-"
-        row["customerName"] = "" if row["companyName"] == "-" else row["companyName"]
+        # 对齐 Java：客户名称仅来自 customer_name→qd_user_company，不用进货公司冒充
+        row["companyName"] = q_name or "-"
+        row["customerName"] = q_name or ""
     row["supplierName"] = row.get("supplierName") or ""
     # type=9 Java 展示 userName；其它优先真实姓名
     if ot == "9":
@@ -1579,9 +1580,13 @@ def get_order(order_id: int) -> dict[str, Any] | None:
                 2: "已生成订单",
                 3: "已取消",
             }.get(st, "未回复" if st < 0 else str(st))
-            appt_no = str(consult.get("appointmentNo") or "").strip() or order_no
+            appt_no = str(consult.get("appointmentNo") or "").strip()
+            # 对齐 Java：预约单号用咨询原始 order_num，不用实验单号顶替；
+            # 历史数据若曾被错误写成实验单号，则回退咨询主键便于跳转。
+            if not appt_no or appt_no == order_no:
+                appt_no = str(consult.get("id") or "")
             if not appt_no:
-                appt_no = str(consult.get("linkedOrderId") or consult.get("id") or "")
+                appt_no = str(consult.get("linkedOrderId") or "")
             consult_time = consult.get("consultTime")
             if consult_time:
                 consult_time = str(consult_time)[:19]
@@ -1627,6 +1632,35 @@ def get_order(order_id: int) -> dict[str, Any] | None:
             row["taxes"] = str(taxes_raw).strip()
     out_id = row.get("outBillTypeId")
     out_name = str(row.get("outBillTypeName") or "").strip()
+    # 咨询转订单历史数据：已开票但未写出项类型时，回填默认出项开票类型
+    if str(row.get("invoiceType") or "") == "1" and out_id in (None, "", 0, "0"):
+        try:
+            bt = fetch_one(
+                """
+                SELECT id, name
+                FROM bill_type
+                WHERE type = 1
+                  AND IFNULL(delete_status, 0) = 0
+                ORDER BY id ASC
+                LIMIT 1
+                """
+            )
+            if bt and bt.get("id") not in (None, ""):
+                pk = row.get("id")
+                if pk not in (None, ""):
+                    execute(
+                        """
+                        UPDATE experiment_order
+                        SET out_bill_type_id = %(bid)s
+                        WHERE id = %(oid)s
+                          AND (out_bill_type_id IS NULL OR out_bill_type_id = 0)
+                        """,
+                        {"bid": bt["id"], "oid": pk},
+                    )
+                out_id = bt["id"]
+                out_name = str(bt.get("name") or "").strip()
+        except Exception:
+            pass
     row["outBillTypeName"] = out_name or ""
     row["outBillType"] = (
         {"id": out_id, "name": out_name or "未知"} if out_id not in (None, "", 0, "0") else None

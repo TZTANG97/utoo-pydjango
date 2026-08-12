@@ -407,6 +407,9 @@ def _normalize_consult_payload(raw: dict[str, Any]) -> dict[str, Any]:
         "company_account_id": _to_int(
             raw.get("company_account_id") or raw.get("companyAccountId")
         ),
+        "out_bill_type_id": _to_int(
+            raw.get("out_bill_type_id") or raw.get("outBillTypeId")
+        ),
         "invoiceType": inv,
         "is_video": 1
         if str(raw.get("is_video") or raw.get("isVideo") or "0") in ("1", "true", "ON", "on")
@@ -854,25 +857,22 @@ def _resolve_order_customer(
 ) -> tuple[int | None, int | None]:
     """解析订单客户企业 + 客户账号。
 
-    编辑页账号下拉来自 exp_user（queryAllCompanykh），因此优先写 exp_user.id；
-    并尽量带上 parent_id / 企业名对应的 qd_user_company.id。
+    对齐 Java 咨询/预约转订单：不自动写入 customer_name（客户名称常为空）；
+    编辑页账号下拉来自 exp_user，因此只解析 custom_user_id。
+    company_name 参数保留兼容调用方，不再用于建企业或回填 customer_name。
     """
-    customer_id = _ensure_customer_company(company_name)
+    del company_name  # 对齐 Java：咨询公司名不写入订单客户名称
+    customer_id: int | None = None
     custom_user_id: int | None = None
 
     def _apply_exp(eu: dict[str, Any] | None) -> None:
-        nonlocal customer_id, custom_user_id
+        nonlocal custom_user_id
         if not eu or eu.get("id") in (None, ""):
             return
         try:
             custom_user_id = int(eu["id"])
         except (TypeError, ValueError):
             return
-        if customer_id is None and eu.get("parent_id") not in (None, "", 0, "0"):
-            try:
-                customer_id = int(eu["parent_id"])
-            except (TypeError, ValueError):
-                pass
 
     # 1) 咨询绑定的 user_id：优先当 exp_user
     _apply_exp(_exp_user_by_id(consult_user_id))
@@ -904,6 +904,41 @@ def _resolve_order_customer(
                 pass
 
     return customer_id, custom_user_id
+
+
+def _default_out_bill_type_id() -> int | None:
+    """开票时默认出项开票类型（bill_type.type=1 首条可用）。"""
+    try:
+        row = fetch_one(
+            """
+            SELECT id
+            FROM bill_type
+            WHERE type = 1
+              AND IFNULL(delete_status, 0) = 0
+            ORDER BY id ASC
+            LIMIT 1
+            """
+        )
+    except Exception:
+        return None
+    if not row or row.get("id") in (None, ""):
+        return None
+    try:
+        return int(row["id"])
+    except (TypeError, ValueError):
+        return None
+
+
+def _resolve_out_bill_type_id(raw: Any, *, invoice_type: int) -> int | None:
+    """显式传入优先；开票时回落默认出项类型。"""
+    if invoice_type != 1:
+        return None
+    if raw not in (None, "", 0, "0"):
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            pass
+    return _default_out_bill_type_id()
 
 
 def save_order_from_consult(
@@ -1000,6 +1035,11 @@ def _save_order_from_consult_impl(
     )
 
     invoice_type = 1 if str(c.get("invoiceType")) == "1" else 2
+    # 实验订单「是否开票」详情按 1=是 展示；库内非 1 视为否
+    order_invoice_type = 1 if invoice_type == 1 else 0
+    out_bill_type_id = _resolve_out_bill_type_id(
+        c.get("out_bill_type_id"), invoice_type=order_invoice_type
+    )
     reverso = 1 if str(c.get("reverso_context")) == "1" else 2
     msg_text = (c.get("zxcontent") or c.get("content") or "")[:1000]
 
@@ -1018,7 +1058,8 @@ def _save_order_from_consult_impl(
                  order_time, sale_manager, sale_user, custom_user_id, customer_name,
                  supplier_name, currency_type, pay_way, goods_amount, collection_time,
                  delivery_time, taxes, totalPrice, class_id, test_address_id,
-                 company_account_id, is_video, is_arrive, is_on, add_user_id, exp_type_id)
+                 company_account_id, out_bill_type_id, is_video, is_arrive, is_on,
+                 add_user_id, exp_type_id)
             VALUES
                 (NOW(), 0, %(ono)s, %(ot)s, 5,
                  %(mobile)s, %(rev)s, %(addr)s, %(an)s, %(am)s,
@@ -1026,7 +1067,8 @@ def _save_order_from_consult_impl(
                  NOW(), %(sm)s, %(su)s, %(cuid)s, %(cust)s,
                  %(sup)s, %(ct)s, 1, %(ga)s, %(coll)s,
                  %(delv)s, 0.06, %(tp)s, %(class_id)s, %(taddr)s,
-                 %(acc)s, %(iv)s, %(ia)s, %(io)s, %(add_uid)s, %(class_id)s)
+                 %(acc)s, %(obt)s, %(iv)s, %(ia)s, %(io)s,
+                 %(add_uid)s, %(class_id)s)
             """,
             {
                 "ono": order_no,
@@ -1036,7 +1078,7 @@ def _save_order_from_consult_impl(
                 "addr": c.get("send_address") or "",
                 "an": c.get("addressee_name") or "",
                 "am": c.get("addressee_mobile") or "",
-                "inv": invoice_type,
+                "inv": order_invoice_type,
                 "msg": msg_text,
                 "cid": c["id"],
                 "sm": c.get("sale_manager") or None,
@@ -1052,6 +1094,7 @@ def _save_order_from_consult_impl(
                 "class_id": c.get("class_id"),
                 "taddr": c.get("test_address_id") or None,
                 "acc": c.get("company_account_id") or None,
+                "obt": out_bill_type_id,
                 "iv": c.get("is_video") or 0,
                 "ia": c.get("is_arrive") or 0,
                 "io": c.get("is_on") or 0,
@@ -1089,7 +1132,7 @@ def _save_order_from_consult_impl(
                     "cuid": custom_user_id,
                     "sup": c.get("supplier_name") or None,
                     "ct": c.get("currency_type") or 1,
-                    "inv": invoice_type,
+                    "inv": order_invoice_type,
                     "cid": c["id"],
                     "mobile": c.get("mobile") or "",
                     "class_id": c.get("class_id"),
@@ -1199,7 +1242,7 @@ def _save_order_from_consult_impl(
     execute(
         """
         UPDATE service_consult
-        SET status = 2, order_id = %(oid)s, order_num = %(ono)s,
+        SET status = 2, order_id = %(oid)s,
             invoiceType = %(inv)s, reverso_context = %(rev)s,
             totalPrice = %(tp)s, goods_amount = %(ga)s,
             supplier_name = %(sup)s, sale_manager = %(sm)s,
@@ -1208,7 +1251,6 @@ def _save_order_from_consult_impl(
         """,
         {
             "oid": order_pk,
-            "ono": order_no,
             "inv": c.get("invoiceType"),
             "rev": c.get("reverso_context"),
             "tp": float(c.get("totalPrice") or 0),
