@@ -88,7 +88,10 @@ def _register_payload(
         or (order or {}).get("goodsName")
         or ""
     )
-    sample = str(child.get("sampleId") or child.get("goodsName") or "")[:500]
+    # 被测物名称优先用商品名；编号侧由 IOT 用 childOrderId / sampleId
+    sample_id = str(child.get("sampleId") or "").strip()
+    goods_name = str(child.get("goodsName") or "").strip()
+    sample = (goods_name or sample_id)[:500]
     callback = ""
     base_cb = str(getattr(settings, "IOT_UTOO_CALLBACK_URL", "") or "").strip()
     if base_cb:
@@ -102,6 +105,8 @@ def _register_payload(
         "childOrderId": child_order_id or None,
         "projectName": project[:255],
         "sampleSummary": sample,
+        "sampleId": sample_id[:64] or None,
+        "goodsName": goods_name[:255] or None,
         "callbackUrl": callback or None,
         "operatorUserId": (operator_user_id or "")[:64] or None,
     }
