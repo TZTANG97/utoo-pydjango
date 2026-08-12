@@ -93,11 +93,13 @@ def _register_payload(
     base_cb = str(getattr(settings, "IOT_UTOO_CALLBACK_URL", "") or "").strip()
     if base_cb:
         callback = base_cb
+    child_order_id = str(child.get("childOrderId") or child.get("orderIdCol") or "").strip()[:64]
     payload: dict[str, Any] = {
         "source": "utoo",
         "externalId": f"utoo:{order_id}:{child_id}",
         "orderId": order_id,
         "childId": child_id,
+        "childOrderId": child_order_id or None,
         "projectName": project[:255],
         "sampleSummary": sample,
         "callbackUrl": callback or None,
