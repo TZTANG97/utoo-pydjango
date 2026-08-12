@@ -490,9 +490,18 @@
             <template v-for="(ep, idx) in expectPayRows" :key="'ep6-' + idx">
               <el-descriptions-item label="预计收款时间">{{ ep.time || '-' }}</el-descriptions-item>
               <el-descriptions-item label="预计收款金额" :span="2">{{ ep.price || '-' }}</el-descriptions-item>
+              <el-descriptions-item v-if="ep.actualOnlineReceiveTime" label="实际线上收款时间">
+                {{ ep.actualOnlineReceiveTime }}
+              </el-descriptions-item>
+              <el-descriptions-item
+                v-if="ep.actualOnlineReceiveAmount != null && ep.actualOnlineReceiveAmount !== ''"
+                label="实际线上收款金额"
+                :span="2"
+              >
+                {{ ep.actualOnlineReceiveAmount }}
+              </el-descriptions-item>
               <el-descriptions-item v-if="ep.actualReceiveTime" label="实际收款时间">
                 {{ ep.actualReceiveTime }}
-                <template v-if="ep.actualReceiveOnline">（线上）</template>
               </el-descriptions-item>
               <el-descriptions-item v-if="ep.actualReceiveAmount != null" label="实际收款金额" :span="2">
                 {{ ep.actualReceiveAmount }}
@@ -502,6 +511,21 @@
               </el-descriptions-item>
               <el-descriptions-item v-if="ep.actualInvoiceAmount != null" label="开票金额" :span="2">
                 {{ ep.actualInvoiceAmount }}
+              </el-descriptions-item>
+            </template>
+          </template>
+          <template v-if="onlineReceiveBillRows.length && !expectPayRows.length">
+            <template v-for="(b, idx) in onlineReceiveBillRows" :key="'orb-' + idx">
+              <el-descriptions-item
+                :label="'实际线上收款时间' + (onlineReceiveBillRows.length > 1 ? idx + 1 : '')"
+              >
+                {{ b.billDate || '-' }}
+              </el-descriptions-item>
+              <el-descriptions-item
+                :label="'实际线上收款金额' + (onlineReceiveBillRows.length > 1 ? idx + 1 : '')"
+                :span="2"
+              >
+                {{ b.money ?? '-' }}
               </el-descriptions-item>
             </template>
           </template>
@@ -1836,6 +1860,8 @@ const expectPayRows = computed(() => {
     ? (list as {
         time?: string
         price?: string
+        actualOnlineReceiveTime?: string
+        actualOnlineReceiveAmount?: string | number
         actualReceiveTime?: string
         actualReceiveAmount?: string | number
         actualReceiveOnline?: boolean
@@ -1843,6 +1869,14 @@ const expectPayRows = computed(() => {
         actualInvoiceAmount?: string | number
       }[])
     : []
+})
+
+const onlineReceiveBillRows = computed(() => {
+  const list = detail.value?.onlineReceiveBills
+  if (Array.isArray(list) && list.length) {
+    return list as { billDate?: string; money?: string | number }[]
+  }
+  return []
 })
 
 const receiveBillRows = computed(() => {
