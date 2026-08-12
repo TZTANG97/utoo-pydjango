@@ -30,3 +30,11 @@
 | 微服务拆分与仓库约定.md | MS-0~MS-4 |
 | 开发启动.md | 本地启动 |
 | 小程序对接Django.md | 小程序对接 |
+
+## UTOO × IOT（权威在平台 docs）
+
+IOT 联调文档已统一到 **`E:\utoo\docs\`**，本仓不再保留副本：
+
+- `E:\utoo\docs\UTOO-IOT流程图.md` — 现行流程 / 状态机  
+- `E:\utoo\docs\UTOO-IOT联调方案.md` — 索引与接口速查  
+- `E:\utoo\docs\UTOO-IOT本机交叉配置.md` · `UTOO-IOT验收清单.md`  
