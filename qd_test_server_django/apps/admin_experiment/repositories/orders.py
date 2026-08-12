@@ -1997,7 +1997,7 @@ def get_order(order_id: int) -> dict[str, Any] | None:
     row["canReceiveBill"] = parent_kind and status_ok_bill and view_recv and not sure_recv
     row["canConfirmPay"] = parent_kind and sure_recv
     row["canConfirmCustomer"] = parent_kind and st == 67
-    row["canGenerateAppointment"] = parent_kind and is_online == 0 and is_yyd == 0 and st not in (0,)
+    row["canGenerateAppointment"] = parent_kind and is_yyd == 0 and st not in (0,)
     # 预约单只允许生成一次（与 Java 一致，无重新生成）
     row["canRegenerateAppointment"] = False
     # 创建子单：存在待处理产品行 op_status=1
@@ -2697,11 +2697,17 @@ def list_related_orders(related_order_num: Any) -> list[dict[str, Any]]:
 
 
 def _enrich_accessory_urls(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    from django.conf import settings
+
     from apps.core.services.sysconfig import get_config_row, image_web_server
     from apps.orders.services.sale_detail_enrich import accessory_url, enrich_accessory_rows
 
     config = get_config_row()
-    base = image_web_server(config)
+    # 对齐 Java 订单附件：公网 OSS 域优先，便于 path/name 直链
+    base = (
+        (getattr(settings, "OSS_PUBLIC_BASE_URL", "") or "").rstrip("/")
+        or image_web_server(config)
+    )
     out = enrich_accessory_rows(rows, base)
     for a in out:
         a["url"] = accessory_url(base, a)
@@ -4434,10 +4440,14 @@ def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool
 def auto_generate_appointment_after_online_pay(
     *, order_id: int, staff_user_id: str | int | None = None
 ) -> None:
-    """对齐 Java：线上订单(type 6/8) 收款后若未生成预约单则自动生成。"""
+    """对齐 Java BillController.saveBillData → geranateYyd：
+
+    实验单(order_type 6/8) 在写入收款单(type=2)后，若尚未生成预约单则自动生成。
+    Java 不区分线上/线下（不检查 is_online）；线下付款申请同意走 insert_receive_bill 时也走此钩子。
+    """
     row = fetch_one(
         """
-        SELECT id, order_type AS orderType, is_online AS isOnline, is_yyd AS isYyd,
+        SELECT id, order_type AS orderType, is_yyd AS isYyd,
                test_address_id AS testAddressId
         FROM experiment_order
         WHERE id = %(id)s AND IFNULL(deleteStatus, 0) = 0
@@ -4450,11 +4460,10 @@ def auto_generate_appointment_after_online_pay(
     if str(row.get("orderType") or "") not in ("6", "8"):
         return
     try:
-        is_online = int(row.get("isOnline") or 0)
         is_yyd = int(row.get("isYyd") or 0)
     except (TypeError, ValueError):
         return
-    if is_online != 1 or is_yyd != 0:
+    if is_yyd != 0:
         return
     try:
         addr_id = int(row.get("testAddressId") or 0)
@@ -4470,7 +4479,7 @@ def auto_generate_appointment_after_online_pay(
     pdf_ok, pdf_msg = _build_appointment_pdf(order_id=order_id, test_address_id=addr_id)
     _write_order_log(
         order_id,
-        "线上收款完成，自动生成预约单" + ("" if pdf_ok else f"（PDF:{pdf_msg}）"),
+        "收款完成，自动生成预约单" + ("" if pdf_ok else f"（PDF:{pdf_msg}）"),
         user_id=staff_user_id,
     )
 
