@@ -39,7 +39,7 @@
 				<view class="control detail-address">
 					<input :class="disabled? 'disable': ''" :disabled="disabled" type="text" maxlength="50"
 						v-model="address" placeholder="请输入详细地址">
-					<image v-if="!disabled" @click="getLocationByMap" src="@/static/map.png" mode=""></image>
+					<image v-if="!disabled" @click="getLocationByMap" src="../static/map.png" mode=""></image>
 				</view>
 			</view>
 			<view class="form-item">

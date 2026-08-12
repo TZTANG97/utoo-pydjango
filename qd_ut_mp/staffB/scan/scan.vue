@@ -8,8 +8,8 @@
 				</view>
 				<view class="group-content">
 					<span v-if="sample_id">{{ sample_id.split('_')[1] }}</span>
-					<!-- <image v-if="!id" @click="scan(1)" src="@/static/f-scan.png" mode=""></image> -->
-					<image @click="scan(1)" src="@/static/f-scan.png" mode=""></image>
+					<!-- <image v-if="!id" @click="scan(1)" src="../static/f-scan.png" mode=""></image> -->
+					<image @click="scan(1)" src="../static/f-scan.png" mode=""></image>
 				</view>
 			</view>
 
@@ -29,8 +29,8 @@
 				</view>
 				<view class="group-content">
 					<span v-if="line_id">{{ line_name }}</span>
-					<!-- <image v-if="!id" @click="scan(3)" src="@/static/f-scan.png" mode=""></image> -->
-					<image @click="scan(3)" src="@/static/f-scan.png" mode=""></image>
+					<!-- <image v-if="!id" @click="scan(3)" src="../static/f-scan.png" mode=""></image> -->
+					<image @click="scan(3)" src="../static/f-scan.png" mode=""></image>
 				</view>
 			</view>
 
@@ -50,7 +50,7 @@
 					</view>
 					<view class="group-content">
 						<input type="text" :disabled="true" v-model="store">
-						<image @click="scan(2)" src="@/static/f-scan.png" mode=""></image>
+						<image @click="scan(2)" src="../static/f-scan.png" mode=""></image>
 					</view>
 				</view>
 			</template>
@@ -124,7 +124,7 @@
 							</view>
 							<view class="group-content">
 								<input type="text" :disabled="true" v-model="new_store">
-								<image @click="scan(4)" src="@/static/f-scan.png" mode=""></image>
+								<image @click="scan(4)" src="../static/f-scan.png" mode=""></image>
 							</view>
 						</view>
 					</template>
@@ -137,7 +137,7 @@
 						<div class="text-content">
 							{{ handle === 1? '样品留存' : '样品报废' }}
 						</div>
-						<image src="@/static/switch.png" mode=""></image>
+						<image src="../static/switch.png" mode=""></image>
 					</view>
 				</view>
 			</template>

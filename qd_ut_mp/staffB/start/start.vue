@@ -1,7 +1,7 @@
 <template>
 	<view class="container">
 		<view class="cover" :class="{'close-page': close}">
-			<image style="width: 100%;height: 100%" src="@/static/start.png" mode=""></image>
+			<image style="width: 100%;height: 100%" src="../static/start.png" mode=""></image>
 			<view class="skip" @click="goHome">
 				<text>跳过&nbsp;{{ duration }}s</text>
 			</view>

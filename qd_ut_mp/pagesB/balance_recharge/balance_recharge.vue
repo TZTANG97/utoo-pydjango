@@ -1,7 +1,7 @@
 <template>
 	<view class="balance-recharge">
 		<view class="header">
-			<image src="@/static/logo.png" mode=""></image>
+			<image src="../static/logo.png" mode=""></image>
 			<text>上海愉兔检测科技有限公司</text>
 		</view>
 		<view class="input">

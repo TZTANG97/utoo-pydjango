@@ -586,46 +586,62 @@ def check_save_order_params(c: dict[str, Any]) -> str:
     return ""
 
 
-def _consult_has_samples(consult_id: int) -> bool:
-    """咨询是否已有样品信息（childsyp / sampleList）。"""
+def _list_consult_sample_ids(consult_id: int) -> list[int]:
+    """咨询下未删除的样品 ID 列表。"""
     try:
-        row = fetch_one(
+        rows = fetch_all(
             """
-            SELECT COUNT(1) AS cnt
+            SELECT id
             FROM order_sample_information
             WHERE consult_id = %(cid)s
               AND IFNULL(deleteStatus, 0) = 0
+            ORDER BY id ASC
             """,
             {"cid": int(consult_id)},
         )
     except Exception:
         try:
-            row = fetch_one(
+            rows = fetch_all(
                 """
-                SELECT COUNT(1) AS cnt
+                SELECT id
                 FROM order_sample_information
                 WHERE consult_id = %(cid)s
+                ORDER BY id ASC
                 """,
                 {"cid": int(consult_id)},
             )
         except Exception:
-            return False
-    try:
-        return int((row or {}).get("cnt") or 0) > 0
-    except (TypeError, ValueError):
-        return False
+            return []
+    ids: list[int] = []
+    for r in rows or []:
+        try:
+            sid = int(r.get("id"))
+        except (TypeError, ValueError):
+            continue
+        if sid > 0:
+            ids.append(sid)
+    return ids
 
 
 def _check_children_sample_required(
     consult_id: int, children: list[dict[str, Any]]
 ) -> str:
-    """有样品时，每条产品必须选择样品，否则不可生成订单。"""
-    if not _consult_has_samples(consult_id):
+    """有样品时：每个样品都必须被至少一条产品选中；产品可不选样品。"""
+    sample_ids = _list_consult_sample_ids(consult_id)
+    if not sample_ids:
         return ""
+    selected: set[int] = set()
     for ch in children:
         sid = ch.get("sample_id")
         if sid in (None, "", 0, "0"):
-            return "请为所有产品选择样品后再生成订单"
+            continue
+        try:
+            selected.add(int(sid))
+        except (TypeError, ValueError):
+            continue
+    missing = [sid for sid in sample_ids if sid not in selected]
+    if missing:
+        return "请将所有样品关联到产品后再生成订单"
     return ""
 
 

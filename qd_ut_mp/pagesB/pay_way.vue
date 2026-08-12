@@ -8,14 +8,14 @@
 				<view class="item-list">
 					<view class="pay-item" @click="type = 0">
 						<view class="">
-							<image src="@/static/balance_pay.png" mode=""></image>
+							<image src="./static/balance_pay.png" mode=""></image>
 							<text>余额支付</text>
 						</view>
 						<u-icon name="checkmark-circle" v-if="type == 0" color="#8bc34a" size="32"></u-icon>
 					</view>
 					<view class="pay-item" @click="type = 1">
 						<view class="">
-							<image src="@/static/wechat_pay.png" mode=""></image>
+							<image src="./static/wechat_pay.png" mode=""></image>
 							<text>微信支付</text>
 						</view>
 						<u-icon name="checkmark-circle" v-if="type == 1" color="#8bc34a" size="32"></u-icon>
@@ -25,7 +25,7 @@
 				<div class="integralBox">
 					<div class="imgBox">
 						<div style="display: flex; align-items: center">
-							<image src="../static/tb.png" mode="" />
+							<image src="./static/tb.png" mode="" />
 							<span>积分抵扣</span>
 						</div>
 						<u-switch active-color="#e99c00" size="35" inactive-color="gray" v-model="checked"></u-switch>

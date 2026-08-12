@@ -4,7 +4,7 @@
 			<input @focus="clearList" @confirm="startSearch" v-model="key_word" type="text" placeholder="请输入设备名称"
 				maxlength="20">
 			<image class="search-icon" src="@/static/search.png" mode=""></image>
-			<image v-if="key_word" @click="key_word = '', clearList()" class="clear-icon" src="@/static/clear.png"
+			<image v-if="key_word" @click="key_word = '', clearList()" class="clear-icon" src="../static/clear.png"
 				mode=""></image>
 		</div>
 
@@ -43,7 +43,7 @@
 
 			<view class="search-his" v-if="his_list.length">
 				<text>历史搜索</text>
-				<image @click="clearHis" src="@/static/delete_his.png" mode=""></image>
+				<image @click="clearHis" src="../static/delete_his.png" mode=""></image>
 			</view>
 			<view class="his-list" v-if="his_list.length">
 				<view class="his-item" v-for="(item, idx) in his_list" :key="idx"

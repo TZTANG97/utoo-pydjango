@@ -9,10 +9,12 @@
 
 ## 环境与联调
 
-1. 非 `release`（开发版 / 体验版）默认 `$baseUrl` = `https://uat.utoodev.laide.tech/api`（见各 MP `utils/commonFuncs.js`）；正式版仍为 `https://utootesting.com/console`
+1. `$baseUrl`（见各 MP `utils/commonFuncs.js`）：
+   - `release` / **`trial`（体验版）** → `https://utootesting.com/console`（须已在公众平台配置合法域名）
+   - `develop`（开发版）→ `https://uat.utoodev.laide.tech/api`
 2. 请求头：`token` + `uniapp: true` + `X-Channel: wx`
-3. 微信开发者工具：可勾选**不校验合法域名**；体验版真机需在公众平台配置 `uat.utoodev.laide.tech` 为 request 合法域名
-4. 若要本机联调：临时把 `commonFuncs.js` 的非 release 地址改回 `http://127.0.0.1:18083/api`，启动网关 `:18083`；业务页需上游时再启 `scripts/start-ms-dev.ps1`（order/payment/asset/platform）
+3. 微信开发者工具：可勾选**不校验合法域名**；真机体验版**不会**跳过校验。若体验版白屏/无数据而开调试又正常，多为合法域名未包含当前 `$baseUrl` 主机名
+4. 若要本机联调：临时把 `commonFuncs.js` 的 develop 地址改回 `http://127.0.0.1:18083/api`，启动网关 `:18083`；业务页需上游时再启 `scripts/start-ms-dev.ps1`（order/payment/asset/platform）
 
 ### 环境变量（网关 `.env`）
 

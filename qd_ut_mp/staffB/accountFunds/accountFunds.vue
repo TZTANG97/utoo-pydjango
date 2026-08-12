@@ -31,8 +31,8 @@
 		<view class="cBox" v-else-if="type == 'c'">
 			<view class="search-header syxSearch">
 				<input type="text" v-model="key_words" placeholder="请输入订单号" maxlength="30">
-				<img src="../../static/rmb.png" v-if="rmb" @click="rmbFn" alt="" />
-				<img src="../../static/us.png" v-else @click="rmbFn" alt="" />
+				<img src="../static/rmb.png" v-if="rmb" @click="rmbFn" alt="" />
+				<img src="../static/us.png" v-else @click="rmbFn" alt="" />
 				<view class="btn" @click="searchFn">
 					搜索
 				</view>

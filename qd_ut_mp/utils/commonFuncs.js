@@ -244,11 +244,11 @@ function nativeToast(title, duration = 1800) {
 const dynamicDomain = async function() {
 	// uni.showLoading('身份检测中...')
 	const env = wx.getAccountInfoSync().miniProgram.envVersion
-	// 正式
-	if (env === 'release') {
+	// release / trial 必须走已在公众平台配置的合法域名；
+	// develop 才连 UAT（开发者工具可勾选「不校验合法域名」，真机体验版不会）。
+	if (env === 'release' || env === 'trial') {
 		Vue.prototype.$baseUrl = 'https://utootesting.com/console'
 	} else {
-		// 开发/体验：连 UAT 网关（暂不走本机后端）
 		// Vue.prototype.$baseUrl = 'http://127.0.0.1:18083/api'
 		Vue.prototype.$baseUrl = 'https://uat.utoodev.laide.tech/api'
 	}

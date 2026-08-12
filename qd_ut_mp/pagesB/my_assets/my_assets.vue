@@ -196,7 +196,7 @@
 						</view>
 						<view class="receipt" @click="uploadReceipt">
 							<image v-if="receipt_url" class="receipt-img" :src="receipt_url" mode=""></image>
-							<image v-else class="add-icon" src="@/static/add-icon.png" mode=""></image>
+							<image v-else class="add-icon" src="../static/add-icon.png" mode=""></image>
 						</view>
 					</view>
 

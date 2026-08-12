@@ -204,7 +204,7 @@
 					</view>
 					<view class="group-content">
 						<view class="text-content">
-							<image class="file-icon" src="@/static/file-down.png" mode=""></image>
+							<image class="file-icon" src="../static/file-down.png" mode=""></image>
 						</view>
 					</view>
 				</view>

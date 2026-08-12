@@ -18,24 +18,30 @@
 			}
 		},
 		onLoad() {
+			this.startCountdown()
 			getXcxBanner().then(res => {
-				this.url = this.url + res.obj.banner.path + '/' + res.obj.banner.name
+				const banner = res && res.obj && res.obj.banner
+				if (banner && banner.path && banner.name) {
+					this.url = 'https://qgongye.oss-cn-shanghai.aliyuncs.com/' + banner.path + '/' + banner.name
+				}
+			}).catch(() => {
+				// 体验版未配合法域名等会导致失败；倒计时仍继续，避免白屏卡死
+			})
+		},
+		methods: {
+			startCountdown() {
+				if (this.timer) return
 				this.timer = setInterval(() => {
-					if (this.num == 0) {
-						clearInterval(this.timer)
-						uni.switchTab({
-							url: '/pages/test_sub/test_sub'
-						});
+					if (this.num <= 0) {
+						this.go()
 					} else {
 						this.num--
 					}
 				}, 1000)
-			})
-
-		},
-		methods: {
+			},
 			go() {
 				clearInterval(this.timer)
+				this.timer = null
 				uni.switchTab({
 					url: '/pages/test_sub/test_sub'
 				});

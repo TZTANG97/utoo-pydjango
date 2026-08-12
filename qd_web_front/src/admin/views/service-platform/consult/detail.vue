@@ -965,12 +965,24 @@ async function onSaveOrder() {
   if (!form.test_address_id) return ElMessage.warning('请选择实验测试地址')
   if (!form.company_account_id) return ElMessage.warning('请选择公司汇款账号')
   if (!childs.value.some((c) => c.goods_id)) return ElMessage.warning('请至少选择一条产品信息')
-  // 有样品信息时，每条产品都必须选择样品（对齐业务：未选不可生成订单）
-  if (sampleOpts.value.length > 0 || sampleInfos.value.length > 0) {
-    const miss = childs.value.filter(
-      (c) => c.goods_id && (c.sample_id === '' || c.sample_id == null)
+  // 有样品时：每个样品须被至少一条产品选中；额外产品可不选样品
+  const sampleIds = (
+    sampleOpts.value.length
+      ? sampleOpts.value.map((s) => s.value)
+      : sampleInfos.value.map((s) => s.id ?? s.value)
+  )
+    .filter((id) => id !== '' && id != null)
+    .map((id) => String(id))
+  if (sampleIds.length) {
+    const selected = new Set(
+      childs.value
+        .map((c) => c.sample_id)
+        .filter((id) => id !== '' && id != null)
+        .map((id) => String(id))
     )
-    if (miss.length) return ElMessage.warning('请为所有产品选择样品后再生成订单')
+    if (sampleIds.some((id) => !selected.has(id))) {
+      return ElMessage.warning('请将所有样品关联到产品后再生成订单')
+    }
   }
 
   ordering.value = true

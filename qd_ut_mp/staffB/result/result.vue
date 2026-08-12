@@ -1,6 +1,6 @@
 <template>
 	<view class="content">
-		<image src="@/static/success.png" mode=""></image>
+		<image src="../static/success.png" mode=""></image>
 		<view>{{ title }}</view>
 		<view v-if="showBtn" class="btn" @click="goBack">返回</view>
 	</view>
