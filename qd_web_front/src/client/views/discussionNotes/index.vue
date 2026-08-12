@@ -77,14 +77,16 @@ export default {
 <style scoped lang="scss">
 .notes-page {
   min-height: calc(100vh - 84px);
-  padding: 20px 20px 40px;
+  width: 100%;
+  padding: 16px 20px 28px;
   background: linear-gradient(180deg, #f7f8fa 0%, #eef1f5 100%);
   box-sizing: border-box;
 }
 
 .notes-shell {
-  max-width: 880px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
 }
 
 .notes-hero {
@@ -92,19 +94,19 @@ export default {
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 16px;
-  padding: 22px 24px;
-  border-radius: 16px;
+  margin-bottom: 14px;
+  padding: 20px 24px;
+  border-radius: 14px;
   color: #fff;
   background:
     radial-gradient(circle at 88% 18%, rgba(255, 255, 255, 0.22), transparent 42%),
     linear-gradient(135deg, var(--mainColor) 0%, #ff8a3d 100%);
-  box-shadow: 0 10px 28px rgba(233, 99, 2, 0.2);
+  box-shadow: 0 8px 22px rgba(233, 99, 2, 0.18);
 }
 
 .notes-hero__title {
   margin: 0;
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 650;
   letter-spacing: 0.02em;
 }
@@ -131,16 +133,18 @@ export default {
 }
 
 .notes-panel {
+  width: 100%;
   background: #fff;
-  border-radius: 16px;
+  border-radius: 14px;
   box-shadow: 0 2px 14px rgba(15, 23, 42, 0.06);
   border: 1px solid rgba(15, 23, 42, 0.04);
   overflow: hidden;
 }
 
 .segmented {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
   gap: 8px;
   padding: 14px 16px 12px;
   background: #fff;
@@ -150,11 +154,12 @@ export default {
 .segmented__item {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   gap: 2px;
-  min-height: 58px;
-  padding: 10px 8px;
+  min-width: 120px;
+  min-height: 52px;
+  padding: 10px 18px;
   border: 1px solid transparent;
   border-radius: 12px;
   background: #f7f8fa;
@@ -192,36 +197,51 @@ export default {
 }
 
 .notes-feed {
-  padding: 16px 16px 20px;
+  padding: 16px 20px 20px;
 }
 
 .notes-feed__list {
   width: 100%;
-  height: calc(100vh - 280px);
+  height: calc(100vh - 260px);
   min-height: 420px;
 }
 
 @media (max-width: 720px) {
   .notes-page {
-    padding: 12px 12px 28px;
+    padding: 12px 12px 24px;
   }
 
   .notes-hero {
     flex-direction: column;
     align-items: stretch;
-    padding: 18px;
+    padding: 16px;
   }
 
   .notes-hero__cta {
     width: 100%;
   }
 
+  .segmented {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .segmented__item {
+    min-width: 0;
+    align-items: center;
+    padding: 10px 8px;
+  }
+
   .segmented__hint {
     display: none;
   }
 
+  .notes-feed {
+    padding: 12px;
+  }
+
   .notes-feed__list {
-    height: calc(100vh - 300px);
+    height: calc(100vh - 280px);
     min-height: 360px;
   }
 }
