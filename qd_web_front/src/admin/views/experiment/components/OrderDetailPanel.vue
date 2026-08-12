@@ -173,7 +173,7 @@
           v-if="detail.canReceiveBill"
           type="warning"
           :loading="acting"
-          @click="receiveVisible = true"
+          @click="openReceiveDialog"
         >
           收款
         </el-button>
@@ -1291,8 +1291,23 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="receiveVisible" title="收款" width="420px">
+    <el-dialog v-model="receiveVisible" title="收款" width="480px">
       <el-form label-width="100px">
+        <!-- 对齐 Java：线下订单且客户账号不为空，才显示会员余额收款 -->
+        <el-form-item v-if="showMemberBalanceReceive" label="收款方式">
+          <el-radio-group v-model="receivePayType">
+            <el-radio :value="1">线下收款</el-radio>
+            <el-radio :value="2">会员余额收款</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <template v-if="showMemberBalanceReceive && receivePayType === 2">
+          <el-form-item label="会员手机号">
+            <el-input :model-value="memberReceiveMobile" readonly />
+          </el-form-item>
+          <el-form-item label="会员名称">
+            <el-input :model-value="memberReceiveName" readonly />
+          </el-form-item>
+        </template>
         <el-form-item label="收款金额" required>
           <el-input v-model="receiveMoney" placeholder="请输入收款金额" clearable />
         </el-form-item>
@@ -1306,7 +1321,7 @@
             style="width: 100%"
           />
         </el-form-item>
-        <el-form-item label="备注">
+        <el-form-item v-if="receivePayType !== 2" label="备注">
           <el-input v-model="receiveRemark" type="textarea" :rows="2" placeholder="可选" />
         </el-form-item>
         <p class="receive-hint">
@@ -1663,6 +1678,7 @@ import {
   updateExpChildTimeType,
   saveExpOrderInvoiceBill,
   saveExpOrderReceiveBill,
+  amountPayExpOrder,
   submitExpOrderAudit,
   subPayExpOrder,
   testEndExpOrder,
@@ -1754,6 +1770,26 @@ const receiveVisible = ref(false)
 const receiveMoney = ref('')
 const receiveDate = ref('')
 const receiveRemark = ref('')
+/** 1=线下收款 2=会员余额收款（对齐 Java payType） */
+const receivePayType = ref(1)
+/** 线下订单 + 客户账号不为空 → 显示会员余额收款（Java experimentsub/experiment_order_detail） */
+const showMemberBalanceReceive = computed(() => {
+  const d = detail.value
+  if (!d) return false
+  const online = Number(d.isOnline ?? 0)
+  const cuid = d.customUserId
+  return online === 0 && cuid != null && String(cuid).trim() !== '' && String(cuid) !== '0'
+})
+const memberReceiveMobile = computed(() => {
+  const d = detail.value
+  if (!d) return '-'
+  return String(d.customUserMobile || d.customMobile || '-').trim() || '-'
+})
+const memberReceiveName = computed(() => {
+  const d = detail.value
+  if (!d) return '-'
+  return String(d.customUserName || '-').trim() || '-'
+})
 const invoiceVisible = ref(false)
 const invoiceMoney = ref('')
 const invoiceRemark = ref('')
@@ -2442,7 +2478,26 @@ function fileLabel(f: Record<string, unknown>) {
   return String(f.info || f.name || '附件')
 }
 
+function fileUrl(f: Record<string, unknown>) {
+  const u = String(f.url || '').trim()
+  if (u) return u
+  const path = String(f.path || '').replace(/\\/g, '/').replace(/\/$/, '')
+  const name = String(f.name || '').replace(/^\//, '')
+  if (path && name) return `${path}/${name}`
+  return path || name || ''
+}
+
+/** 对齐 Java：href=path/name 直开 OSS 公网地址 */
+function isOssPublicUrl(url: string) {
+  return /^https?:\/\/.+/i.test(url) && /aliyuncs\.com/i.test(url)
+}
+
 async function onPreviewFile(f: Record<string, unknown>) {
+  const direct = fileUrl(f)
+  if (isOssPublicUrl(direct)) {
+    window.open(direct, '_blank')
+    return
+  }
   const id = Number(f.id)
   if (!id) {
     ElMessage.warning('文件无效')
@@ -2456,6 +2511,11 @@ async function onPreviewFile(f: Record<string, unknown>) {
 }
 
 async function onDownloadFile(f: Record<string, unknown>) {
+  const direct = fileUrl(f)
+  if (isOssPublicUrl(direct)) {
+    window.open(direct, '_blank')
+    return
+  }
   const id = Number(f.id)
   if (!id) {
     ElMessage.warning('文件无效')
@@ -2822,12 +2882,21 @@ async function onSaveReceive() {
     return
   }
   await runAction(async () => {
-    const res = await saveExpOrderReceiveBill({
-      id: props.orderId,
-      money,
-      billDate: receiveDate.value || undefined,
-      logInfo: receiveRemark.value.trim() || '录入收款',
-    })
+    const useBalance = showMemberBalanceReceive.value && receivePayType.value === 2
+    const res = useBalance
+      ? await amountPayExpOrder({
+          id: props.orderId,
+          ofId: props.orderId,
+          money,
+          billDate: receiveDate.value || undefined,
+          exp_userId: detail.value?.customUserId,
+        })
+      : await saveExpOrderReceiveBill({
+          id: props.orderId,
+          money,
+          billDate: receiveDate.value || undefined,
+          logInfo: receiveRemark.value.trim() || '录入收款',
+        })
     if (!isAjaxOk(res)) {
       ElMessage.error(ajaxErrorMessage(res, '收款失败'))
       return
@@ -2837,9 +2906,18 @@ async function onSaveReceive() {
     receiveMoney.value = ''
     receiveDate.value = ''
     receiveRemark.value = ''
+    receivePayType.value = 1
     await load()
     emit('refreshed')
   })
+}
+
+function openReceiveDialog() {
+  receivePayType.value = 1
+  receiveMoney.value = ''
+  receiveDate.value = ''
+  receiveRemark.value = ''
+  receiveVisible.value = true
 }
 
 async function onSaveReferencePrice(row: Record<string, unknown>) {

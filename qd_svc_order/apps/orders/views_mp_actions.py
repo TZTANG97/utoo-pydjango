@@ -203,6 +203,30 @@ def add_bill_data(request: Request):
 @api_view(["GET", "POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
+def amount_pay(request: Request):
+    """bill/amountPay.ajax — 后台会员余额收款。"""
+    data = merge_payload(request)
+    oid = _order_pk(data)
+    if not oid:
+        return Response(ajax_fail("参数错误"))
+    from apps.admin_experiment.services.split_money import save_member_balance_receive
+
+    ok_flag, msg = save_member_balance_receive(
+        order_id=oid,
+        money=data.get("money") or data.get("amount"),
+        exp_user_id=data.get("exp_userId")
+        or data.get("expUserId")
+        or data.get("customUserId")
+        or "",
+        staff_user_id="",
+        bill_date=str(data.get("billDate") or data.get("bill_date") or ""),
+    )
+    return _ok_or_fail(ok_flag, msg)
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
 def sub_order_detail(request: Request):
     """experimentSubOrder/orderdetail.ajax — 复用主单员工详情。"""
     data = merge_payload(request)

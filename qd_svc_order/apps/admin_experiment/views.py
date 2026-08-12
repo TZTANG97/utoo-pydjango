@@ -906,6 +906,37 @@ def order_save_receive_bill(request: Request, user=None):
 @authentication_classes([])
 @permission_classes([AllowAny])
 @admin_ajax_view()
+def order_amount_pay(request: Request, user=None):
+    """对齐 Java bill/amountPay.ajax：会员余额收款。"""
+    data = merge_payload(request)
+    order_id = to_int(data.get("id") or data.get("ofId") or data.get("orderId"))
+    if not order_id:
+        return fail("参数错误")
+    money = data.get("money") or data.get("amount")
+    staff_id = ""
+    if isinstance(user, dict):
+        staff_id = _staff_id(user)
+    from apps.admin_experiment.services.split_money import save_member_balance_receive
+
+    ok_flag, msg = save_member_balance_receive(
+        order_id=order_id,
+        money=money,
+        exp_user_id=data.get("exp_userId")
+        or data.get("expUserId")
+        or data.get("customUserId")
+        or "",
+        staff_user_id=staff_id,
+        bill_date=str(data.get("billDate") or data.get("bill_date") or ""),
+    )
+    if not ok_flag:
+        return fail(msg)
+    return ok(res_msg=msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
 def order_share_ratio(request: Request, user=None):
     data = merge_payload(request)
     order_id = to_int(data.get("id") or data.get("ofId"))

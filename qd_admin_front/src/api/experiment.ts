@@ -138,6 +138,8 @@ export const costSettleExpOrder = (id: string | number) =>
   postAjax(`${BASE}/order/costSettle.ajax`, { id })
 export const saveExpOrderReceiveBill = (data: Record<string, unknown>) =>
   postAjax(`${BASE}/order/saveReceiveBill.ajax`, data)
+export const amountPayExpOrder = (data: Record<string, unknown>) =>
+  postAjax(`${BASE}/order/amountPay.ajax`, data)
 export const updateExpOrderShareRatio = (data: Record<string, unknown>) =>
   postAjax(`${BASE}/order/shareRatio.ajax`, data)
 export const addExpOrderRelated = (data: Record<string, unknown>) =>

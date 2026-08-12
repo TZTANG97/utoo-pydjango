@@ -46,6 +46,7 @@ urlpatterns = [
     path("adminExperiment/order/withdrawAudit.ajax", views.order_withdraw_audit),
     path("adminExperiment/order/costSettle.ajax", views.order_cost_settle),
     path("adminExperiment/order/saveReceiveBill.ajax", views.order_save_receive_bill),
+    path("adminExperiment/order/amountPay.ajax", views.order_amount_pay),
     path("adminExperiment/order/shareRatio.ajax", views.order_share_ratio),
     path("adminExperiment/order/addRelated.ajax", views.order_add_related),
     path("adminExperiment/order/delRelated.ajax", views.order_del_related),

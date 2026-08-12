@@ -645,3 +645,112 @@ def save_receive_bill(
     if split_msg:
         return True, split_msg
     return True, "收款成功"
+
+
+def _payment_pa_num(pay_type: str = "3") -> str:
+    """对齐 Java payInfoLogNumGeranate：ZF/CZ/HK + yyyyMM + 序号。"""
+    from datetime import datetime
+
+    prefix_map = {"1": "CZ", "2": "HK", "3": "ZF", "4": "TX"}
+    prefix = prefix_map.get(str(pay_type), "ZF")
+    orderstr = prefix + datetime.now().strftime("%Y%m")
+    row = fetch_one(
+        """
+        SELECT pa_num FROM pay_info_log
+        WHERE pa_num LIKE %(like)s
+        ORDER BY pa_num DESC
+        LIMIT 1
+        """,
+        {"like": f"{orderstr}%"},
+    )
+    if row and row.get("pa_num"):
+        try:
+            n = int(str(row["pa_num"])[-5:]) + 1
+        except (TypeError, ValueError):
+            n = 1
+    else:
+        n = 1
+    return orderstr + (str(n).zfill(5) if n < 100000 else str(n))
+
+
+@transaction.atomic
+def save_member_balance_receive(
+    *,
+    order_id: int,
+    money: Decimal | float | str,
+    exp_user_id: str | int = "",
+    staff_user_id: str | int = "",
+    bill_date: str = "",
+) -> tuple[bool, str]:
+    """
+    对齐 Java bill/amountPay.ajax：线下订单 + 客户账号 → 会员余额收款。
+    扣会员余额、写 pay_info_log(pay_way=6)、再录入收款单。
+    """
+    order = fetch_one(
+        """
+        SELECT
+            id, order_id AS orderId, order_type AS orderType,
+            is_online AS isOnline, custom_user_id AS customUserId
+        FROM experiment_order
+        WHERE id = %(id)s
+        LIMIT 1
+        """,
+        {"id": order_id},
+    )
+    if not order:
+        return False, "订单不存在"
+    ot = str(order.get("orderType") or "")
+    if ot not in ("6", "8", "1", "7"):
+        return False, "当前订单类型不支持录入收款"
+    try:
+        is_online = int(order.get("isOnline") or 0)
+    except (TypeError, ValueError):
+        is_online = 0
+    if is_online != 0:
+        return False, "线上订单不支持会员余额收款"
+    cuid_raw = exp_user_id or order.get("customUserId")
+    try:
+        cuid = int(cuid_raw) if cuid_raw not in (None, "") else 0
+    except (TypeError, ValueError):
+        cuid = 0
+    if not cuid:
+        return False, "订单未绑定客户账号，无法使用会员余额收款"
+    amt = _d(money)
+    if amt <= 0:
+        return False, "收款金额须大于 0"
+
+    from apps.payments.repositories import user_account as ua_repo
+
+    ua_repo.get_or_create(cuid)
+    if ua_repo.deduct_balance(cuid, amt) < 1:
+        return False, "余额不足"
+
+    log_id = execute_insert(
+        """
+        INSERT INTO pay_info_log
+            (addTime, deleteStatus, user_id, money, status, order_id,
+             pay_type, pay_way, pa_num, use_integral, integral_money, payTime)
+        VALUES
+            (NOW(), 0, %(uid)s, %(money)s, 2, %(order_id)s,
+             3, 6, %(pa_num)s, 0, 0, NOW())
+        """,
+        {
+            "uid": cuid,
+            "money": float(amt),
+            "order_id": str(order_id),
+            "pa_num": _payment_pa_num("3"),
+        },
+    )
+    ua_repo.insert_account_log(cuid, -amt, of_id=int(log_id) if log_id else None)
+
+    ok_flag, msg = save_receive_bill(
+        order_id=order_id,
+        money=amt,
+        staff_user_id=staff_user_id,
+        log_info="后端-会员余额收款",
+        bill_date=bill_date,
+    )
+    if not ok_flag:
+        transaction.set_rollback(True)
+        return False, msg or "收款失败"
+    return True, msg if msg and msg != "收款成功" else "支付成功!"
