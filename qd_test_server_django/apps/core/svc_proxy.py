@@ -20,6 +20,11 @@ _FORWARD_HEADERS = (
     "Accept",
     "token",
     "X-Channel",  # 中台渠道：admin / pc / wx，透传给上游，不据此拆服务
+    # IOT → UTOO HMAC 回调（缺任一都会被验签判为「缺少签名头」）
+    "X-IOT-App-Id",
+    "X-IOT-Timestamp",
+    "X-IOT-Nonce",
+    "X-IOT-Signature",
 )
 
 _BINARY_CT_HINTS = (
@@ -114,9 +119,18 @@ def forward_request(
                 upstream = client.get(url, params=params, headers=headers)
             elif request.method.upper() == "POST":
                 ct = (request.content_type or "").lower()
+                # HMAC 回调依赖「原始 body + 签名头」；重编码会改字节串导致验签失败。
+                preserve_raw_body = bool(
+                    request.META.get("HTTP_X_IOT_SIGNATURE")
+                    or ("/api/iot/callback/" in (path or "").lower())
+                )
                 # form/multipart 必须原样透传 body；勿用 json= 重编码，
                 # 否则 headers 里残留的 form Content-Type 会导致上游解析不到参数。
-                if "application/json" in ct:
+                if preserve_raw_body:
+                    upstream = client.post(
+                        url, content=request.body, params=params, headers=headers
+                    )
+                elif "application/json" in ct:
                     fwd = {k: v for k, v in headers.items() if k.lower() != "content-type"}
                     # submitExpOrder 等接口 body 为 JSON 数组；_plain_form_dict 只认 dict，
                     # list 会被当成 {} 转发，上游报「订单没有数据」。
