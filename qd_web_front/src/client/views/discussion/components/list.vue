@@ -461,7 +461,8 @@ export default {
 .discussion-feed {
   &--scroll {
     overflow: auto;
-    max-height: calc(100vh - 220px);
+    height: 100%;
+    max-height: none;
   }
 }
 

@@ -75,27 +75,35 @@ export default {
 </script>
 
 <style scoped lang="scss">
+/* 撑满 app-main，禁止外层再出滚动条；只让列表区域滚动 */
 .notes-page {
-  min-height: calc(100vh - 84px);
+  height: 100%;
   width: 100%;
-  padding: 16px 20px 28px;
+  min-height: 0;
+  padding: 16px 20px 16px;
   background: linear-gradient(180deg, #f7f8fa 0%, #eef1f5 100%);
   box-sizing: border-box;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .notes-shell {
   width: 100%;
-  max-width: none;
-  margin: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .notes-hero {
+  flex-shrink: 0;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 14px;
-  padding: 20px 24px;
+  padding: 18px 22px;
   border-radius: 14px;
   color: #fff;
   background:
@@ -134,6 +142,10 @@ export default {
 
 .notes-panel {
   width: 100%;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   background: #fff;
   border-radius: 14px;
   box-shadow: 0 2px 14px rgba(15, 23, 42, 0.06);
@@ -142,6 +154,7 @@ export default {
 }
 
 .segmented {
+  flex-shrink: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: stretch;
@@ -197,18 +210,24 @@ export default {
 }
 
 .notes-feed {
-  padding: 16px 20px 20px;
+  flex: 1;
+  min-height: 0;
+  padding: 16px 20px 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .notes-feed__list {
   width: 100%;
-  height: calc(100vh - 260px);
-  min-height: 420px;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
 }
 
 @media (max-width: 720px) {
   .notes-page {
-    padding: 12px 12px 24px;
+    padding: 12px;
   }
 
   .notes-hero {
@@ -238,11 +257,6 @@ export default {
 
   .notes-feed {
     padding: 12px;
-  }
-
-  .notes-feed__list {
-    height: calc(100vh - 280px);
-    min-height: 360px;
   }
 }
 </style>
