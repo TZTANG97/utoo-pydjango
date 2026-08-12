@@ -40,7 +40,10 @@
           </el-form-item>
         </el-col>
         <el-col v-if="!isSubcontractSub" :span="12">
-          <el-form-item :label="isExpSub ? '客户名称' : '客户名称'" :required="isMainOrder">
+          <el-form-item
+            :label="isExpSub ? '客户名称' : '客户名称'"
+            :required="!isSubcontractSub && !form.customerId && !form.customUserId"
+          >
             <div class="inline-ops">
               <el-select
                 v-model="form.customerId"
@@ -1529,8 +1532,9 @@ async function load() {
 }
 
 async function onSave() {
-  if (!isSubcontractSub.value && !form.customerId) {
-    ElMessage.warning('请选择客户名称')
+  // 对齐 Java：客户名称 / 客户账号二选一，仅两者都空才拦截
+  if (!isSubcontractSub.value && !form.customerId && !form.customUserId) {
+    ElMessage.warning('客户名称和客户账号不能同时为空')
     return
   }
   if (!form.saleManagerId) {
