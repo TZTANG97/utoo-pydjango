@@ -6,7 +6,7 @@
     @scroll="handleScrollArea"
   >
     <div v-if="!isLoading && items.length === 0" class="feed-empty">
-      <el-empty description="暂无讨论内容" />
+      <el-empty :description="emptyDescription" />
     </div>
 
     <div class="feed-list">
@@ -32,7 +32,7 @@
                 :title="fullTime(item.addTime)"
               >发布于 {{ relativeTime(item.addTime) }}</time>
               <span v-if="listType === 1 && item.likeTime" class="post-card__time-extra">
-                · 点赞于 {{ relativeTime(item.likeTime) }}
+                · 喜欢于 {{ relativeTime(item.likeTime) }}
               </span>
               <span v-else-if="listType === 2 && item.collectTime" class="post-card__time-extra">
                 · 收藏于 {{ relativeTime(item.collectTime) }}
@@ -189,7 +189,13 @@ export default {
     };
   },
   computed: {
-    ...mapGetters(['avatar'])
+    ...mapGetters(['avatar']),
+    emptyDescription() {
+      if (this.listType === 1) return '还没有喜欢过内容，去讨论区逛逛吧';
+      if (this.listType === 2) return '还没有收藏，看到好帖可以先收起来';
+      if (this.listType === 3) return '还没有发布过帖子';
+      return '暂无讨论内容';
+    },
   },
   watch: {
     listType() {
@@ -266,32 +272,40 @@ export default {
           await this.loadComments(row);
         }
       } else if(type == 2) {
+        const nextFlag = row.isLike == 1 ? 0 : 1;
         let data = {
           entryId: row.id,
           type: 1,
-          isFlag: row.isLike == 1 ? 0 : 1
+          isFlag: nextFlag
         }
         entryMenu(data).then(res => {
           if(res.res == true) {
-            row.isLike = row.isLike == 1 ? 0 : 1;
+            row.isLike = nextFlag;
             if(this.listType == 1) {
               this.items.splice(index, 1)
+              this.$message.success(nextFlag === 1 ? '已喜欢' : '已取消喜欢')
             }
           }
+        }).catch(() => {
+          this.$message.error('操作失败，请稍后重试')
         })
       } else if(type == 3) {
+        const nextFlag = row.isCollect == 1 ? 0 : 1;
         let data = {
           entryId: row.id,
           type: 2,
-          isFlag: row.isCollect == 1 ? 0 : 1
+          isFlag: nextFlag
         }
         entryMenu(data).then(res => {
           if(res.res == true) {
-            row.isCollect = row.isCollect == 1 ? 0 : 1;
+            row.isCollect = nextFlag;
             if(this.listType == 2) {
               this.items.splice(index, 1)
+              this.$message.success(nextFlag === 1 ? '已收藏' : '已取消收藏')
             }
           }
+        }).catch(() => {
+          this.$message.error('操作失败，请稍后重试')
         })
       } else if(type == 4) {
         this.$confirm('是否确认删除？', '警告', {
@@ -463,10 +477,11 @@ export default {
   padding: 20px 22px;
   box-shadow: 0 2px 12px rgba(15, 23, 42, 0.06);
   border: 1px solid rgba(0, 0, 0, 0.04);
-  transition: box-shadow 0.2s ease;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
 
   &:hover {
-    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.08);
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.09);
+    transform: translateY(-1px);
   }
 }
 
@@ -563,32 +578,40 @@ export default {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
+  padding: 7px 14px;
   font-size: 13px;
   color: #595959;
-  background: #f5f6f8;
-  border: none;
-  border-radius: 20px;
+  background: transparent;
+  border: 1px solid #e8eaed;
+  border-radius: 999px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease,
+    transform 0.15s ease;
 
   .el-icon {
     font-size: 16px;
   }
 
   &:hover {
-    background: #eee;
-    color: #333;
+    background: #f7f8fa;
+    color: #303133;
+    border-color: #dcdfe6;
+  }
+
+  &:active {
+    transform: scale(0.97);
   }
 
   &--active {
     color: var(--mainColor);
-    background: rgba(233, 99, 2, 0.1);
+    background: rgba(233, 99, 2, 0.08);
+    border-color: rgba(233, 99, 2, 0.28);
   }
 
   &--danger:hover {
     color: #f56c6c;
     background: #fef0f0;
+    border-color: #fbc4c4;
   }
 }
 

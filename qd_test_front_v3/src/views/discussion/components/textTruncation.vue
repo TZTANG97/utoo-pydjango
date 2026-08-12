@@ -3,7 +3,13 @@
     <!-- 文本内容容器 -->
     <div class="text-content ql-editor" :class="{ 'expanded': isExpanded }" ref="textContainer">
       <div v-if="accessory && accessory.length > 0 && !isExpanded" class="leftImageBox">
-          <img class="leftImage" :src="buildOssImageUrl(accessory[0].path, accessory[0].name, accessory[0].imageUrl)" />
+          <img
+            class="leftImage"
+            :src="buildOssImageUrl(accessory[0].path, accessory[0].name, accessory[0].imageUrl)"
+            alt=""
+            @error="onThumbError"
+          />
+          <div v-if="thumbBroken" class="leftImage-fallback">暂无图片</div>
       </div>
       <div style="flex: 1" :class="{
         'showImageBox': !isExpanded && accessory && accessory.length > 0
@@ -62,15 +68,20 @@ export default {
     return {
       isExpanded: false, // 是否展开
       showToggleBtn: false, // 是否显示切换按钮
-      slides: []
+      slides: [],
+      thumbBroken: false,
     };
   },
   watch: {
     // 监听内容变化，重新判断是否需要显示按钮
     content() {
+      this.thumbBroken = false;
       this.$nextTick(() => {
         this.checkTextOverflow();
       });
+    },
+    accessory() {
+      this.thumbBroken = false;
     },
   },
   mounted() {
@@ -82,6 +93,12 @@ export default {
   },
   methods: {
     buildOssImageUrl,
+    onThumbError(e) {
+      this.thumbBroken = true;
+      if (e && e.target) {
+        e.target.style.display = "none";
+      }
+    },
     initContent(text) {
       if(text) {
         let str = decodeURIComponent(text);
@@ -153,12 +170,30 @@ export default {
   display: flex;
 }
 .leftImageBox {
-  margin-right: 10px;
-  .leftImage {
-    width: 200px;
-    object-fit: contain;
-    height: 150px;
-  }
+  position: relative;
+  margin-right: 14px;
+  flex-shrink: 0;
+  width: 148px;
+  height: 110px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #f3f4f6;
+}
+.leftImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.leftImage-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #a8abb2;
+  background: #f3f4f6;
 }
 
 /* 展开状态样式 */

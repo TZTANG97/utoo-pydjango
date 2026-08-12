@@ -1,108 +1,228 @@
 <template>
-  <div class="container">
-<!--    <el-tabs v-model="activeName" @tab-click="handleClick" class="tab_content">-->
-<!--      <el-tab-pane label="喜欢" name="1"></el-tab-pane>-->
-<!--      <el-tab-pane label="收藏" name="2"></el-tab-pane>-->
-<!--      <el-tab-pane label="发布" name="3"></el-tab-pane>-->
-<!--    </el-tabs>-->
-    <div class="tabs_box">
-      <div class="tabs">
-          <div class="tabs_item" :class="activeName == '1' ? 'active':''" @click="handleClick('1')">喜欢</div>
-          <div class="tabs_item" :class="activeName == '2' ? 'active':''" @click="handleClick('2')">收藏</div>
-          <div class="tabs_item" :class="activeName == '3' ? 'active':''" @click="handleClick('3')">发布</div>
-      </div>
-      <div style="height: 40px; position:relative;">
-        <el-button v-if="show && activeName == '3'" class="issueBtn" size="medium" type="primary" @click="toIssue">发布</el-button>
-      </div>
-    </div>
+  <div class="notes-page">
+    <div class="notes-shell">
+      <header class="notes-hero">
+        <div class="notes-hero__text">
+          <h1 class="notes-hero__title">喜欢收藏</h1>
+          <p class="notes-hero__desc">管理你点过喜欢、收藏过的讨论，以及自己发布的帖子</p>
+        </div>
+        <el-button
+          v-if="activeName === '3'"
+          class="notes-hero__cta"
+          type="primary"
+          @click="toIssue"
+        >
+          发布帖子
+        </el-button>
+      </header>
 
-    <div v-if="activeName == '1'" class="content">
-      <discussionList v-if="show && activeName == '1'" :listType="1" :areaScroll="true" style="width: 100%; height: calc(100vh - 220px)"></discussionList>
-    </div>
-    <div v-if="activeName == '2'" class="content">
-      <discussionList v-if="show && activeName == '2'" :listType="2" :areaScroll="true" style="width: 100%; height: calc(100vh - 220px)"></discussionList>
-    </div>
-    <div v-if="activeName == '3'" class="content">
-      <discussionList v-if="show && activeName == '3'" :listType="3" :areaScroll="true" style="width: 100%; height: calc(100vh - 220px)"></discussionList>
+      <div class="notes-panel">
+        <nav class="segmented" role="tablist">
+          <button
+            v-for="tab in tabs"
+            :key="tab.value"
+            type="button"
+            role="tab"
+            class="segmented__item"
+            :class="{ 'is-active': activeName === tab.value }"
+            :aria-selected="activeName === tab.value"
+            @click="handleClick(tab.value)"
+          >
+            <span class="segmented__label">{{ tab.label }}</span>
+            <span class="segmented__hint">{{ tab.hint }}</span>
+          </button>
+        </nav>
+
+        <div class="notes-feed">
+          <discussionList
+            :key="'notes-' + activeName"
+            :list-type="Number(activeName)"
+            :area-scroll="true"
+            class="notes-feed__list"
+          />
+        </div>
+      </div>
     </div>
   </div>
 </template>
+
 <script>
 import discussionList from "@client/views/discussion/components/list.vue";
 
 export default {
-  components: {discussionList},
+  name: "DiscussionNotes",
+  components: { discussionList },
   data() {
     return {
-      activeName: '1',
-      show: true
-    }
+      activeName: "1",
+      tabs: [
+        { value: "1", label: "喜欢", hint: "我点过的" },
+        { value: "2", label: "收藏", hint: "稍后看" },
+        { value: "3", label: "发布", hint: "我的帖子" },
+      ],
+    };
   },
   methods: {
     handleClick(type) {
+      if (this.activeName === type) return;
       this.activeName = type;
-      this.show = false;
-      setTimeout(() => {
-        this.show = true;
-      },500)
     },
     toIssue() {
-      this.$router.push('/discussionNotes/issue')
+      this.$router.push("/discussionNotes/issue");
     },
-  }
-}
+  },
+};
 </script>
 
 <style scoped lang="scss">
-.container {
-  position: relative;
-  background: #f5f6f8;
-  min-height: 100vh;
-  padding-top: 72px;
-  .tab_content {
-    position: absolute;
-    background: #ffffff;
-    left: 16px;
-    right: 16px;
-    top: 0;
-  }
+.notes-page {
+  min-height: calc(100vh - 84px);
+  padding: 20px 20px 40px;
+  background: linear-gradient(180deg, #f7f8fa 0%, #eef1f5 100%);
+  box-sizing: border-box;
 }
-.content {
-  padding: 0 20px 24px;
+
+.notes-shell {
   max-width: 880px;
   margin: 0 auto;
 }
-.issueBtn {
-  position: absolute;
-  right: 0;
-  top: 50px;
-  z-index: 3;
-}
-.tabs_box {
-  position: static;
-  top: 0;
-  background: #ffffff;
-  width: 100%;
+
+.notes-hero {
   display: flex;
+  align-items: flex-end;
   justify-content: space-between;
-  .tabs {
-    display: flex;
-    padding: 0 20px;
-    .tabs_item {
-      width: 60px;
-      height: 40px;
-      font-size: 14px;
-      display: flex;
-      align-items: center;
-      cursor: pointer;
-      justify-content: center;
-      border-bottom: 3px solid transparent;
-    }
-    .active {
-      color:  var(--mainColor);
-      border-bottom: 3px solid  var(--mainColor);
-    }
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 22px 24px;
+  border-radius: 16px;
+  color: #fff;
+  background:
+    radial-gradient(circle at 88% 18%, rgba(255, 255, 255, 0.22), transparent 42%),
+    linear-gradient(135deg, var(--mainColor) 0%, #ff8a3d 100%);
+  box-shadow: 0 10px 28px rgba(233, 99, 2, 0.2);
+}
+
+.notes-hero__title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.notes-hero__desc {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  opacity: 0.92;
+}
+
+.notes-hero__cta {
+  flex-shrink: 0;
+  border: none;
+  background: #fff;
+  color: var(--mainColor);
+  font-weight: 600;
+
+  &:hover,
+  &:focus {
+    background: #fff7f0;
+    color: var(--mainColor);
   }
 }
 
+.notes-panel {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 2px 14px rgba(15, 23, 42, 0.06);
+  border: 1px solid rgba(15, 23, 42, 0.04);
+  overflow: hidden;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 14px 16px 12px;
+  background: #fff;
+  border-bottom: 1px solid #f0f2f5;
+}
+
+.segmented__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 58px;
+  padding: 10px 8px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: #f7f8fa;
+  color: #595959;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease,
+    box-shadow 0.18s ease, transform 0.18s ease;
+
+  &:hover {
+    background: #f0f2f5;
+    color: #303133;
+  }
+
+  &.is-active {
+    color: var(--mainColor);
+    background: rgba(233, 99, 2, 0.08);
+    border-color: rgba(233, 99, 2, 0.18);
+    box-shadow: inset 0 0 0 1px rgba(233, 99, 2, 0.06);
+  }
+
+  &:active {
+    transform: scale(0.98);
+  }
+}
+
+.segmented__label {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.segmented__hint {
+  font-size: 12px;
+  opacity: 0.72;
+}
+
+.notes-feed {
+  padding: 16px 16px 20px;
+}
+
+.notes-feed__list {
+  width: 100%;
+  height: calc(100vh - 280px);
+  min-height: 420px;
+}
+
+@media (max-width: 720px) {
+  .notes-page {
+    padding: 12px 12px 28px;
+  }
+
+  .notes-hero {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 18px;
+  }
+
+  .notes-hero__cta {
+    width: 100%;
+  }
+
+  .segmented__hint {
+    display: none;
+  }
+
+  .notes-feed__list {
+    height: calc(100vh - 300px);
+    min-height: 360px;
+  }
+}
 </style>
