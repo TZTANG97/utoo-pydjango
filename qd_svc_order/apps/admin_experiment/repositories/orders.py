@@ -2891,12 +2891,55 @@ def list_order_bills(order_id: int) -> list[dict[str, Any]]:
     return out
 
 
+def list_online_receive_bills(order_id: int) -> list[dict[str, Any]]:
+    """线上收款单（exp_online_qd_bill type=2），对齐 Java 实际线上收款时间/金额。"""
+    try:
+        rows = fetch_all(
+            """
+            SELECT
+                b.id, b.money, b.type,
+                b.bill_date AS billDate, b.add_time AS addTime,
+                b.mark AS mark, b.qd_bill_id AS qdBillId
+            FROM exp_online_qd_bill b
+            WHERE b.exp_of_id = %(oid)s AND b.type = 2
+            ORDER BY IFNULL(b.bill_date, b.add_time) ASC, b.id ASC
+            """,
+            {"oid": order_id},
+        )
+    except Exception:
+        return []
+    out: list[dict[str, Any]] = []
+    for r in rows or []:
+        bd = r.get("billDate") or r.get("addTime")
+        out.append(
+            {
+                "id": r.get("id"),
+                "money": r.get("money"),
+                "type": 2,
+                "typeLabel": "线上收款",
+                "billDate": str(bd)[:19] if bd else "",
+                "mark": str(r.get("mark") or ""),
+                "qdBillId": r.get("qdBillId"),
+                "isOnline": 1,
+            }
+        )
+    return out
+
+
 def attach_expect_pay_actuals(row: dict[str, Any], bills: list[dict[str, Any]]) -> None:
     """把预计收款槽位与实际收款/开票按序号对齐，便于详情分行展示时间。"""
     expect = list(row.get("expectPayList") or [])
     recv = [b for b in bills if int(b.get("type") or 0) == 2]
     inv = [b for b in bills if int(b.get("type") or 0) == 1]
+    try:
+        oid = int(row.get("id") or 0)
+    except (TypeError, ValueError):
+        oid = 0
+    online_recv = list_online_receive_bills(oid) if oid else []
     for i, ep in enumerate(expect):
+        if i < len(online_recv):
+            ep["actualOnlineReceiveTime"] = online_recv[i].get("billDate") or ""
+            ep["actualOnlineReceiveAmount"] = online_recv[i].get("money")
         if i < len(recv):
             ep["actualReceiveTime"] = recv[i].get("billDate") or ""
             ep["actualReceiveAmount"] = recv[i].get("money")
@@ -2906,7 +2949,96 @@ def attach_expect_pay_actuals(row: dict[str, Any], bills: list[dict[str, Any]]) 
             ep["actualInvoiceAmount"] = inv[i].get("money")
     row["expectPayList"] = expect
     row["receiveBills"] = recv
+    row["onlineReceiveBills"] = online_recv
     row["invoiceBills"] = inv
+
+
+def _link_exp_purchase_child(
+    *, purchase_order_id: int, order_child_id: int, order_type: str
+) -> None:
+    """写入 exp_qd_purchase_order_child。
+
+    Java getChildsByPurchaseId2 强制 poc.order_type=9/10，缺该字段时老系统产品表为空。
+    """
+    ot = str(order_type or "").strip()
+    params = {"pid": int(purchase_order_id), "cid": int(order_child_id), "ot": ot}
+    try:
+        execute(
+            """
+            INSERT INTO exp_qd_purchase_order_child
+                (purchase_order_id, order_child_id, order_type, addTime)
+            VALUES (%(pid)s, %(cid)s, %(ot)s, NOW())
+            """,
+            params,
+        )
+        return
+    except Exception:
+        pass
+    try:
+        execute(
+            """
+            INSERT INTO exp_qd_purchase_order_child
+                (purchase_order_id, order_child_id, order_type)
+            VALUES (%(pid)s, %(cid)s, %(ot)s)
+            """,
+            params,
+        )
+        return
+    except Exception:
+        pass
+    # 兼容极旧库无 order_type 列
+    try:
+        execute(
+            """
+            INSERT INTO exp_qd_purchase_order_child (purchase_order_id, order_child_id, addTime)
+            VALUES (%(pid)s, %(cid)s, NOW())
+            """,
+            params,
+        )
+    except Exception:
+        try:
+            execute(
+                """
+                INSERT INTO exp_qd_purchase_order_child (purchase_order_id, order_child_id)
+                VALUES (%(pid)s, %(cid)s)
+                """,
+                params,
+            )
+        except Exception:
+            pass
+
+
+def repair_exp_purchase_child_order_types(purchase_order_id: int | None = None) -> None:
+    """回填历史关联行缺失的 order_type，供 Java 详情查询。"""
+    try:
+        if purchase_order_id:
+            execute(
+                """
+                UPDATE exp_qd_purchase_order_child poc
+                INNER JOIN experiment_order o ON o.id = poc.purchase_order_id
+                SET poc.order_type = CAST(o.order_type AS CHAR)
+                WHERE poc.purchase_order_id = %(pid)s
+                  AND (
+                    poc.order_type IS NULL
+                    OR poc.order_type = ''
+                    OR CAST(poc.order_type AS CHAR) <> CAST(o.order_type AS CHAR)
+                  )
+                  AND CAST(o.order_type AS CHAR) IN ('9', '10')
+                """,
+                {"pid": int(purchase_order_id)},
+            )
+        else:
+            execute(
+                """
+                UPDATE exp_qd_purchase_order_child poc
+                INNER JOIN experiment_order o ON o.id = poc.purchase_order_id
+                SET poc.order_type = CAST(o.order_type AS CHAR)
+                WHERE (poc.order_type IS NULL OR poc.order_type = '')
+                  AND CAST(o.order_type AS CHAR) IN ('9', '10')
+                """
+            )
+    except Exception:
+        pass
 
 
 def get_order_detail_bundle(
@@ -2919,6 +3051,9 @@ def get_order_detail_bundle(
     apply_audit_permission(row, viewer_user_id)
     apply_pay_audit_permission(row, viewer_user_id)
     ot = str(row.get("orderType") or "")
+    # 打开子单详情时顺带回填，修复历史单在 Java 端产品表为空
+    if ot in ("9", "10"):
+        repair_exp_purchase_child_order_types(order_id)
     children = list_order_children(order_id, viewer_user_id=viewer_user_id)
     role_ctx = _viewer_role_context(viewer_user_id)
     logs = _filter_order_logs_for_viewer(
@@ -2975,6 +3110,7 @@ def get_order_detail_bundle(
     if not can_view_finance:
         row["expectPayList"] = []
         row["receiveBills"] = []
+        row["onlineReceiveBills"] = []
         row["invoiceBills"] = []
         row["totalPrice"] = None
         row["currencyLabel"] = ""
@@ -5483,27 +5619,13 @@ def create_sub_order_from_parent(
             file_ids = [str(x) for x in raw_acc] + file_ids
         _attach_accessories_to_order(int(new_id), file_ids)
 
-    # 把产品行挂到新子单（采购关联表）
+    # 把产品行挂到新子单（采购关联表；order_type 对齐 Java getChildsByPurchaseId2）
     for i, cid in enumerate(ids):
-        try:
-            execute(
-                """
-                INSERT INTO exp_qd_purchase_order_child (purchase_order_id, order_child_id, addTime)
-                VALUES (%(pid)s, %(cid)s, NOW())
-                """,
-                {"pid": new_id, "cid": cid},
-            )
-        except Exception:
-            try:
-                execute(
-                    """
-                    INSERT INTO exp_qd_purchase_order_child (purchase_order_id, order_child_id)
-                    VALUES (%(pid)s, %(cid)s)
-                    """,
-                    {"pid": new_id, "cid": cid},
-                )
-            except Exception:
-                pass
+        _link_exp_purchase_child(
+            purchase_order_id=int(new_id),
+            order_child_id=int(cid),
+            order_type=child_ot,
+        )
         # 更新测试员 / 分包单价 / 预计完成 / 实验平台
         tu = test_user_ids[i] if i < len(test_user_ids) else ""
         cp = cost_prices[i] if i < len(cost_prices) else ""
@@ -5560,6 +5682,8 @@ def create_sub_order_from_parent(
                 """,
                 {"cid": cid},
             )
+    # 再兜底回填本单关联行 order_type，防止静默插入失败导致 Java 看不到产品
+    repair_exp_purchase_child_order_types(int(new_id))
     _write_order_log(
         parent_id,
         f"创建{'实验' if child_ot == '10' else '分包'}子订单 {new_no}",
