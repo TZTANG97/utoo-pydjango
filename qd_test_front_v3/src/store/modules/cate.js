@@ -22,13 +22,23 @@ const mutations = {
 }
 
 const actions = {
-    // 获取分类列表
+    // 获取分类列表（兼容误返回 secList/tList 的旧数据）
     getCateList({commit}) {
         return new Promise((resolve, reject) => {
             getTestCateListApi()
               .then((res) => {
                 if (res && res.res) {
-                  commit('SET_CATE_LIST', res.obj || [])
+                  const list = (res.obj || []).map((lv1) => {
+                    const secs = lv1.childList || lv1.secList || []
+                    return {
+                      ...lv1,
+                      childList: secs.map((lv2) => ({
+                        ...lv2,
+                        childList: lv2.childList || lv2.tList || [],
+                      })),
+                    }
+                  })
+                  commit('SET_CATE_LIST', list)
                 }
                 resolve()
               })

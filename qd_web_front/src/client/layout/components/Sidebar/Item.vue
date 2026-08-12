@@ -21,11 +21,12 @@ export default {
         if (props.icon.includes('el-icon')) {
           vnodes.push(h('i', { class: [props.icon, 'sub-el-icon'] }))
         } else {
-          vnodes.push(h(SvgIcon, { iconClass: props.icon }))
+          vnodes.push(h(SvgIcon, { iconClass: props.icon, className: 'menu-icon' }))
         }
       }
       if (props.title) {
-        vnodes.push(h('span', props.title))
+        // class 供收起态 CSS 精确隐藏；title 供无 tooltip 时悬停提示
+        vnodes.push(h('span', { class: 'menu-title', title: props.title }, props.title))
       }
       return vnodes
     }

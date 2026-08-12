@@ -9,6 +9,7 @@ import { getSwiperListApi } from "@/api/index";
 import { mapGetters } from "vuex";
 import {alterTime} from '@/utils/index'
 import eventBus from "@/utils/event-bus";
+import { loadAMap } from "@/utils/loadScript";
 
 export default {
   name: "Test",
@@ -22,7 +23,6 @@ export default {
       maxDocumentWidth: 0,
       startHeightList: [],
       recommendList: [],
-      selected_test_list: [],
       flag: true,
       timer: null,
       scroll_num: 0,
@@ -33,7 +33,6 @@ export default {
       dialog_content: "",
       disableScroll: false,
       current_swiper_idx: 0,
-      inLevel2: false,
       //   判断数据是否已经获取完。
       isGetData: false,
       onlineServiceShow: false,
@@ -44,6 +43,7 @@ export default {
       page: 1,
       limit: 5,
       total: 0,
+      _homeScrollBound: false,
     };
   },
   mounted() {
@@ -59,11 +59,13 @@ export default {
       this.disableScroll = val;
     });
 
+    this.bindHomeScroll();
     this.$nextTick(() => this.initMap());
   },
 
   beforeUnmount() {
     eventBus.$off("changeVal");
+    this.unbindHomeScroll();
   },
 
   computed: {
@@ -72,48 +74,69 @@ export default {
 
   beforeRouteEnter(to, from, next) {
     next((vm) => {
-      vm.app.className = "test-app";
-      vm.app.addEventListener("wheel", vm.scrollEvent);
+      vm.bindHomeScroll();
     });
   },
 
   beforeRouteLeave(to, from, next) {
+    this.unbindHomeScroll();
     next();
-    this.app.removeEventListener("wheel", this.scrollEvent);
-    this.app.className = "";
   },
 
   methods: {
-    initMap() {
-      if (typeof window.AMap === "undefined") {
-        console.warn("[test] 高德地图未加载，跳过地图");
-        return;
+    bindHomeScroll() {
+      if (!this.app) {
+        this.app = document.querySelector("#app");
       }
+      if (!this.app || this._homeScrollBound) return;
+      this.app.classList.add("test-app");
+      this.app.addEventListener("wheel", this.scrollEvent, { passive: false });
+      this._homeScrollBound = true;
+    },
+
+    unbindHomeScroll() {
+      if (!this.app) {
+        this.app = document.querySelector("#app");
+      }
+      if (!this.app || !this._homeScrollBound) return;
+      this.app.removeEventListener("wheel", this.scrollEvent);
+      this.app.classList.remove("test-app");
+      this._homeScrollBound = false;
+      this.scroll_num = 0;
+      this.scrollingDisabled = false;
+      try {
+        this.app.scrollTo({ top: 0 });
+      } catch (_) {}
+    },
+
+    initMap() {
       if (!document.getElementById("map")) {
         return;
       }
-      try {
-        const map = new AMap.Map("map", {
-          resizeEnable: true,
-          center: [121.185252, 31.346588],
-          zoom: 13,
+      loadAMap()
+        .then((AMap) => {
+          const map = new AMap.Map("map", {
+            resizeEnable: true,
+            center: [121.185252, 31.346588],
+            zoom: 13,
+          });
+          const marker = new AMap.Marker({
+            position: map.getCenter(),
+            icon: "//a.amap.com/jsapi_demos/static/demo-center/icons/poi-marker-red.png",
+            anchor: "bottom-center",
+            offset: new AMap.Pixel(0, 0),
+          });
+          marker.setMap(map);
+          marker.setTitle("上海市嘉定区恒永路328号联东U谷嘉定国际企业港90幢102室");
+          marker.setLabel({
+            direction: "top",
+            content:
+              "<div class='info'>上海市嘉定区恒永路328号联东U谷嘉定国际企业港90幢102室</div>",
+          });
+        })
+        .catch((e) => {
+          console.warn("[test] 地图加载失败", e);
         });
-        const marker = new AMap.Marker({
-          position: map.getCenter(),
-          icon: "//a.amap.com/jsapi_demos/static/demo-center/icons/poi-marker-red.png",
-          anchor: "bottom-center",
-          offset: new AMap.Pixel(0, 0),
-        });
-        marker.setMap(map);
-        marker.setTitle("上海市嘉定区恒永路328号联东U谷嘉定国际企业港90幢102室");
-        marker.setLabel({
-          direction: "top",
-          content:
-            "<div class='info'>上海市嘉定区恒永路328号联东U谷嘉定国际企业港90幢102室</div>",
-        });
-      } catch (e) {
-        console.warn("[test] 地图初始化失败", e);
-      }
     },
     alterTime,
     checkDetail(url = "") {
@@ -133,10 +156,9 @@ export default {
 
     // 滚动事件
     scrollEvent(event) {
-      if(this.systemShow) return
-      // 没有获取完数据之前则不允许滚动
-      if (!this.isGetData)
-        return event.preventDefault && event.preventDefault();
+      if (this.systemShow || this.onlineServiceShow || this.feedbackShow) return;
+      // 数据未就绪时仍允许浏览器默认滚动，避免整页被锁死
+      if (!this.isGetData) return;
 
       // dialog打开，三级分类可滚动，菜单打开时 恢复默认滚动
       if (this.dialogVisible || this.disableScroll || this.showCate) return;
@@ -181,10 +203,12 @@ export default {
               surplus_height = 0;
             }
 
-            this.app.scrollTo({
-              top: current_height,
-              behavior: "smooth",
-            });
+            if (this.app) {
+              this.app.scrollTo({
+                top: current_height,
+                behavior: "smooth",
+              });
+            }
 
             if (!surplus_height) {
               clearInterval(timer);
@@ -208,22 +232,20 @@ export default {
       });
     },
 
-    // 选中
-    selectedTest(idx, idx2) {
-      this.selected_test_list.splice(idx, 1, idx2);
-      this.inLevel2 = true;
-    },
-
     // 获取推荐列表
     getRecommendTestList() {
-      getRecommendTestListApi().then((res) => {
-        if (res.res) {
-          // res.obj[0]['childList'] = [...res.obj[0]['childList'], ...res.obj[0]['childList']]
-          this.recommendList = res.obj;
-          this.selected_test_list = new Array(res.obj.length).fill(0);
+      getRecommendTestListApi()
+        .then((res) => {
+          if (res.res) {
+            this.recommendList = res.obj || [];
+          }
+        })
+        .catch((e) => {
+          console.warn("[test] getRecommendTestList failed", e);
+        })
+        .finally(() => {
           this.isGetData = true;
-        }
-      });
+        });
     },
 
     // 了解更多
@@ -323,10 +345,14 @@ export default {
     // 回到顶部
     backTop() {
       this.scroll_num = 0;
-      this.app.scrollTo({
-        top: 0,
-        behavior: "smooth",
-      });
+      this.scrollingDisabled = false;
+      const el = this.app || document.querySelector("#app");
+      if (el) {
+        el.scrollTo({
+          top: 0,
+          behavior: "smooth",
+        });
+      }
     },
   },
 };
@@ -445,55 +471,48 @@ export default {
           <div class="level-2-cate" :ref="`level-2-${idx}`" style="left: 0">
             <div
               class="level-2"
-              @mouseenter="selectedTest(idx, idx2)"
               v-for="(level2, idx2) in item['childList']"
               :key="idx2"
-              @mouseleave="inLevel2 = false"
+              @mouseenter="enterTestList((level2.childList || []).length)"
+              @mouseleave="disableScroll = false"
             >
-              <!--              :class="selected_test_list[idx] === idx2? 'level-2-active' : '' "-->
-              <!--              :style="{ zIndex: 1 + idx2, marginLeft: idx2? '-30px' : '0' }"-->
-              <!--              -->
               <span class="test-name">{{ level2.name }}</span>
-              <div style="height: 500px; overflow: hidden">
-                <img :src="level2['main_photo']" alt="" />
-
+              <div class="cover">
+                <img :src="level2['main_photo']" :alt="level2.name" />
                 <div
                   class="bottom-popup"
-                  :style="{
-                    bottom:
-                      selected_test_list[idx] === idx2 && inLevel2
-                        ? '0'
-                        : '-270px',
+                  :class="{
+                    'is-empty': !(level2.childList && level2.childList.length),
                   }"
                 >
-                  <div class="title">
-                    {{ level2.name }}
-                  </div>
-                  <div class="partition"></div>
-
-                  <div
-                    class="test-list"
-                    @mouseenter="enterTestList(level2.childList.length)"
-                    @mouseleave="disableScroll = false"
-                  >
-                    <div
-                      class="test"
-                      @click="$router.push(`/test_detail/${test['id']}`)"
-                      v-for="(test, idx) in level2.childList"
-                      :key="idx"
-                    >
-                      <span>{{ test["name"] }}</span>
-                      <svg-icon
-                        icon-class="more"
-                        style="margin-left: 6px; vertical-align: middle"
-                      ></svg-icon>
+                  <template v-if="level2.childList && level2.childList.length">
+                    <div class="title">{{ level2.name }}</div>
+                    <div class="partition"></div>
+                    <div class="test-list">
+                      <div
+                        class="test"
+                        v-for="(test, tIdx) in level2.childList"
+                        :key="tIdx"
+                        @click.stop="$router.push(`/test_detail/${test['id']}`)"
+                      >
+                        <span>{{ test["name"] }}</span>
+                        <svg-icon
+                          icon-class="more"
+                          class-name="test-arrow"
+                        ></svg-icon>
+                      </div>
                     </div>
-                  </div>
-
-                  <div class="more" @click="viewDetail(2, level2)">
-                    <span>了解更多</span>
-                    <svg-icon iconClass="more" class-name="icon"></svg-icon>
-                  </div>
+                    <div class="more" @click.stop="viewDetail(2, level2)">
+                      <span>了解更多</span>
+                      <svg-icon iconClass="more" class-name="icon"></svg-icon>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <div class="more more-alone" @click.stop="viewDetail(2, level2)">
+                      <span>了解更多</span>
+                      <svg-icon iconClass="more" class-name="icon"></svg-icon>
+                    </div>
+                  </template>
                 </div>
               </div>
             </div>
@@ -584,23 +603,18 @@ export default {
     <el-dialog
       class="detail-dialog"
       title="系统消息"
-      :visible.sync="systemShow"
+      v-model="systemShow"
     >
       <!-- <div style="width: 100%;height: 400px;overflow: auto;"> -->
         <el-table :data="tableData" style="width: 100%;" height="400">
         <el-table-column type="index" label="序号"> </el-table-column>
         <el-table-column prop="addTime" label="日期">
-          <template slot-scope="scope">
-            {{ alterTime(scope.row.addTime) }}
+          <template #default="{ row }">
+            {{ alterTime(row.addTime) }}
           </template>
         </el-table-column>
         <el-table-column prop="info" label="描述">
         </el-table-column>
-        <!-- <el-table-column prop="status" label="状态">
-          <template slot-scope="scope">
-            {{ scope.row.status == 0 ? '待回复' : scope.row.status == 1 ? '已回复' : scope.row.status == 2 ? '已生成订单' : scope.row.status == 3 ? '已取消' : '' }}
-          </template>
-        </el-table-column> -->
       </el-table>
 
       <div style="display: flex;justify-content: right">
@@ -617,7 +631,7 @@ export default {
         </el-pagination>
       </div>
       <!-- </div> -->
-      <span slot="footer" class="dialog-footer">
+      <template #footer>
         <el-button
           type="primary"
           style="width: 80px; height: 40px; font-size: 15px"
@@ -625,13 +639,13 @@ export default {
           @click="systemShow = false"
           >确 定</el-button
         >
-      </span>
+      </template>
     </el-dialog>
 
     <el-dialog
       class="detail-dialog"
       :title="`分类详情（${dialog_content['name']}）`"
-      :visible.sync="dialogVisible"
+      v-model="dialogVisible"
     >
       <div class="cate-content">
         <div class="cate-main-img">
@@ -654,7 +668,7 @@ export default {
     <el-dialog
       class="detail-dialog"
       title="在线客服（8:30 - 18:30）"
-      :visible.sync="onlineServiceShow"
+      v-model="onlineServiceShow"
       width="660px"
     >
       <div style="width: 100%;text-align: center;font-size: 16px;font-weight: 700">
@@ -672,7 +686,7 @@ export default {
       :close-on-click-modal="false"
       style="height: 380px !important"
       title="意见反馈"
-      :visible.sync="feedbackShow"
+      v-model="feedbackShow"
     >
       <div>
         <el-input
@@ -714,7 +728,7 @@ export default {
           >意见反馈</span
         >
       </div>
-      <div @click="backTop" v-if="scroll_num">
+      <div @click="backTop" :class="{ 'is-disabled': !scroll_num }">
         <img
           width="30px"
           height="30px"
@@ -784,14 +798,20 @@ export default {
     height: 50px;
     background-color: #f29800;
     cursor: pointer;
+    user-select: none;
     span {
       display: none;
     }
     img {
       display: block;
+      pointer-events: none;
+    }
+    &.is-disabled {
+      opacity: 0.45;
+      cursor: default;
     }
   }
-  div:hover {
+  div:hover:not(.is-disabled) {
     display: flex;
     justify-content: center;
     align-items: center;
@@ -986,105 +1006,185 @@ export default {
         display: inline-block;
         position: relative;
         width: 290px;
-        transition: all 0.2s;
+        margin-right: 0;
+        vertical-align: top;
         background-size: 100% 100%;
         overflow: hidden;
-        border-radius: 3px;
+        border-radius: 8px;
+
+        .cover {
+          position: relative;
+          height: 500px;
+          overflow: hidden;
+          border-radius: 8px;
+          background: #f3f3f3;
+        }
 
         &:hover {
           img {
-            transform: scale(1.3);
+            transform: scale(1.06);
+          }
+
+          .bottom-popup {
+            transform: translateY(0);
+            opacity: 1;
+            pointer-events: auto;
           }
         }
 
         .bottom-popup {
           position: absolute;
           left: 0;
-          bottom: -270px;
+          right: 0;
+          bottom: 0;
           width: 100%;
-          height: 270px;
-          background-color: var(--mainColor);
-          transition: all 0.2s;
+          max-height: 62%;
+          min-height: 88px;
+          background: linear-gradient(
+            180deg,
+            rgba(226, 120, 12, 0.92) 0%,
+            rgba(214, 98, 0, 0.98) 100%
+          );
+          backdrop-filter: blur(2px);
+          transition: transform 0.28s ease, opacity 0.28s ease;
           box-sizing: border-box;
-          padding: 20px;
+          padding: 16px 16px 14px;
+          transform: translateY(100%);
+          opacity: 0;
+          pointer-events: none;
+          display: flex;
+          flex-direction: column;
+
+          &.is-empty {
+            max-height: none;
+            min-height: 0;
+            height: auto;
+            padding: 14px 16px;
+          }
 
           .more {
-            position: absolute;
-            bottom: 20px;
-            left: 20px;
-            font-size: 14px;
+            margin-top: 10px;
+            font-size: 13px;
             color: #fff;
             cursor: pointer;
+            flex-shrink: 0;
 
             .icon {
-              vertical-align: bottom;
-              margin-left: 5px;
+              vertical-align: middle;
+              margin-left: 4px;
               fill: #fff;
+              width: 14px;
+              height: 14px;
+            }
+
+            &:hover {
+              opacity: 0.9;
             }
           }
 
-          .test-list {
-            margin-top: 20px;
+          .more-alone {
+            margin-top: 0;
+            text-align: center;
             font-size: 14px;
-            color: hsla(0, 0%, 100%, 0.7);
-            line-height: 2;
+          }
+
+          .test-list {
+            margin-top: 12px;
+            font-size: 13px;
+            color: hsla(0, 0%, 100%, 0.88);
+            line-height: 1.9;
             cursor: pointer;
-            height: 136px;
-            overflow-y: scroll;
+            flex: 1;
+            min-height: 0;
+            max-height: 140px;
+            overflow-y: auto;
+            overscroll-behavior: contain;
 
             .test {
-              width: 230px;
-              overflow: hidden;
-              text-overflow: ellipsis;
-              white-space: nowrap;
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 8px;
+              padding: 2px 0;
+              width: 100%;
+              box-sizing: border-box;
+
+              span {
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                flex: 1;
+                min-width: 0;
+              }
+
+              .test-arrow {
+                flex-shrink: 0;
+                fill: hsla(0, 0%, 100%, 0.75);
+                width: 12px;
+                height: 12px;
+              }
             }
 
             &::-webkit-scrollbar {
-              width: 6px;
+              width: 4px;
             }
 
             &::-webkit-scrollbar-thumb {
-              background: hsla(0, 0%, 100%, 0.7);
-              border-radius: 10px;
+              background: hsla(0, 0%, 100%, 0.45);
+              border-radius: 4px;
             }
 
             &::-webkit-scrollbar-thumb:hover {
-              background: #fff;
+              background: hsla(0, 0%, 100%, 0.75);
             }
 
             .test:hover {
-              color: var(--menusColor);
+              color: #fff;
+
+              .test-arrow {
+                fill: #fff;
+              }
             }
           }
 
           .title {
-            font-size: 20px;
+            font-size: 17px;
+            font-weight: 600;
             color: #fff;
+            line-height: 1.3;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
           }
 
           .partition {
-            width: 100%;
-            height: 1px;
-            background-color: #fff;
-            margin-top: 20px;
+            width: 36px;
+            height: 2px;
+            background-color: hsla(0, 0%, 100%, 0.65);
+            margin-top: 10px;
+            border-radius: 1px;
           }
         }
 
         img {
           width: 100%;
           height: 100%;
-          transition: all 0.4s;
+          object-fit: cover;
+          transition: transform 0.45s ease;
         }
 
         .test-name {
           display: block;
           height: 30px;
-          //position: absolute;
-          //left: 30px;
-          //top: 0px;
-          color: #000;
-          font-size: 20px;
-          font-weight: bold;
+          line-height: 30px;
+          margin-bottom: 8px;
+          color: #222;
+          font-size: 18px;
+          font-weight: 600;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          padding: 0 2px;
         }
       }
     }

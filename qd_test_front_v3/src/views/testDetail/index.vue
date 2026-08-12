@@ -81,15 +81,13 @@ export default {
       </el-carousel-item>
     </el-carousel>
 
-    <el-divider>
+    <div class="book-action">
       <el-button
         size="medium"
         type="primary"
-        style="margin-bottom: 50px"
         @click="subTest()"
-      >立即预约</el-button
-      >
-    </el-divider>
+      >立即预约</el-button>
+    </div>
     <div class="test-desc" v-html="testDetail['app_project_details']" style="margin-top: 70px" />
     <sub-test-all
       v-if="special_type == 1"
@@ -118,20 +116,15 @@ export default {
 </template>
 
 <style scoped lang="scss">
-.el-divider {
-  margin-top: 35px;
-}
-
-.el-divider__text {
-  font-size: 18px;
-  color: #999;
+.book-action {
+  margin: 40px 0 50px;
+  text-align: center;
 }
 
 .el-button {
   width: 160px;
   height: 54px;
   font-size: 18px;
-  margin-top: 40px;
 }
 
 .test-desc {

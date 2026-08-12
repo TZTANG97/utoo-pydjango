@@ -47,7 +47,8 @@ export default {
     // 打开dialog弹窗
     async openCateDialog() {
       if (!this.showCate) return
-      let level_2 = this.cateList[this.level1_idx]['childList']
+      const current = this.cateList[this.level1_idx] || {}
+      let level_2 = current.childList || current.secList || []
       this.column_1 = level_2[0] ? [level_2[0]] : []
       this.column_2 = level_2[1] ? [level_2[1]] : []
       this.column_3 = level_2[2] ? [level_2[2]] : []
@@ -126,6 +127,10 @@ export default {
       window.open(location.origin + `/#/test_detail/${id}`)
     },
 
+    prefetchCompanyInt() {
+      import(/* webpackChunkName: "companyInt" */ "@client/views/companyInt/index")
+    },
+
     openDiscussion() {
       window.open(location.origin + '/#/discussion', '_blank')
     },
@@ -149,7 +154,11 @@ export default {
            @mouseenter="showCate = true, openCateDialog()">测试预约
       </div>
       <div class="test-pro">
-        <router-link target="_blank" to="/companyInt">
+        <router-link
+          target="_blank"
+          to="/companyInt"
+          @mouseenter="prefetchCompanyInt"
+        >
           公司介绍
         </router-link>
       </div>
@@ -206,7 +215,7 @@ export default {
               </div>
               <div class="level-3-list">
                 <!--查看实验详情-->
-                <div class="level-3-item" v-for="(level3, idx2) in item['childList']" :key="idx2">
+                <div class="level-3-item" v-for="(level3, idx2) in (item['childList'] || item['tList'] || [])" :key="idx2">
 <!--                  <span>{{ level3['name'] }}</span>-->
                   <img style="width: 100%;" :src="level3.main_photo" />
                   <div class="mask">
@@ -224,7 +233,7 @@ export default {
               </div>
               <div class="level-3-list">
                 <!--查看实验详情-->
-                <div class="level-3-item" v-for="(level3, idx2) in item['childList']" :key="idx2">
+                <div class="level-3-item" v-for="(level3, idx2) in (item['childList'] || item['tList'] || [])" :key="idx2">
 <!--                  <span>{{ level3['name'] }}</span>-->
                   <img style="width: 100%;" :src="level3.main_photo" />
                   <div class="mask">
@@ -242,7 +251,7 @@ export default {
               </div>
               <div class="level-3-list">
                 <!--查看实验详情-->
-                <div class="level-3-item" v-for="(level3, idx2) in item['childList']" :key="idx2">
+                <div class="level-3-item" v-for="(level3, idx2) in (item['childList'] || item['tList'] || [])" :key="idx2">
 <!--                  <span>{{ level3['name'] }}</span>-->
                   <img style="width: 100%;" :src="level3.main_photo" />
                   <div class="mask">
@@ -260,7 +269,7 @@ export default {
               </div>
               <div class="level-3-list">
                 <!--查看实验详情-->
-                <div class="level-3-item" v-for="(level3, idx2) in item['childList']" :key="idx2">
+                <div class="level-3-item" v-for="(level3, idx2) in (item['childList'] || item['tList'] || [])" :key="idx2">
 <!--                  <span>{{ level3['name'] }}</span>-->
                   <img style="width: 100%;" :src="level3.main_photo" />
                   <div class="mask">

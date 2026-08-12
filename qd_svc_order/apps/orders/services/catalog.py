@@ -56,11 +56,12 @@ def build_index_class_list() -> list[dict[str, Any]]:
                         ),
                     }
                 )
+            # 对齐 Java indexClassList：二级/三级均用 childList（前端商品栏依赖此字段）
             sec_list.append(
                 {
                     "id": sec["id"],
                     "name": sec.get("name"),
-                    "tList": t_list,
+                    "childList": t_list,
                 }
             )
         photo = photo_map.get(int(em.get("manage_main_photo_id") or 0), {})
@@ -71,7 +72,7 @@ def build_index_class_list() -> list[dict[str, Any]]:
                 "main_photo": _photo_url(
                     image_server, photo.get("path"), photo.get("name")
                 ),
-                "secList": sec_list,
+                "childList": sec_list,
             }
         )
     return result

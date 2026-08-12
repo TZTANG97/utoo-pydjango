@@ -1,6 +1,7 @@
 <script>
 import { UploadPermitApi } from "@/api/index";
 import { mapMutations } from "vuex";
+import { loadMammoth, loadXlsx } from "@/utils/loadScript";
 
 export default {
   name: "offlinePay",
@@ -49,9 +50,6 @@ export default {
         this.$emit("input", val);
       },
     },
-  },
-  mounted() {
-    console.log(window.mammoth, "mammoth");
   },
   methods: {
     ...mapMutations({ CHANGE_LOADING: "app/CHANGE_LOADING" }),
@@ -190,8 +188,8 @@ export default {
             fileType ==
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
           ) {
-            window.mammoth
-              .convertToHtml({ arrayBuffer: fileURL })
+            loadMammoth()
+              .then((mammoth) => mammoth.convertToHtml({ arrayBuffer: fileURL }))
               .then((result) => {
                 const index = result.value.indexOf("src");
                 if (index != -1) {
@@ -212,12 +210,19 @@ export default {
             fileType ==
               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           ) {
-            const data = new Uint8Array(fileURL);
-            const workbook = XLSX.read(data, { type: "array" });
-            const sheetName = workbook.SheetNames[0]; // 读取第一个工作表
-            const sheet = workbook.Sheets[sheetName];
-            const html = XLSX.utils.sheet_to_html(sheet);
-            previewContainer.innerHTML = html;
+            loadXlsx()
+              .then((XLSX) => {
+                const data = new Uint8Array(fileURL);
+                const workbook = XLSX.read(data, { type: "array" });
+                const sheetName = workbook.SheetNames[0];
+                const sheet = workbook.Sheets[sheetName];
+                previewContainer.innerHTML = XLSX.utils.sheet_to_html(sheet);
+              })
+              .catch((err) => {
+                console.log(err, "err");
+                previewContainer.innerHTML =
+                  "<p>Error: " + err.message + "</p>";
+              });
           } else {
             return this.$message.error("该文件暂不支持预览！");
           }

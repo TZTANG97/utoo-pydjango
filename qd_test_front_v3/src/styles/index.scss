@@ -25,6 +25,20 @@ html {
   height: 100%;
 }
 
+/* 首页全屏分页滚动容器（test 页挂载时加在 #app 上） */
+#app.test-app {
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scroll-behavior: auto;
+  overscroll-behavior: none;
+}
+
+#app.test-app::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
 *,
 *:before,
 *:after {

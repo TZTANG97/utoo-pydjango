@@ -70,6 +70,10 @@ export default {
   .hamburger-container {
     line-height: 46px;
     height: 100%;
+    width: 54px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     float: left;
     cursor: pointer;
     transition: background .3s;

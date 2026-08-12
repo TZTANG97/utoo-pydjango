@@ -63,6 +63,9 @@
 
     .svg-icon {
       margin-right: 16px;
+      width: 18px;
+      height: 18px;
+      vertical-align: middle;
     }
 
     .sub-el-icon {
@@ -128,6 +131,51 @@
   .hideSidebar {
     .sidebar-container {
       width: 54px !important;
+
+      // Element Plus 收起态：只居中显示图标，隐藏文字，避免竖排挤字
+      .el-menu--collapse {
+        width: 54px !important;
+
+        .el-menu-item,
+        .el-sub-menu > .el-sub-menu__title {
+          padding: 0 !important;
+          display: flex !important;
+          justify-content: center;
+          align-items: center;
+
+          .svg-icon,
+          .sub-el-icon {
+            margin: 0 !important;
+            font-size: 18px;
+          }
+
+          .menu-title,
+          > span:not(.el-sub-menu__icon-arrow) {
+            height: 0 !important;
+            width: 0 !important;
+            overflow: hidden !important;
+            visibility: hidden !important;
+            display: inline-block !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+
+          .el-sub-menu__icon-arrow {
+            display: none !important;
+          }
+        }
+
+        .el-tooltip__trigger,
+        .el-menu-tooltip__trigger {
+          display: flex !important;
+          justify-content: center;
+          align-items: center;
+          width: 100% !important;
+          height: 56px;
+          padding: 0 !important;
+          box-sizing: border-box;
+        }
+      }
     }
 
     .main-container {
@@ -137,52 +185,10 @@
     .submenu-title-noDropdown {
       padding: 0 !important;
       position: relative;
-
-      .el-tooltip {
-        padding: 0 !important;
-
-        .svg-icon {
-          margin-left: 20px;
-        }
-
-        .sub-el-icon {
-          margin-left: 19px;
-        }
-      }
     }
 
-    .el-submenu {
+    .el-sub-menu {
       overflow: hidden;
-
-      &>.el-submenu__title {
-        padding: 0 !important;
-
-        .svg-icon {
-          margin-left: 20px;
-        }
-
-        .sub-el-icon {
-          margin-left: 19px;
-        }
-
-        .el-submenu__icon-arrow {
-          display: none;
-        }
-      }
-    }
-
-    .el-menu--collapse {
-      .el-submenu {
-        &>.el-submenu__title {
-          &>span {
-            height: 0;
-            width: 0;
-            overflow: hidden;
-            visibility: hidden;
-            display: inline-block;
-          }
-        }
-      }
     }
   }
 
