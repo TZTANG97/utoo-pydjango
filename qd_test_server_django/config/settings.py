@@ -220,8 +220,8 @@ OSS_ACCESS_KEY_SECRET = env("OSS_ACCESS_KEY_SECRET", default="")
 OSS_PUBLIC_BASE_URL = env("OSS_PUBLIC_BASE_URL", default="")
 IMAGE_WEB_SERVER = env("IMAGE_WEB_SERVER", default="")
 UPLOAD_DIR = env("UPLOAD_DIR", default="upload")
-# 默认/下限 50MB：发票 PDF、高清图常超旧值 10MB；过低会 HTTP 413
-_DEFAULT_MAX_UPLOAD = 50 * 1024 * 1024
+# 默认/下限 100MB：发票 PDF、扫描件常超 50MB；过低会 HTTP 413（网关提示「订单服务拒绝」）
+_DEFAULT_MAX_UPLOAD = 100 * 1024 * 1024
 MAX_UPLOAD_SIZE = max(env.int("MAX_UPLOAD_SIZE", default=_DEFAULT_MAX_UPLOAD), _DEFAULT_MAX_UPLOAD)
 # 网关转发 multipart 前也会解析 body；默认 2.5MB 会导致大文件 413
 DATA_UPLOAD_MAX_MEMORY_SIZE = max(

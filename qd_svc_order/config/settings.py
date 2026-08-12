@@ -93,8 +93,8 @@ OSS_ACCESS_KEY_SECRET = env("OSS_ACCESS_KEY_SECRET", default="")
 IMAGE_WEB_SERVER = env("IMAGE_WEB_SERVER", default="")
 # 订单资料等本地落盘目录（相对路径相对本服务 BASE_DIR）
 UPLOAD_DIR = env("UPLOAD_DIR", default="upload")
-# 默认/下限 50MB：发票 PDF、高清图常超旧值 10MB；过低会 HTTP 413
-_DEFAULT_MAX_UPLOAD = 50 * 1024 * 1024
+# 默认/下限 100MB：发票 PDF、扫描件常超 50MB；过低会 HTTP 413（网关提示「订单服务拒绝」）
+_DEFAULT_MAX_UPLOAD = 100 * 1024 * 1024
 MAX_UPLOAD_SIZE = max(env.int("MAX_UPLOAD_SIZE", default=_DEFAULT_MAX_UPLOAD), _DEFAULT_MAX_UPLOAD)
 # Django 默认仅约 2.5MB，超限会直接 HTTP 413，需与业务上传上限对齐
 DATA_UPLOAD_MAX_MEMORY_SIZE = max(

@@ -29,7 +29,7 @@ server {
     ssl_certificate     /usr/local/nginx/conf/cert/uat.utoodev.laide.tech.pem;
     ssl_certificate_key /usr/local/nginx/conf/cert/uat.utoodev.laide.tech.key;
 
-    client_max_body_size 50m;
+    client_max_body_size 100m;
     root /var/www/utoo-web;
     index index.html;
 

@@ -21,9 +21,9 @@ logger = logging.getLogger(__name__)
 
 def _max_upload_bytes() -> int:
     try:
-        return int(getattr(settings, "MAX_UPLOAD_SIZE", 50 * 1024 * 1024) or (50 * 1024 * 1024))
+        return int(getattr(settings, "MAX_UPLOAD_SIZE", 100 * 1024 * 1024) or (100 * 1024 * 1024))
     except (TypeError, ValueError):
-        return 50 * 1024 * 1024
+        return 100 * 1024 * 1024
 
 
 def _object_key(path_store: str, filename: str) -> str:

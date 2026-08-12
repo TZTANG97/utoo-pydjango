@@ -6,6 +6,7 @@ import logging
 
 import httpx
 from django.conf import settings
+from django.core.exceptions import RequestDataTooBig
 from django.http import HttpResponse
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -89,6 +90,27 @@ def _plain_form_dict(data) -> dict:
     return out
 
 
+def _upload_too_large_response(service_name: str) -> Response:
+    return Response(
+        {
+            "code": 413,
+            "message": f"{service_name}拒绝：上传文件过大（HTTP 413），请压缩后重试或联系管理员提高上限",
+            "data": None,
+            "res": False,
+            "resMsg": "上传文件过大，请压缩后重试",
+        },
+        status=413,
+    )
+
+
+def _safe_request_body(request: Request, *, service_name: str) -> bytes | Response:
+    """读取原始 body；超限时返回统一 JSON，避免 Django HTML 413。"""
+    try:
+        return request.body
+    except RequestDataTooBig:
+        return _upload_too_large_response(service_name)
+
+
 def forward_request(
     request: Request,
     *,
@@ -127,8 +149,11 @@ def forward_request(
                 # form/multipart 必须原样透传 body；勿用 json= 重编码，
                 # 否则 headers 里残留的 form Content-Type 会导致上游解析不到参数。
                 if preserve_raw_body:
+                    body = _safe_request_body(request, service_name=service_name)
+                    if isinstance(body, Response):
+                        return body
                     upstream = client.post(
-                        url, content=request.body, params=params, headers=headers
+                        url, content=body, params=params, headers=headers
                     )
                 elif "application/json" in ct:
                     fwd = {k: v for k, v in headers.items() if k.lower() != "content-type"}
@@ -146,17 +171,25 @@ def forward_request(
                         headers={**fwd, "Content-Type": "application/json"},
                     )
                 else:
+                    body = _safe_request_body(request, service_name=service_name)
+                    if isinstance(body, Response):
+                        return body
                     upstream = client.post(
-                        url, content=request.body, params=params, headers=headers
+                        url, content=body, params=params, headers=headers
                     )
             else:
+                body = _safe_request_body(request, service_name=service_name)
+                if isinstance(body, Response):
+                    return body
                 upstream = client.request(
                     request.method,
                     url,
-                    content=request.body,
+                    content=body,
                     params=params,
                     headers=headers,
                 )
+    except RequestDataTooBig:
+        return _upload_too_large_response(service_name)
     except httpx.RequestError as exc:
         logger.exception("forward %s failed: %s", url, exc)
         return Response(
@@ -174,14 +207,7 @@ def forward_request(
         body = (upstream.content or b"").decode("utf-8", errors="replace").strip()
         host = base_url.rstrip("/")
         if upstream.status_code == 413:
-            return Response(
-                {
-                    "code": 413,
-                    "message": f"{service_name}拒绝：上传文件过大（HTTP 413），请压缩后重试或联系管理员提高上限",
-                    "data": None,
-                },
-                status=413,
-            )
+            return _upload_too_large_response(service_name)
         if upstream.status_code >= 500 or not body:
             return Response(
                 {
