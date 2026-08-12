@@ -1178,6 +1178,24 @@
         </el-table>
       </section>
 
+      <section v-if="!isGrabMode && consultList.length" class="card">
+        <h3 class="card-title">业务咨询</h3>
+        <el-table :data="consultList" border stripe class="detail-table">
+          <el-table-column
+            prop="appointmentNo"
+            label="预约单号"
+            min-width="200"
+            show-overflow-tooltip
+          />
+          <el-table-column prop="consultTime" label="咨询时间" width="170" />
+          <el-table-column prop="className" label="测试分类" min-width="140" show-overflow-tooltip />
+          <el-table-column prop="userName" label="姓名" width="120" show-overflow-tooltip />
+          <el-table-column prop="mobile" label="手机号" width="130" />
+          <el-table-column prop="companyName" label="公司名" min-width="140" show-overflow-tooltip />
+          <el-table-column prop="statusLabel" label="状态" width="110" />
+        </el-table>
+      </section>
+
       <section v-if="!isGrabMode" class="card">
         <h3 class="card-title">操作日志</h3>
         <el-table :data="logs" border stripe class="detail-table" max-height="360">
@@ -1540,7 +1558,7 @@
         <el-table-column prop="childOrderId" label="子单号" min-width="120" show-overflow-tooltip />
         <el-table-column prop="goodsName" label="产品" min-width="120" show-overflow-tooltip />
         <el-table-column
-          v-if="sampleAction === 'testStart'"
+          v-if="sampleAction === 'testStart' && orderType === '10'"
           prop="platformName"
           label="实验平台"
           min-width="120"
@@ -1830,6 +1848,9 @@ const iotCanOpenIotAny = computed(
 )
 
 const logs = computed(() => (detail.value?.logs as Record<string, unknown>[]) || [])
+const consultList = computed(
+  () => (detail.value?.consultList as Record<string, unknown>[]) || []
+)
 const linkedOrders = computed(
   () => (detail.value?.linkedOrders as Record<string, unknown>[]) || []
 )
@@ -1987,7 +2008,9 @@ const sampleExtraHint = computed(() => {
   if (sampleAction.value === 'video')
     return '请勾选一条尚未预约会议的子行，并填写预约时间与会议号'
   if (sampleAction.value === 'testStart')
-    return '请勾选一条已领用(状态37)的子行，并确认实验平台与创建子单时一致'
+    return orderType.value === '10'
+      ? '请勾选一条已领用(状态37)的子行，并确认实验平台与创建子单时一致'
+      : '请勾选一条已领用(状态37)的子行'
   if (sampleAction.value === 'testEnd')
     return '请勾选一条已开始测试(状态38)的子行'
   if (sampleAction.value === 'retain')
@@ -3320,10 +3343,13 @@ async function onSubmitSampleAction() {
     }
   }
   if (sampleAction.value === 'testStart') {
-    const row = sampleSelected.value[0]
-    if (!row.lineId && !row.platformName) {
-      ElMessage.warning('该子行缺少实验平台，无法开始测试')
-      return
+    // type=9/8 分包无实验平台，不校验（对齐 Java ceshistart：仅 type=10 校验）
+    if (orderType.value === '10') {
+      const row = sampleSelected.value[0]
+      if (!row.lineId && !row.platformName) {
+        ElMessage.warning('该子行缺少实验平台，无法开始测试')
+        return
+      }
     }
   }
   if (sampleAction.value === 'retain' && sampleRetainMode.value === 'retain') {

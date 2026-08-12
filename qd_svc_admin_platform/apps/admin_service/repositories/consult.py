@@ -241,6 +241,16 @@ def get_consult_detail(consult_id: int) -> dict[str, Any] | None:
         except Exception:
             childsyp = []
 
+    # 对齐 Java：解析 attribute_id → sampleAttributeManageList（二级列名 + 三级取值）
+    enriched_yp: list[dict[str, Any]] = []
+    for yr in childsyp or []:
+        item = dict(yr)
+        item["sampleAttributeManageList"] = _sample_attributes(
+            str(item.get("attribute_id") or item.get("attributeId") or "")
+        )
+        enriched_yp.append(item)
+    childsyp = enriched_yp
+
     sample_list = list_sample_options(consult_id)
 
     zc_mobile = ""
@@ -282,6 +292,44 @@ def get_consult_detail(consult_id: int) -> dict[str, Any] | None:
         "zcMobile": zc_mobile,
         "isxg": isxg,
     }
+
+
+def _get_sample_attribute(attr_id: int) -> dict[str, Any] | None:
+    return fetch_one(
+        """
+        SELECT id, sttribute_name, parent_id
+        FROM sample_attribute_manage
+        WHERE id = %(id)s
+        LIMIT 1
+        """,
+        {"id": attr_id},
+    )
+
+
+def _sample_attributes(attribute_id: str) -> list[dict[str, Any]]:
+    """对齐 Java/小程序：attribute_id 形如「二级id:三级id:三级id;二级id:…」。"""
+    raw = (attribute_id or "").strip()
+    if not raw:
+        return []
+    erji_list: list[dict[str, Any]] = []
+    sanji_list: list[dict[str, Any]] = []
+    for group in raw.split(";"):
+        parts = [p.strip() for p in group.split(":") if p.strip()]
+        if not parts:
+            continue
+        if parts[0].isdigit():
+            parent = _get_sample_attribute(int(parts[0]))
+            if parent:
+                erji_list.append(dict(parent))
+        for cid in parts[1:]:
+            if cid.isdigit():
+                crow = _get_sample_attribute(int(cid))
+                if crow:
+                    sanji_list.append(dict(crow))
+    for erji in erji_list:
+        erji_id = erji.get("id")
+        erji["attributeListsanji"] = [s for s in sanji_list if s.get("parent_id") == erji_id]
+    return [to_jsonable(e) for e in erji_list]
 
 
 def list_sample_options(consult_id: int) -> list[dict[str, Any]]:
@@ -761,6 +809,103 @@ def _ensure_customer_company(company_name: str) -> int | None:
         return None
 
 
+def _exp_user_by_id(uid: Any) -> dict[str, Any] | None:
+    if uid in (None, ""):
+        return None
+    try:
+        return fetch_one(
+            """
+            SELECT id, mobile, parent_id
+            FROM exp_user
+            WHERE id = %(id)s
+              AND IFNULL(deleteStatus, 0) = 0
+            LIMIT 1
+            """,
+            {"id": uid},
+        )
+    except Exception:
+        return None
+
+
+def _exp_user_by_mobile(mobile: str) -> dict[str, Any] | None:
+    m = (mobile or "").strip()
+    if not m:
+        return None
+    try:
+        return fetch_one(
+            """
+            SELECT id, mobile, parent_id
+            FROM exp_user
+            WHERE mobile = %(m)s
+              AND IFNULL(deleteStatus, 0) = 0
+            LIMIT 1
+            """,
+            {"m": m},
+        )
+    except Exception:
+        return None
+
+
+def _resolve_order_customer(
+    *,
+    company_name: str,
+    mobile: str,
+    consult_user_id: Any,
+) -> tuple[int | None, int | None]:
+    """解析订单客户企业 + 客户账号。
+
+    编辑页账号下拉来自 exp_user（queryAllCompanykh），因此优先写 exp_user.id；
+    并尽量带上 parent_id / 企业名对应的 qd_user_company.id。
+    """
+    customer_id = _ensure_customer_company(company_name)
+    custom_user_id: int | None = None
+
+    def _apply_exp(eu: dict[str, Any] | None) -> None:
+        nonlocal customer_id, custom_user_id
+        if not eu or eu.get("id") in (None, ""):
+            return
+        try:
+            custom_user_id = int(eu["id"])
+        except (TypeError, ValueError):
+            return
+        if customer_id is None and eu.get("parent_id") not in (None, "", 0, "0"):
+            try:
+                customer_id = int(eu["parent_id"])
+            except (TypeError, ValueError):
+                pass
+
+    # 1) 咨询绑定的 user_id：优先当 exp_user
+    _apply_exp(_exp_user_by_id(consult_user_id))
+    if custom_user_id is None and consult_user_id not in (None, ""):
+        urow = fetch_one(
+            "SELECT id, mobile FROM `user` WHERE id = %(id)s LIMIT 1",
+            {"id": consult_user_id},
+        )
+        if urow:
+            _apply_exp(_exp_user_by_mobile(str(urow.get("mobile") or mobile or "")))
+            if custom_user_id is None:
+                try:
+                    custom_user_id = int(urow["id"])
+                except (TypeError, ValueError):
+                    pass
+
+    # 2) 手机号：优先 exp_user（与下拉一致）
+    if custom_user_id is None:
+        _apply_exp(_exp_user_by_mobile(mobile))
+    if custom_user_id is None and (mobile or "").strip():
+        urow = fetch_one(
+            "SELECT id FROM `user` WHERE mobile = %(m)s LIMIT 1",
+            {"m": (mobile or "").strip()},
+        )
+        if urow:
+            try:
+                custom_user_id = int(urow["id"])
+            except (TypeError, ValueError):
+                pass
+
+    return customer_id, custom_user_id
+
+
 def save_order_from_consult(
     payload_list: list[Any], *, staff_user_id: str = ""
 ) -> tuple[bool, str, int | None]:
@@ -791,7 +936,7 @@ def _save_order_from_consult_impl(
 
     existing = fetch_one(
         """
-        SELECT id, status, order_id, order_num, company_name
+        SELECT id, status, order_id, order_num, company_name, user_id, mobile, userName
         FROM service_consult WHERE id = %(id)s LIMIT 1
         """,
         {"id": c["id"]},
@@ -843,17 +988,16 @@ def _save_order_from_consult_impl(
         supplier_id=c.get("supplier_name"),
         order_time=order_time,
     )
-    customer_id = _ensure_customer_company(
-        str(c.get("company_name") or existing.get("company_name") or "")
+    # 前端 payload 可能缺 company/mobile/user_id，回落咨询表原值
+    if not c.get("company_name"):
+        c["company_name"] = str(existing.get("company_name") or "")
+    if not c.get("mobile"):
+        c["mobile"] = str(existing.get("mobile") or "")
+    customer_id, custom_user_id = _resolve_order_customer(
+        company_name=str(c.get("company_name") or ""),
+        mobile=str(c.get("mobile") or ""),
+        consult_user_id=existing.get("user_id"),
     )
-    custom_user_id = None
-    if c.get("mobile"):
-        urow = fetch_one(
-            "SELECT id FROM `user` WHERE mobile = %(m)s LIMIT 1",
-            {"m": c["mobile"]},
-        )
-        if urow:
-            custom_user_id = int(urow["id"])
 
     invoice_type = 1 if str(c.get("invoiceType")) == "1" else 2
     reverso = 1 if str(c.get("reverso_context")) == "1" else 2
@@ -924,14 +1068,14 @@ def _save_order_from_consult_impl(
                 """
                 INSERT INTO experiment_order
                     (addTime, deleteStatus, order_id, order_type, order_status,
-                     totalPrice, sale_manager, sale_user, customer_name, supplier_name,
-                     currency_type, invoiceType, consultid, mobile, class_id,
+                     totalPrice, sale_manager, sale_user, customer_name, custom_user_id,
+                     supplier_name, currency_type, invoiceType, consultid, mobile, class_id,
                      collection_time, delivery_time, goods_amount, reverso_context,
                      send_address, addressee_name, addressee_mobile)
                 VALUES
                     (NOW(), 0, %(ono)s, %(ot)s, 5,
-                     %(tp)s, %(sm)s, %(su)s, %(cust)s, %(sup)s,
-                     %(ct)s, %(inv)s, %(cid)s, %(mobile)s, %(class_id)s,
+                     %(tp)s, %(sm)s, %(su)s, %(cust)s, %(cuid)s,
+                     %(sup)s, %(ct)s, %(inv)s, %(cid)s, %(mobile)s, %(class_id)s,
                      %(coll)s, %(delv)s, %(ga)s, %(rev)s,
                      %(addr)s, %(an)s, %(am)s)
                 """,
@@ -942,6 +1086,7 @@ def _save_order_from_consult_impl(
                     "sm": c.get("sale_manager") or None,
                     "su": c.get("sale_user") or None,
                     "cust": customer_id,
+                    "cuid": custom_user_id,
                     "sup": c.get("supplier_name") or None,
                     "ct": c.get("currency_type") or 1,
                     "inv": invoice_type,

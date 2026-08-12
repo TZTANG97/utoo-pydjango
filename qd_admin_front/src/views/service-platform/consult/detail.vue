@@ -186,7 +186,7 @@
           </el-form-item>
         </el-col>
         <el-col :span="6">
-          <el-form-item label="是否含视频">
+          <el-form-item label="是否云视频">
             <el-switch v-model="form.is_video" />
           </el-form-item>
         </el-col>
@@ -223,6 +223,14 @@
           <template #default="{ row }">
             {{ goldLabel(row.is_gold_spraying ?? row.isGoldSpraying, row.gold_desc ?? row.goldDesc) }}
           </template>
+        </el-table-column>
+        <el-table-column
+          v-for="name in sampleAttrNameList"
+          :key="'attr-' + name"
+          :label="name"
+          min-width="140"
+        >
+          <template #default="{ row }">{{ sampleAttrCell(row, name) }}</template>
         </el-table-column>
       </el-table>
 
@@ -401,6 +409,7 @@ import {
 import {
   fetchCompanyAccountList,
   fetchSupplierAll,
+  getSupplierById,
   fetchTestAddressList,
   fetchUserList,
 } from '@/api/system'
@@ -525,22 +534,48 @@ function recalcTotals() {
   form.totalPrice = total.toFixed(2)
 }
 
+/** 统一成 string，避免 el-select 因 number/string 不一致只显示裸 id */
+function asOptValue(v: unknown): string {
+  if (v == null || v === '') return ''
+  return String(v)
+}
+
+function ensureOpt(opts: { value: Opt[] }, value: string | number | '', label?: string) {
+  if (value === '' || value == null) return
+  const key = String(value)
+  const text = String(label ?? '').trim()
+  const idx = opts.value.findIndex((o) => String(o.value) === key)
+  if (idx >= 0) {
+    const cur = opts.value[idx]
+    const weakLabel = !cur.label || cur.label === key || String(cur.label) === String(cur.value)
+    if (cur.value !== key || (text && weakLabel)) {
+      opts.value[idx] = {
+        ...cur,
+        value: key,
+        label: text && weakLabel ? text : cur.label || text || key,
+      }
+    }
+    return
+  }
+  opts.value.unshift({ value: key, label: text || key })
+}
+
 function mapManageOpts(list: unknown[]): Opt[] {
   return (list as Record<string, unknown>[])
     .map((x) => ({
-      value: (x.id ?? x.value ?? '') as string | number,
+      value: asOptValue(x.id ?? x.value ?? ''),
       label: String(x.name || x.label || x.id || ''),
     }))
-    .filter((o) => o.value !== '' && o.value != null)
+    .filter((o) => o.value !== '')
 }
 
 function mapUserRows(list: unknown[]): Opt[] {
   return (list as Record<string, unknown>[])
     .map((u) => ({
-      value: (u.id ?? u.userId ?? '') as string | number,
+      value: asOptValue(u.id ?? u.userId ?? ''),
       label: String(u.userName || u.trueName || u.user_name || u.true_name || u.id || ''),
     }))
-    .filter((o) => o.value !== '' && o.value != null)
+    .filter((o) => o.value !== '')
 }
 
 function emptyChild(): ChildRow {
@@ -585,6 +620,36 @@ function goldLabel(isGold: unknown, goldDesc: unknown) {
   if (Number(isGold) === 0) return '是'
   const desc = String(goldDesc ?? '').trim()
   return desc ? `否(${desc})` : '否()'
+}
+
+/** 动态样品属性列名（二级属性），对齐 Java 样品信息表 */
+const sampleAttrNameList = computed(() => {
+  const names: string[] = []
+  for (const row of sampleInfos.value) {
+    const list = row.sampleAttributeManageList
+    if (!Array.isArray(list)) continue
+    for (const a of list as Record<string, unknown>[]) {
+      const n = String(a.sttribute_name || a.sttributeName || a.name || '').trim()
+      if (n && !names.includes(n)) names.push(n)
+    }
+  }
+  return names
+})
+
+function sampleAttrCell(row: Record<string, unknown>, colName: string) {
+  const list = row.sampleAttributeManageList
+  if (!Array.isArray(list)) return '-'
+  const hit = (list as Record<string, unknown>[]).find(
+    (a) => String(a.sttribute_name || a.sttributeName || a.name || '').trim() === colName
+  )
+  if (!hit) return '-'
+  const children = hit.attributeListsanji
+  if (!Array.isArray(children) || !children.length) return '-'
+  const text = (children as Record<string, unknown>[])
+    .map((c) => String(c.sttribute_name || c.sttributeName || c.name || '').trim())
+    .filter(Boolean)
+    .join(' ')
+  return text || '-'
 }
 
 function modelOptions(row: ChildRow): string[] {
@@ -785,10 +850,10 @@ async function loadOptions() {
           : []
       supplierOpts.value = (list as Record<string, unknown>[])
         .map((s) => ({
-          value: (s.id ?? '') as string | number,
+          value: asOptValue(s.id ?? ''),
           label: String(s.companyName || s.company_name || s.name || s.id || ''),
         }))
-        .filter((o) => o.value !== '' && o.value != null)
+        .filter((o) => o.value !== '')
     }
   } catch {
     /* ignore */
@@ -856,8 +921,26 @@ async function loadDetail() {
     form.syUserName = String(consult.syUserName || obj.syUserName || '')
     form.content = String(consult.content || consult.zxcontent || '')
     form.remark = String(consult.remark || '')
-    form.supplier_name = (consult.supplier_name ?? consult.supplierName ?? '') as string | number | ''
-    form.sale_manager = (consult.sale_manager ?? consult.saleManager ?? '') as string | number | ''
+    form.supplier_name = asOptValue(consult.supplier_name ?? consult.supplierName ?? '')
+    form.sale_manager = asOptValue(consult.sale_manager ?? consult.saleManager ?? '')
+    ensureOpt(supplierOpts, form.supplier_name)
+    ensureOpt(managerOpts, form.sale_manager)
+    if (form.supplier_name) {
+      const hit = supplierOpts.value.find((o) => String(o.value) === String(form.supplier_name))
+      const weak = !hit || !hit.label || hit.label === String(hit.value)
+      if (weak) {
+        try {
+          const supRes = await getSupplierById(form.supplier_name)
+          if (isAjaxOk(supRes)) {
+            const row = (supRes.obj || supRes.data || {}) as Record<string, unknown>
+            const name = String(row.companyName || row.company_name || row.name || '')
+            if (name) ensureOpt(supplierOpts, form.supplier_name, name)
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    }
     form.delivery_time_str = String(
       consult.delivery_time_str || consult.deliveryTimeStr || ''
     ).slice(0, 10)
@@ -1025,7 +1108,8 @@ async function onCancel() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadOptions(), loadDetail()])
+  await loadOptions()
+  await loadDetail()
 })
 </script>
 

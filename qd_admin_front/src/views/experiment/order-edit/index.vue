@@ -1283,6 +1283,8 @@ async function reloadSuppliers() {
 async function loadOptions() {
   const silent = { silentError: true } as const
   await reloadCustomers()
+  // 先加载全量客户账号，详情回填/未选客户名称时下拉也有数据
+  await reloadAccounts('')
   await reloadSuppliers()
   try {
     const cls = await fetchManageOptions(3)
@@ -1448,9 +1450,8 @@ async function load() {
     ensureOpt(inBillOpts, form.inBillTypeId, displayLabel(obj.inBillTypeName))
     if (form.taxes !== '') ensureOpt(taxOpts, form.taxes, String(form.taxes))
 
-    if (form.customerId) {
-      await reloadAccounts(form.customerId)
-    }
+    // 无客户名称时也拉取账号列表（parentId 空=全部），避免下拉「无数据」无法选择
+    await reloadAccounts(form.customerId || '')
     ensureOpt(
       accountOpts,
       form.customUserId,

@@ -1512,30 +1512,99 @@ def get_order(order_id: int) -> dict[str, Any] | None:
     except (TypeError, ValueError):
         is_yyd_flag = 0
     row["isYydLabel"] = "已生成" if is_yyd_flag == 1 else "未生成"
-    # 预约单（ServiceConsult）
+    # 业务咨询/预约单（对齐 Java 订单详情底部咨询表：预约单号/咨询时间/…）
     row["appointmentNo"] = ""
     row["appointmentId"] = None
+    row["consultList"] = []
     consult_id = row.get("consultId")
-    if consult_id not in (None, "", 0, "0"):
-        try:
+    order_no = str(row.get("orderId") or "").strip()
+    consult = None
+    try:
+        if consult_id not in (None, "", 0, "0"):
             consult = fetch_one(
                 """
-                SELECT id, order_id AS appointmentNo, status AS appointmentStatus,
-                       addTime, mobile AS appointmentMobile, company_name AS appointmentCompany
-                FROM service_consult
-                WHERE id = %(id)s
+                SELECT
+                    sc.id,
+                    sc.order_num AS appointmentNo,
+                    sc.order_id AS linkedOrderId,
+                    sc.status AS appointmentStatus,
+                    sc.addTime AS consultTime,
+                    sc.userName AS consultUserName,
+                    sc.mobile AS appointmentMobile,
+                    sc.company_name AS appointmentCompany,
+                    sc.class_id AS consultClassId,
+                    em.name AS consultClassName
+                FROM service_consult sc
+                LEFT JOIN experiment_manage em ON sc.class_id = em.id
+                WHERE sc.id = %(id)s
                 LIMIT 1
                 """,
                 {"id": consult_id},
             )
-            if consult:
-                row["appointmentId"] = consult.get("id")
-                row["appointmentNo"] = str(consult.get("appointmentNo") or consult.get("id") or "")
-                row["appointmentStatus"] = consult.get("appointmentStatus")
-                row["appointmentMobile"] = consult.get("appointmentMobile") or ""
-                row["appointmentCompany"] = consult.get("appointmentCompany") or ""
-        except Exception:
-            pass
+        if not consult and order_no:
+            consult = fetch_one(
+                """
+                SELECT
+                    sc.id,
+                    sc.order_num AS appointmentNo,
+                    sc.order_id AS linkedOrderId,
+                    sc.status AS appointmentStatus,
+                    sc.addTime AS consultTime,
+                    sc.userName AS consultUserName,
+                    sc.mobile AS appointmentMobile,
+                    sc.company_name AS appointmentCompany,
+                    sc.class_id AS consultClassId,
+                    em.name AS consultClassName
+                FROM service_consult sc
+                LEFT JOIN experiment_manage em ON sc.class_id = em.id
+                WHERE sc.order_num = %(ono)s
+                   OR CAST(sc.order_id AS CHAR) = %(ono)s
+                ORDER BY sc.id DESC
+                LIMIT 1
+                """,
+                {"ono": order_no},
+            )
+        if consult:
+            try:
+                st = int(
+                    consult.get("appointmentStatus")
+                    if consult.get("appointmentStatus") is not None
+                    else -1
+                )
+            except (TypeError, ValueError):
+                st = -1
+            status_label = {
+                0: "待处理",
+                1: "已处理",
+                2: "已生成订单",
+                3: "已取消",
+            }.get(st, "未回复" if st < 0 else str(st))
+            appt_no = str(consult.get("appointmentNo") or "").strip() or order_no
+            if not appt_no:
+                appt_no = str(consult.get("linkedOrderId") or consult.get("id") or "")
+            consult_time = consult.get("consultTime")
+            if consult_time:
+                consult_time = str(consult_time)[:19]
+            item = {
+                "id": consult.get("id"),
+                "appointmentNo": appt_no,
+                "consultTime": consult_time or "",
+                "className": str(consult.get("consultClassName") or "").strip(),
+                "userName": str(consult.get("consultUserName") or "").strip(),
+                "mobile": str(consult.get("appointmentMobile") or "").strip(),
+                "companyName": str(consult.get("appointmentCompany") or "").strip(),
+                "status": st,
+                "statusLabel": status_label,
+            }
+            row["appointmentId"] = item["id"]
+            row["appointmentNo"] = item["appointmentNo"]
+            row["appointmentStatus"] = st
+            row["appointmentStatusLabel"] = status_label
+            row["appointmentMobile"] = item["mobile"]
+            row["appointmentCompany"] = item["companyName"]
+            row["consultList"] = [item]
+    except Exception:
+        pass
     parent = row.get("parentOrderId")
     if not parent and _is_child_order_type(ot):
         pt = str(row.get("purchaseType") or "")
