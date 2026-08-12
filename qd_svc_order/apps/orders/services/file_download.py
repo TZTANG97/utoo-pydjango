@@ -46,12 +46,17 @@ def build_download_filename(acc: dict, name_hint: str = "") -> str:
 def _object_key(path: str, name: str) -> str:
     p = (path or "").strip().replace("\\", "/")
     n = (name or "").strip().lstrip("/")
+    # Java 常把 imageWebServer+upload/order 整段写入 path
+    if "://" in p:
+        after = p.split("://", 1)[-1]
+        p = after.split("/", 1)[-1] if "/" in after else ""
     for sep in (
         getattr(settings, "OSS_PUBLIC_BASE_URL", ""),
         getattr(settings, "IMAGE_WEB_SERVER", ""),
     ):
-        if sep and sep in p:
-            p = p.split(sep.rstrip("/"), 1)[-1].lstrip("/")
+        sep2 = (sep or "").rstrip("/")
+        if sep2 and sep2 in p:
+            p = p.split(sep2, 1)[-1].lstrip("/")
             break
     if p and n:
         return f"{p.strip('/')}/{n}"
