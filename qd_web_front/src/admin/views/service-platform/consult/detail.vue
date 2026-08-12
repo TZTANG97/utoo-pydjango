@@ -965,6 +965,13 @@ async function onSaveOrder() {
   if (!form.test_address_id) return ElMessage.warning('请选择实验测试地址')
   if (!form.company_account_id) return ElMessage.warning('请选择公司汇款账号')
   if (!childs.value.some((c) => c.goods_id)) return ElMessage.warning('请至少选择一条产品信息')
+  // 有样品信息时，每条产品都必须选择样品（对齐业务：未选不可生成订单）
+  if (sampleOpts.value.length > 0 || sampleInfos.value.length > 0) {
+    const miss = childs.value.filter(
+      (c) => c.goods_id && (c.sample_id === '' || c.sample_id == null)
+    )
+    if (miss.length) return ElMessage.warning('请为所有产品选择样品后再生成订单')
+  }
 
   ordering.value = true
   try {

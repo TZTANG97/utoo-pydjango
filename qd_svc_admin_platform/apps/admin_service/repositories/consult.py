@@ -586,6 +586,49 @@ def check_save_order_params(c: dict[str, Any]) -> str:
     return ""
 
 
+def _consult_has_samples(consult_id: int) -> bool:
+    """咨询是否已有样品信息（childsyp / sampleList）。"""
+    try:
+        row = fetch_one(
+            """
+            SELECT COUNT(1) AS cnt
+            FROM order_sample_information
+            WHERE consult_id = %(cid)s
+              AND IFNULL(deleteStatus, 0) = 0
+            """,
+            {"cid": int(consult_id)},
+        )
+    except Exception:
+        try:
+            row = fetch_one(
+                """
+                SELECT COUNT(1) AS cnt
+                FROM order_sample_information
+                WHERE consult_id = %(cid)s
+                """,
+                {"cid": int(consult_id)},
+            )
+        except Exception:
+            return False
+    try:
+        return int((row or {}).get("cnt") or 0) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _check_children_sample_required(
+    consult_id: int, children: list[dict[str, Any]]
+) -> str:
+    """有样品时，每条产品必须选择样品，否则不可生成订单。"""
+    if not _consult_has_samples(consult_id):
+        return ""
+    for ch in children:
+        sid = ch.get("sample_id")
+        if sid in (None, "", 0, "0"):
+            return "请为所有产品选择样品后再生成订单"
+    return ""
+
+
 def _gen_order_seq_code(n: int) -> str:
     """对齐 Java OrderFormUtils.genCode：不足 5 位左补 0。"""
     if n < 100000:
@@ -758,6 +801,9 @@ def _save_order_from_consult_impl(
             children.append(item)
     if not children:
         return False, "请至少选择一条产品信息", None
+    sample_msg = _check_children_sample_required(int(c["id"]), children)
+    if sample_msg:
+        return False, sample_msg, None
 
     if c.get("supplier_name"):
         try:
