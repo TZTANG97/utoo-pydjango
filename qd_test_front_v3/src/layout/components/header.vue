@@ -102,7 +102,9 @@ export default {
     },
 
     clickLogo() {
-      window.open(location.origin + '/#/home')
+      // 同页 SPA 跳转，避免 window.open 冷启动整站导致「没反应/很慢」
+      if (this.$route.path === '/home' || this.$route.path === '/') return
+      this.$router.push('/home').catch(() => {})
     },
 
 
