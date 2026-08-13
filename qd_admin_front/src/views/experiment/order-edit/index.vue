@@ -244,7 +244,7 @@
             <el-select
               v-model="form.payWay"
               filterable
-              clearable
+              :clearable="!payWayLocked"
               placeholder="请选择"
               style="width: 100%"
               :disabled="payWayLocked"
@@ -1398,8 +1398,10 @@ async function load() {
     const obj = res.obj as Record<string, unknown>
     detail.value = obj
     const st = Number(obj.orderStatus ?? obj.order_status ?? 0)
-    // 对齐 Java：已审核/已完成不可改付款方式
-    payWayLocked.value = st === 30 || st === 50
+    const isOnline = Number(obj.isOnline ?? obj.is_online ?? 0) === 1
+    // 对齐 Java experiment_edit_orders / experimentsub_edit_orders：
+    // 线上订单 is_online=1 不可改；已审核(30)/已完成(50)不可改
+    payWayLocked.value = isOnline || st === 30 || st === 50
 
     const files = Array.isArray(obj.files) ? (obj.files as Record<string, unknown>[]) : []
     orderFiles.value = files.map((f) => ({ ...f }))

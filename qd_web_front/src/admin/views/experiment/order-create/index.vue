@@ -518,7 +518,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -584,6 +584,12 @@ const pageTitle = computed(() => {
 })
 /** Java 复制页：线上订单 is_online=1 时付款方式不可改 */
 const isOnlineOrder = ref(false)
+
+/** 关闭复制标签后异步 load 可能仍回调；route 已切回列表时禁止回写标签标题 */
+function syncCreateTabTitle() {
+  if (route.name !== 'ExperimentOrderCreate') return
+  tagsView.updateViewTitle(route.path, pageTitle.value)
+}
 
 function pad2(n: number) {
   return n < 10 ? `0${n}` : String(n)
@@ -1012,9 +1018,9 @@ async function loadOptions() {
     ])
     if (copyFromId.value) {
       await fillFromCopy(copyFromId.value)
-      tagsView.updateViewTitle(route.path, pageTitle.value)
+      syncCreateTabTitle()
     } else {
-      tagsView.updateViewTitle(route.path, pageTitle.value)
+      syncCreateTabTitle()
     }
   } finally {
     loading.value = false
@@ -1358,6 +1364,15 @@ async function onSave() {
 onMounted(() => {
   loadOptions()
 })
+
+// keep-alive / 同 path 换 query：仅 onMounted 时二次「复制」会落到空的新增表单
+watch(
+  () => `${createOrderType.value}|${copyFromId.value}`,
+  (next, prev) => {
+    if (!prev || next === prev) return
+    loadOptions()
+  }
+)
 </script>
 
 <style scoped>

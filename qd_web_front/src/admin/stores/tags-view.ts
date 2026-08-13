@@ -73,6 +73,13 @@ export function resolveRouteTitle(route: RouteLocationNormalized): string {
     const base = DETAIL_FROM_TITLE[from] || String(route.meta?.title || '订单详情')
     return orderNo ? `${orderNo} ${base}` : base
   }
+  if (route.name === 'ExperimentOrderCreate') {
+    const copyFrom = String(route.query.copyFrom || route.query.id || '').trim()
+    const isCopy = Boolean(copyFrom && copyFrom !== '0')
+    const isSub = String(route.query.orderType || route.query.type || '6').trim() === '8'
+    if (isSub) return isCopy ? '复制实验分包订单' : '新增实验分包订单'
+    return isCopy ? '复制订单' : '新增实验订单'
+  }
   if (route.name === 'FundDigitalOrders') {
     return String(route.query.title || route.meta?.title || '实验订单')
   }
@@ -148,15 +155,24 @@ export const useTagsViewStore = defineStore('tagsView', {
 
       const exists = this.visitedViews.find((item) => item.path === tag.path)
       if (exists) {
+        const fullPathChanged = exists.fullPath !== tag.fullPath
         exists.fullPath = tag.fullPath
         if (tag.title && tag.title !== '订单详情') {
           // 已有带单号标题时，禁止被短标题回写
           if (titleHasOrderNo(exists.title) && !titleHasOrderNo(tag.title)) {
+            // 新增/复制页 query 变化时仍需作废 keep-alive，否则二次复制落到空表单
+            if (fullPathChanged && route.name === 'ExperimentOrderCreate') {
+              this.refreshView(tag.path)
+            }
             return
           }
           this.visitedViews = this.visitedViews.map((item) =>
             item.path === tag.path ? { ...item, fullPath: tag.fullPath, title: tag.title } : item
           )
+        }
+        // 同一 path、不同 query（复制↔新增 / 换源单）：强制新实例，避免复用空的「新增」缓存
+        if (fullPathChanged && route.name === 'ExperimentOrderCreate') {
+          this.refreshView(tag.path)
         }
         return
       }
@@ -167,7 +183,8 @@ export const useTagsViewStore = defineStore('tagsView', {
       if (!title) return
       const idx = this.visitedViews.findIndex((item) => item.path === path)
       if (idx < 0) {
-        // 标签尚未创建时先占位，避免丢单号
+        // 仅允许订单详情占位；避免异步把「新增/复制」标题写到错误 path 上新建幽灵标签
+        if (!path.startsWith(ORDER_DETAIL_PATH_PREFIX)) return
         this.visitedViews.push({
           path,
           fullPath: path,
@@ -176,8 +193,16 @@ export const useTagsViewStore = defineStore('tagsView', {
         })
         return
       }
+      const cur = this.visitedViews[idx]
+      // 防止创建/复制页异步结束后 route 已切回列表，误把列表标签改成「新增实验订单」
+      const listNames = new Set(
+        Object.values(LIST_TAG_BY_FROM).map((t) => String(t.name || ''))
+      )
+      if (cur.name && listNames.has(String(cur.name)) && /新增|复制/.test(title)) {
+        return
+      }
       // 替换对象，确保 TagsView 响应式刷新
-      this.visitedViews.splice(idx, 1, { ...this.visitedViews[idx], title })
+      this.visitedViews.splice(idx, 1, { ...cur, title })
     },
 
     delView(path: string) {

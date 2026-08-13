@@ -270,6 +270,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useTagsViewStore } from '@admin/stores/tags-view'
 import { ElMessage } from 'element-plus'
 import {
   exportExpOrders,
@@ -282,6 +283,7 @@ import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
 const router = useRouter()
 const route = useRoute()
+const tagsViewStore = useTagsViewStore()
 
 const headerCellStyle = {
   background: '#f3f6fb',
@@ -458,15 +460,24 @@ function openDetail(row: Record<string, unknown>) {
   })
 }
 
+const ORDER_CREATE_PATH = '/admin/experiment/order-create'
+
+/** 打开新增/复制前清掉同 path 页签与 keep-alive，避免二次进入仍是空的「新增」缓存 */
+function openOrderCreate(query?: Record<string, string>) {
+  tagsViewStore.delView(ORDER_CREATE_PATH)
+  tagsViewStore.refreshView(ORDER_CREATE_PATH)
+  return router.push({
+    name: 'ExperimentOrderCreate',
+    ...(query && Object.keys(query).length ? { query } : {}),
+  })
+}
+
 function onCreate() {
-  router.push({ name: 'ExperimentOrderCreate' })
+  openOrderCreate()
 }
 
 function onCopy(row: Record<string, unknown>) {
-  router.push({
-    name: 'ExperimentOrderCreate',
-    query: { copyFrom: String(row.id) },
-  })
+  openOrderCreate({ copyFrom: String(row.id) })
 }
 
 function downloadBase64File(fileName: string, base64: string, contentType: string) {

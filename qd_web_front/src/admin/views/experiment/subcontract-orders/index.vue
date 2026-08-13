@@ -168,6 +168,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useTagsViewStore } from '@admin/stores/tags-view'
 import { ElMessage } from 'element-plus'
 import {
   exportExpOrders,
@@ -180,6 +181,7 @@ import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
 const router = useRouter()
 const route = useRoute()
+const tagsViewStore = useTagsViewStore()
 
 const headerCellStyle = {
   background: '#f3f6fb',
@@ -333,18 +335,23 @@ function openDetail(row: Record<string, unknown>) {
   })
 }
 
-function onCreate() {
-  router.push({
+const ORDER_CREATE_PATH = '/admin/experiment/order-create'
+
+function openOrderCreate(query: Record<string, string>) {
+  tagsViewStore.delView(ORDER_CREATE_PATH)
+  tagsViewStore.refreshView(ORDER_CREATE_PATH)
+  return router.push({
     name: 'ExperimentOrderCreate',
-    query: { orderType: '8' },
+    query,
   })
 }
 
+function onCreate() {
+  openOrderCreate({ orderType: '8' })
+}
+
 function onCopy(row: Record<string, unknown>) {
-  router.push({
-    name: 'ExperimentOrderCreate',
-    query: { orderType: '8', copyFrom: String(row.id) },
-  })
+  openOrderCreate({ orderType: '8', copyFrom: String(row.id) })
 }
 
 function downloadCsv(filename: string, dataRows: Record<string, unknown>[]) {
