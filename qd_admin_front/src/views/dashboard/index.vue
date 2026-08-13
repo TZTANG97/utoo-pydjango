@@ -293,6 +293,18 @@ function managerQuery(extra: Record<string, string> = {}): Record<string, string
   return q
 }
 
+/** Java：测试主管点「待审核实验分包子订单」按 test_manager 筛，不按 sale_manager */
+const isTestManager = computed(
+  () => welcomeUserType2.value === 5 || String(roleName.value || '').includes('测试主管'),
+)
+
+function pendingSubcontractSubQuery(): Record<string, string> {
+  if (isTestManager.value && currentUserId.value) {
+    return { orderStatus: '20', testManager: currentUserId.value }
+  }
+  return managerQuery({ orderStatus: '20' })
+}
+
 const logs = computed<WelcomeLogItem[]>(() => welcome.value?.newlogs || [])
 const showLogs = computed(() => welcomeUserType.value === 1)
 const showAssets = computed(() => {
@@ -372,7 +384,7 @@ const pendingKpis = computed<Kpi[]>(() => {
       onClick: () =>
         router.push({
           name: 'ExperimentSubcontractSubOrders',
-          query: managerQuery({ orderStatus: '20' }),
+          query: pendingSubcontractSubQuery(),
         }),
     },
     {
@@ -382,6 +394,7 @@ const pendingKpis = computed<Kpi[]>(() => {
       onClick: () =>
         router.push({
           name: 'ExperimentSubcontractSubOrders',
+          // 对齐 Java todoCheckListPagesub：付款审核仍按 sale_manager
           query: managerQuery({ payStatus: '32' }),
         }),
     },

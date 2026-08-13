@@ -750,6 +750,7 @@ def list_sub_orders(
     parent_order_id: str = "",
     customer_name: str = "",
     sale_manager: str = "",
+    test_manager: str = "",
     sale_user: str = "",
     order_status: str = "",
     pay_status: str = "",
@@ -784,6 +785,10 @@ def list_sub_orders(
     if sale_manager:
         where += " AND t.sale_manager = %(sale_manager)s"
         params["sale_manager"] = sale_manager
+    if test_manager:
+        # 对齐 Java ExpSubPurchaseOrder todoCheckList：测试主管按 test_manager 筛
+        where += " AND CAST(t.test_manager AS CHAR) = CAST(%(test_manager)s AS CHAR)"
+        params["test_manager"] = test_manager
     if sale_user:
         where += " AND t.sale_user = %(sale_user)s"
         params["sale_user"] = sale_user
@@ -995,9 +1000,10 @@ def list_welcome_timeout_orders(
         params["finish_kw2"] = "%测试完成%"
         params["finish_end"] = f"{finish_end} 23:59:59"
 
-    # 对齐 Java：非管理员按角色收窄
+    # 对齐 Java list_dpt_welcome：仅 utoo_type 精确「销售主管」走 parent.sale_manager；
+    # 测试主管/测试人员等走 seto 上的 test/sale/audit/lab_manager 命中（勿用 role 映射把测试主管当成销售主管）
     if uid and role != "系统管理员":
-        if role == "销售主管" or utoo == "销售主管":
+        if str(utoo).strip() == "销售主管":
             where += " AND CAST(p.sale_manager AS CHAR) = CAST(%(scope_uid)s AS CHAR)"
             params["scope_uid"] = uid
         else:

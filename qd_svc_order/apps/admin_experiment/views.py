@@ -638,6 +638,9 @@ def order_list(request: Request, user=None):
             sale_manager=(
                 data.get("saleManager") or data.get("sale_Manager") or data.get("sale_manager") or ""
             ).strip(),
+            test_manager=(
+                data.get("testManager") or data.get("test_manager") or data.get("test_Manager") or ""
+            ).strip(),
             sale_user=(data.get("saleUser") or data.get("sale_user") or "").strip(),
             order_status=str(data.get("orderStatus") or data.get("order_status") or "").strip(),
             pay_status=str(

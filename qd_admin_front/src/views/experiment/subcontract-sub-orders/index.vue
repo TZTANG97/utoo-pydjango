@@ -197,6 +197,7 @@ const filters = reactive({
   orderStatus: '',
   payStatus: '',
   testUserId: '',
+  testManager: '',
 })
 
 const statusOpts = ref<Record<string, unknown>[]>([])
@@ -245,6 +246,7 @@ function listParams() {
   if (filters.finishStart) p.finishStart = filters.finishStart
   if (filters.finishEnd) p.finishEnd = filters.finishEnd
   if (filters.saleManager) p.saleManager = filters.saleManager
+  if (filters.testManager) p.testManager = filters.testManager
   if (filters.saleUser) p.saleUser = filters.saleUser
   if (filters.orderStatus) p.orderStatus = filters.orderStatus
   if (filters.payStatus !== '') p.payStatus = filters.payStatus
@@ -273,6 +275,7 @@ function resetFilters() {
     orderStatus: '',
     payStatus: '',
     testUserId: '',
+    testManager: '',
   })
   reload()
 }
@@ -448,6 +451,7 @@ function applyRouteQuery() {
   if (q.orderId) filters.orderId = String(q.orderId)
   if (q.parentOrderId) filters.parentOrderId = String(q.parentOrderId)
   if (q.saleManager) filters.saleManager = String(q.saleManager)
+  if (q.testManager) filters.testManager = String(q.testManager)
   if (q.saleUser) filters.saleUser = String(q.saleUser)
   if (q.orderStatus) filters.orderStatus = String(q.orderStatus)
   if (q.payStatus != null && String(q.payStatus) !== '') {
