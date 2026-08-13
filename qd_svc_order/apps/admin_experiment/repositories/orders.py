@@ -4710,8 +4710,6 @@ def update_order_basic(
         ("sale_manager", "sale_manager"),
         ("sale_user", "sale_user"),
         ("supplier_id", "supplier_name"),
-        ("customer_id", "customer_name"),
-        ("custom_user_id", "custom_user_id"),
         ("class_id", "class_id"),
         ("test_address_id", "test_address_id"),
         ("company_account_id", "company_account_id"),
@@ -4723,6 +4721,23 @@ def update_order_basic(
                 sets.append(f"{col} = %({key})s")
             except (TypeError, ValueError):
                 pass
+    # 客户名称 / 客户账号：前端 clearable 会传空串或 null；显式传入时允许清空（None=不改）
+    for key, col in (
+        ("customer_id", "customer_name"),
+        ("custom_user_id", "custom_user_id"),
+    ):
+        val = locals().get(key)
+        if val is None:
+            continue
+        if val in ("", 0, "0"):
+            params[key] = None
+            sets.append(f"{col} = %({key})s")
+            continue
+        try:
+            params[key] = int(val)
+            sets.append(f"{col} = %({key})s")
+        except (TypeError, ValueError):
+            pass
     if is_video not in (None, ""):
         try:
             params["is_video"] = 1 if int(is_video) else 0

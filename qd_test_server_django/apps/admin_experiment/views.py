@@ -24,6 +24,19 @@ def _order_id_from(data: dict) -> int | None:
     return to_int(data.get("id") or data.get("ofId") or data.get("orderId"))
 
 
+def _explicit_id_or_clear(data: dict, keys: tuple[str, ...]):
+    """请求里带了字段：取首个非空值，全空则 ""（清空）；未带字段：None（不改库）。"""
+    present = False
+    for k in keys:
+        if k not in data:
+            continue
+        present = True
+        val = data.get(k)
+        if val not in (None, ""):
+            return val
+    return "" if present else None
+
+
 def _child_ids_from(data: dict):
     return data.get("childIds") or data.get("childids") or data.get("ids") or data.get("childId")
 
@@ -1565,12 +1578,13 @@ def order_update_basic(request: Request, user=None):
         supplier_id=data.get("supplierId")
         if "supplierId" in data or "supplier_name" in data or "supplier_id" in data
         else None,
-        customer_id=data.get("customerId")
-        if "customerId" in data or "customer_name" in data or "customerName" in data
-        else None,
-        custom_user_id=data.get("customUserId")
-        if "customUserId" in data or "custom_user_id" in data
-        else None,
+        # 键存在时：null/空 → ""（允许清空）；键不存在 → None（不改库）
+        customer_id=_explicit_id_or_clear(
+            data, ("customerId", "customer_name", "customerName")
+        ),
+        custom_user_id=_explicit_id_or_clear(
+            data, ("customUserId", "custom_user_id")
+        ),
         class_id=data.get("classId") if "classId" in data or "class_id" in data else None,
         test_address_id=data.get("testAddressId")
         if "testAddressId" in data or "test_address_id" in data

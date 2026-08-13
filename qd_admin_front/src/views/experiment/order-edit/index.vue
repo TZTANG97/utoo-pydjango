@@ -1648,8 +1648,9 @@ async function onSave() {
       taxes: form.invoiceType ? form.taxes : '',
       saleManagerId: form.saleManagerId,
       saleUserId: form.saleUserId,
-      customerId: form.customerId,
-      customUserId: form.customUserId,
+      // 清空时显式传空串，避免后端把 null 当成「不改字段」
+      customerId: form.customerId || '',
+      customUserId: form.customUserId || '',
       children: lines.value.map((row) => ({
         // 新行显式传 null，避免后端把空串当成已有 id
         id: row.id !== '' && row.id != null ? row.id : null,
