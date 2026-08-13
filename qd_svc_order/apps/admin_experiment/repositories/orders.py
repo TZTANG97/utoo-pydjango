@@ -3423,7 +3423,10 @@ def get_order_detail_bundle(
     can_view_share = bool(role_ctx.get("can_view_share"))
     row["canViewShareInfo"] = can_view_share
     row["canViewLogs"] = bool(role_ctx.get("can_view_logs"))
+    # Java isFlag 仅实验分包采购子单详情（type 9/10）隐藏财务；实验主单详情始终展示总价/币种/开票等
     can_view_finance = bool(role_ctx.get("can_view_finance", True))
+    if ot not in ("9", "10"):
+        can_view_finance = True
     row["canViewFinance"] = can_view_finance
     # 对齐 Java isFlag=false：测试主管/测试人员不返回付款·开票「数据」；
     # 上传付款/开票/申请付款按钮仍按状态显隐（Java 未用 isFlag 包按钮）。
@@ -3743,7 +3746,7 @@ def _viewer_role_context(viewer_user_id: str | int | None) -> dict[str, Any]:
         "can_share_ratio": True,
         "can_view_logs": True,
         "can_view_all_logs": False,
-        # Java ExpSubPurchaseOrder isFlag：测试主管/测试人员不可看付款·开票·总价·币种等
+        # Java ExpSubPurchaseOrder isFlag：仅 type9/10 详情对测试主管/测试人员隐藏付款·开票·总价·币种等
         "can_view_finance": True,
         "is_c_sales": False,
         "is_test_role": False,

@@ -80,9 +80,12 @@ def user_list(request: Request, user=None):
     data = merge_payload(request)
     draw, page, page_size = parse_datatable_params(request)
     is_admin = _is_super_admin(user)
+    # Java queryUsers.ajax?type=：全公司按角色下拉，不按登录人部门裁剪（queryUsers.do 才按部门）
+    role_type = str(data.get("type") if data.get("type") is not None else "").strip()
+    dropdown_mode = role_type != ""
     req_dept = str(data.get("deptId") or data.get("dept_id") or "").strip()
     dept_ids: list[str] | None = None
-    if not is_admin:
+    if not is_admin and not dropdown_mode:
         from apps.admin_system.repositories import dept as dept_repo
 
         staff_dept = _staff_dept_id(user)
@@ -95,13 +98,13 @@ def user_list(request: Request, user=None):
             dept_ids = allowed
             req_dept = ""
     rows, total = user_repo.list_users(
-        dept_id=req_dept if is_admin else "",
-        dept_ids=None if is_admin else dept_ids,
+        dept_id="" if (not is_admin or dropdown_mode) else req_dept,
+        dept_ids=None if (is_admin or dropdown_mode) else dept_ids,
         user_name=(data.get("userName") or data.get("user_name") or "").strip(),
         true_name=(data.get("trueName") or data.get("true_name") or "").strip(),
         user_sex=str(data.get("userSex") if data.get("userSex") is not None else data.get("user_sex") or ""),
-        role_type=str(data.get("type") if data.get("type") is not None else ""),
-        exclude_admin=not is_admin,
+        role_type=role_type,
+        exclude_admin=False if dropdown_mode else (not is_admin),
         page=page,
         page_size=page_size,
     )
