@@ -1997,7 +1997,10 @@ def get_order(order_id: int) -> dict[str, Any] | None:
     row["canReceiveBill"] = parent_kind and status_ok_bill and view_recv and not sure_recv
     row["canConfirmPay"] = parent_kind and sure_recv
     row["canConfirmCustomer"] = parent_kind and st == 67
-    row["canGenerateAppointment"] = parent_kind and is_yyd == 0 and st not in (0,)
+    # 对齐 Java：仅线下单(is_online=0)显示「生成预约单」；线上单收款后自动生成
+    row["canGenerateAppointment"] = (
+        parent_kind and is_online == 0 and is_yyd == 0 and st not in (0,)
+    )
     # 预约单只允许生成一次（与 Java 一致，无重新生成）
     row["canRegenerateAppointment"] = False
     # 创建子单：存在待处理产品行 op_status=1
@@ -4010,11 +4013,17 @@ def generate_appointment(
 ) -> tuple[bool, str]:
     """对齐 Java geranateYydForm：写地址、标记 is_yyd、生成预约单 PDF(type=6)。
 
-    预约单只允许生成一次（已生成后不可再生成/重新生成）。
+    仅线下单可手动生成；线上单由收款后自动生成。预约单只允许生成一次。
     """
     row = get_order(order_id)
     if not row:
         return False, "订单不存在"
+    try:
+        is_online = int(row.get("isOnline") or 0)
+    except (TypeError, ValueError):
+        is_online = 0
+    if is_online == 1:
+        return False, "线上订单收款后自动生成预约单，不可手动生成"
     if not bool(row.get("canGenerateAppointment")):
         if bool(row.get("isYyd")):
             return False, "预约单已生成，不可重复生成"
@@ -4472,7 +4481,7 @@ def auto_generate_appointment_after_online_pay(
     """对齐 Java BillController.saveBillData → geranateYyd：
 
     实验单(order_type 6/8) 在写入收款单(type=2)后，若尚未生成预约单则自动生成。
-    Java 不区分线上/线下（不检查 is_online）；线下付款申请同意走 insert_receive_bill 时也走此钩子。
+    线上单靠此钩子生成（无手动按钮）；线下付款申请同意写收款时也会触发。
     """
     row = fetch_one(
         """
