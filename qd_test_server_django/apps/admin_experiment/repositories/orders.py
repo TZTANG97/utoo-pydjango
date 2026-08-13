@@ -2163,8 +2163,9 @@ _CHILD_LINE_JOINS = """
                 SELECT t3.order_child_id, MAX(t3.id) AS max_id
                 FROM exp_goods_out_treasury_child t3
                 LEFT JOIN exp_goods_out_treasury t4 ON t3.out_id = t4.id
+                -- 对齐 Java selCgChildListByParm：仅排除主单作废(status=3)；
+                -- 寄回(got_status=3)/报废(5)后仍应展示样品管理单号
                 WHERE IFNULL(t4.status, 0) != 3
-                  AND IFNULL(t3.got_status, 0) NOT IN (3, 5)
                 GROUP BY t3.order_child_id
             ) tx ON t1.id = tx.max_id
         ) gotc ON c.id = gotc.order_child_id
