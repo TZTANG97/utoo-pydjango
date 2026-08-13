@@ -20,19 +20,20 @@ def print_pdf_info(*, user_id: int, order_id: int) -> Optional[dict[str, Any]]:
         return None
 
     first = dict(rows[0])
-    address = first.get("send_address") or first.get("sc_send_address") or ""
+    # 寄方：咨询/订单寄件人；寄送：测试地址收件信息（与预约单 PDF 一致）
     user_name = str(first.get("userName") or first.get("addressee_name") or "").strip()
     mobile = str(first.get("sc_mobile") or first.get("addressee_mobile") or "").strip()
+    address = str(first.get("send_address") or first.get("sc_send_address") or "").strip()
+    recv_name = ""
+    recv_mobile = ""
     test_addr_id = first.get("test_address_id")
     if test_addr_id:
         ta = print_pdf_repo.get_test_address(int(test_addr_id)) or {}
         if ta.get("address"):
-            address = ta["address"]
-        # 寄送地址主数据优先于咨询单/订单收件字段
-        if str(ta.get("trueName") or "").strip():
-            user_name = str(ta.get("trueName") or "").strip()
-        if str(ta.get("mobile") or "").strip():
-            mobile = str(ta.get("mobile") or "").strip()
+            address = str(ta["address"] or "").strip()
+        recv_name = str(ta.get("trueName") or "").strip()
+        recv_mobile = str(ta.get("mobile") or "").strip()
+        # 勿用测试地址收件人覆盖寄方信息
 
     reverso = first.get("reverso_context") or first.get("sc_reverso_context")
     recovery: int | None = None
@@ -77,6 +78,8 @@ def print_pdf_info(*, user_id: int, order_id: int) -> Optional[dict[str, Any]]:
         "mobile": mobile,
         "sampleDelivery": {
             "address": address,
+            "trueName": recv_name,
+            "mobile": recv_mobile,
             "recovery": recovery,
         },
         "childList": child_list,

@@ -4102,11 +4102,11 @@ def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool
     """生成预约单 PDF 并写入 accessory type=6。
 
     版式对齐 Java 管理端预约单样张：
-    - 标题 + 右上二维码 + 创建日期
-    - 主信息：实验项目/订单编号/下单时间/寄方信息/寄送地址/
+    - 标题 + 右上二维码 + 创建日期（标题用实验项目名）
+    - 主信息：实验项目/订单编号/下单时间/寄方信息/寄送地址（收件人详写）/
       是否回收样品/云视频/线下到场/我要上机
     - 每个样品：EDS主要成分、无法喷金注意事项、样品二维码块
-      （样品编号/名称/数量/预约设备）
+      （二维码内容 childId_{子单pk}；样品编号/名称/数量/实验项目）
     """
     try:
         from datetime import datetime
@@ -4164,21 +4164,33 @@ def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool
 
     order_no = str(first.get("ord_id") or order_id)
     add_time = str(first.get("addTime") or "")[:19]
-    address_text = (
+    # 寄方信息：仅咨询单/订单寄件人（勿用测试地址收件人冒充；详情页无该字段时常为空）
+    sender_name = (
+        str(first.get("userName") or "").strip()
+        or str(first.get("addressee_name") or "").strip()
+    )
+    sender_mobile = (
+        str(first.get("sc_mobile") or "").strip()
+        or str(first.get("addressee_mobile") or "").strip()
+    )
+    # 样品寄送地址：所选测试地址的收件人/电话/地址（对齐 Java 详写）
+    recv_name = str(addr_row.get("trueName") or "").strip()
+    recv_mobile = str(addr_row.get("mobile") or "").strip()
+    recv_addr = (
         str(addr_row.get("address") or "").strip()
         or str(first.get("sc_send_address") or "").strip()
         or str(first.get("send_address") or "").strip()
     )
-    contact_name = (
-        str(addr_row.get("trueName") or "").strip()
-        or str(first.get("userName") or "").strip()
-        or str(first.get("addressee_name") or "").strip()
-    )
-    contact_mobile = (
-        str(addr_row.get("mobile") or "").strip()
-        or str(first.get("sc_mobile") or "").strip()
-        or str(first.get("addressee_mobile") or "").strip()
-    )
+    if recv_name or recv_mobile or recv_addr:
+        address_text = (
+            f"收件人姓名：{recv_name or '-'}\n"
+            f"收件人电话：{recv_mobile or '-'}\n"
+            f"寄送地址：{recv_addr or '-'}"
+        )
+    else:
+        address_text = ""
+    contact_name = sender_name
+    contact_mobile = sender_mobile
 
     rev = first.get("reverso_context")
     if rev in (None, "") and first.get("sc_reverso_context") not in (None, ""):
@@ -4204,6 +4216,7 @@ def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool
         seen.add(cid_i)
         child_list.append(
             {
+                "cid": cid_i,
                 "orderId": str(r.get("ordc_id") or ""),
                 "goodsName": str(r.get("goods_name") or ""),
                 "goodsNums": r.get("goods_nums"),
@@ -4217,7 +4230,7 @@ def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool
         for ch in fetch_all(
             """
             SELECT
-                c.order_id AS orderId, c.goods_name AS goodsName, c.goods_nums AS goodsNums,
+                c.id AS cid, c.order_id AS orderId, c.goods_name AS goodsName, c.goods_nums AS goodsNums,
                 c.experiment_project_name AS projectName, c.experiment_class_name AS className,
                 osi.main_component AS mainComponent, osi.gold_desc AS goldDesc
             FROM experiment_order_child c
@@ -4228,8 +4241,13 @@ def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool
             """,
             {"oid": order_id},
         ) or []:
+            try:
+                cid_i = int(ch.get("cid") or 0)
+            except (TypeError, ValueError):
+                cid_i = 0
             child_list.append(
                 {
+                    "cid": cid_i,
                     "orderId": str(ch.get("orderId") or ""),
                     "goodsName": str(ch.get("goodsName") or ""),
                     "goodsNums": ch.get("goodsNums"),
@@ -4240,8 +4258,11 @@ def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool
                 }
             )
 
-    class_name = (
-        (child_list[0].get("className") if child_list else "")
+    # 标题/实验项目：用实验项目名，不用测试分类（class）
+    project_name = (
+        (child_list[0].get("projectName") if child_list else "")
+        or str(first.get("experiment_project_name") or "").strip()
+        or (child_list[0].get("className") if child_list else "")
         or str(first.get("experiment_class_name") or "").strip()
         or "实验"
     )
@@ -4323,7 +4344,7 @@ def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool
         head_qr = _qr_image(order_no, 22)
         head = Table(
             [
-                [_cell(f"{class_name}-预约单", title_style), head_qr],
+                [_cell(f"{project_name}-预约单", title_style), head_qr],
                 [_cell(f"创建日期：{create_date}", date_style), ""],
             ],
             colWidths=[usable - 28 * mm, 28 * mm],
@@ -4342,14 +4363,16 @@ def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool
             )
         )
 
+        sender_text = (
+            f"联系人姓名: {contact_name or '-'}\n联系人电话: {contact_mobile or '-'}"
+            if (contact_name or contact_mobile)
+            else ""
+        )
         data: list[list[Any]] = [
-            [_cell("实验项目"), _cell(class_name)],
+            [_cell("实验项目"), _cell(project_name)],
             [_cell("订单编号"), _cell(order_no)],
             [_cell("下单时间"), _cell(add_time)],
-            [
-                _cell("寄方信息"),
-                _cell(f"联系人姓名: {contact_name}\n联系人电话: {contact_mobile}"),
-            ],
+            [_cell("寄方信息"), _cell(sender_text)],
             [_cell("样品寄送地址"), _cell(address_text)],
             [_cell("是否回收样品"), _cell(recovery_label)],
             [_cell("是否云视频"), _cell(video_label)],
@@ -4367,16 +4390,22 @@ def _build_appointment_pdf(*, order_id: int, test_address_id: int) -> tuple[bool
                     nums_s = str(int(float(nums)))
             except (TypeError, ValueError):
                 nums_s = str(nums or "")
-            device = str(ch.get("className") or class_name or "")
+            proj = str(ch.get("projectName") or project_name or "")
             data.append([_cell("EDS主要成分"), _cell(str(ch.get("mainComponent") or ""))])
             data.append([_cell("无法喷金注意事项"), _cell(str(ch.get("goldDesc") or ""))])
 
-            sample_qr = _qr_image(oid or order_no, 28)
+            # 小程序扫码约定：childId_{子单数字主键}，否则无法回显样品 ID
+            try:
+                cid_i = int(ch.get("cid") or 0)
+            except (TypeError, ValueError):
+                cid_i = 0
+            qr_payload = f"childId_{cid_i}" if cid_i > 0 else (oid or order_no)
+            sample_qr = _qr_image(qr_payload, 28)
             sample_info = _cell(
                 f"样品编号：{oid}\n"
                 f"样品名称：{ch.get('goodsName') or ''}\n"
                 f"样品数量：{nums_s}\n"
-                f"预约设备：{device}",
+                f"实验项目：{proj}",
                 sample_text_style,
             )
             sample_box = Table(
