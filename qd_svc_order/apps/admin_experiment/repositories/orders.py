@@ -2456,6 +2456,106 @@ def _attach_child_runtime_fields(rows: list[dict[str, Any]]) -> None:
         r["expectFinishTime"] = str(eft)[:19] if eft else ""
 
 
+def list_edit_selectable_children(
+    order_id: int, *, viewer_user_id: str | None = None
+) -> list[dict[str, Any]]:
+    """子单编辑可选产品行：对齐 Java getChildsByCanceledAndChecked(2)。
+
+    含：本子单已挂接行 ∪ 父单待处理(op_status=1)行。
+    linkedToThis=True 表示当前已挂到本子单（编辑页默认勾选）。
+    """
+    row = get_order(order_id)
+    if not row:
+        return []
+    ot = str(row.get("orderType") or "").strip()
+    if ot not in ("9", "10"):
+        return list_order_children(order_id, viewer_user_id=viewer_user_id)
+    parent_pk = row.get("parentPkId") or row.get("parentId")
+    try:
+        parent_id = int(parent_pk) if parent_pk not in (None, "", 0, "0") else 0
+    except (TypeError, ValueError):
+        parent_id = 0
+    try:
+        rows = fetch_all(
+            f"""
+            SELECT {_CHILD_LINE_SELECT},
+                   CASE
+                     WHEN EXISTS (
+                       SELECT 1 FROM exp_qd_purchase_order_child px
+                       WHERE px.order_child_id = c.id
+                         AND px.purchase_order_id = %(oid)s
+                     ) THEN 1 ELSE 0
+                   END AS linkedToThis
+            FROM experiment_order_child c
+            {_CHILD_LINE_JOINS}
+            WHERE IFNULL(c.delete_status, 2) <> 1
+              AND (
+                (c.order_form_id = %(pid)s AND IFNULL(c.op_status, 0) = 1)
+                OR EXISTS (
+                  SELECT 1 FROM exp_qd_purchase_order_child poc
+                  WHERE poc.order_child_id = c.id
+                    AND poc.purchase_order_id = %(oid)s
+                )
+              )
+            ORDER BY linkedToThis DESC, c.id ASC
+            """,
+            {"oid": order_id, "pid": parent_id or -1},
+        )
+    except Exception:
+        # 无 parent 或 SQL 失败时退回已挂接行
+        rows = _fetch_children_basic(order_id)
+        for r in rows or []:
+            r["linkedToThis"] = 1
+    # 复用 list_order_children 的标注（状态文案 / canGrab 等）
+    if not rows:
+        return []
+    # 去重
+    deduped: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for r in rows:
+        try:
+            cid = int(r.get("id"))
+        except (TypeError, ValueError):
+            deduped.append(r)
+            continue
+        if cid in seen:
+            continue
+        seen.add(cid)
+        try:
+            r["linkedToThis"] = bool(int(r.get("linkedToThis") or 0))
+        except (TypeError, ValueError):
+            r["linkedToThis"] = False
+        deduped.append(r)
+    # 走统一标注逻辑：临时拼成「假订单 children」路径太重，直接复用 list 后按 id 回填
+    annotated = list_order_children(order_id, viewer_user_id=viewer_user_id)
+    by_id = {}
+    for a in annotated:
+        try:
+            by_id[int(a.get("id"))] = a
+        except (TypeError, ValueError):
+            pass
+    out: list[dict[str, Any]] = []
+    for r in deduped:
+        try:
+            cid = int(r.get("id"))
+        except (TypeError, ValueError):
+            out.append(r)
+            continue
+        base = by_id.get(cid)
+        if base:
+            merged = {**base}
+            merged["linkedToThis"] = bool(r.get("linkedToThis"))
+            out.append(merged)
+        else:
+            # 父单待处理未挂接行：补基础标签
+            r["orderStatusLabel"] = _child_line_status_label(r.get("orderStatus"))
+            r["testUserName"] = str(r.get("testUserTrueName") or r.get("testUserName") or "-")
+            r["linkedToThis"] = bool(r.get("linkedToThis"))
+            r["canCreateSubLine"] = True
+            out.append(r)
+    return out
+
+
 def list_order_children(
     order_id: int, *, viewer_user_id: str | None = None
 ) -> list[dict[str, Any]]:
@@ -3121,6 +3221,107 @@ def _link_exp_purchase_child(
             pass
 
 
+def _sync_sub_order_purchase_children(
+    *, order_id: int, order_type: str, keep_ids: set[int]
+) -> tuple[bool, str]:
+    """子单编辑按勾选同步挂接：对齐 Java updatePurchaseOrder(checkChilds)。
+
+    - 取消勾选：删 purchase 关联，op_status 回 1（产品行仍属主单，勿软删）
+    - 新勾选：建关联，op_status=2
+    """
+    if not keep_ids:
+        return False, "请至少选择一个子订单"
+    ot = str(order_type or "").strip()
+    # 禁止勾选已挂到其他有效子单的产品行
+    id_list = sorted(keep_ids)
+    placeholders = ", ".join(f"%(c{i})s" for i in range(len(id_list)))
+    params: dict[str, Any] = {f"c{i}": cid for i, cid in enumerate(id_list)}
+    params["oid"] = order_id
+    conflict = fetch_all(
+        f"""
+        SELECT DISTINCT p.order_child_id AS cid, o.order_id AS ono
+        FROM exp_qd_purchase_order_child p
+        INNER JOIN experiment_order o ON o.id = p.purchase_order_id
+        WHERE p.order_child_id IN ({placeholders})
+          AND p.purchase_order_id <> %(oid)s
+          AND IFNULL(o.deleteStatus, 0) = 0
+          AND IFNULL(o.order_status, -1) <> 0
+        """,
+        params,
+    )
+    if conflict:
+        nos = ", ".join(str(x.get("ono") or x.get("cid")) for x in conflict[:5])
+        return False, f"所选产品行已挂接其他子订单：{nos}"
+    linked_rows = fetch_all(
+        """
+        SELECT order_child_id AS cid
+        FROM exp_qd_purchase_order_child
+        WHERE purchase_order_id = %(oid)s
+        """,
+        {"oid": order_id},
+    )
+    linked_ids: set[int] = set()
+    for lr in linked_rows or []:
+        try:
+            linked_ids.add(int(lr["cid"]))
+        except (TypeError, ValueError, KeyError):
+            pass
+    # 先把本单原挂接行打回待处理（随后再把 keep 行设为已处理）
+    for eid in linked_ids:
+        try:
+            execute(
+                """
+                UPDATE experiment_order_child
+                SET op_status = 1
+                WHERE id = %(cid)s
+                """,
+                {"cid": eid},
+            )
+        except Exception:
+            pass
+    try:
+        execute(
+            "DELETE FROM exp_qd_purchase_order_child WHERE purchase_order_id = %(oid)s",
+            {"oid": order_id},
+        )
+    except Exception as exc:
+        logger.exception("unlink purchase children failed order=%s", order_id)
+        return False, f"更新产品挂接失败：{exc}"
+    for cid in sorted(keep_ids):
+        _link_exp_purchase_child(
+            purchase_order_id=order_id, order_child_id=cid, order_type=ot
+        )
+        try:
+            execute(
+                """
+                UPDATE experiment_order_child
+                SET op_status = 2,
+                    order_status = CASE
+                        WHEN IFNULL(order_status, 0) < 2 THEN 2
+                        ELSE order_status
+                    END
+                WHERE id = %(cid)s
+                """,
+                {"cid": cid},
+            )
+        except Exception:
+            execute(
+                """
+                UPDATE experiment_order_child SET op_status = 2 WHERE id = %(cid)s
+                """,
+                {"cid": cid},
+            )
+    repair_exp_purchase_child_order_types(order_id)
+    logger.info(
+        "edit sync purchase children order=%s ot=%s keep=%s was=%s",
+        order_id,
+        ot,
+        sorted(keep_ids),
+        sorted(linked_ids),
+    )
+    return True, "ok"
+
+
 def repair_exp_purchase_child_order_types(purchase_order_id: int | None = None) -> None:
     """回填历史关联行缺失的 order_type，供 Java 详情查询。"""
     try:
@@ -3254,9 +3455,21 @@ def get_order_detail_bundle(
     if not role_ctx.get("can_share_ratio"):
         row["canShareRatio"] = False
     _apply_child_edit_permission(row, viewer_user_id, role_ctx=role_ctx)
+    # 子单编辑勾选：已挂接 ∪ 父单待处理行（对齐 Java saleChilds）
+    edit_selectable: list[dict[str, Any]] = []
+    if ot in ("9", "10"):
+        try:
+            edit_selectable = list_edit_selectable_children(
+                order_id, viewer_user_id=viewer_user_id
+            )
+        except Exception:
+            edit_selectable = [
+                {**ch, "linkedToThis": True} for ch in (children or [])
+            ]
     return {
         **row,
         "children": children,
+        "editSelectableChildren": edit_selectable,
         "logs": logs,
         "bills": bills,
         "linkedOrders": linked,
@@ -4891,6 +5104,7 @@ def update_order_basic(
     if children is not None:
         ot = str(row.get("orderType") or "")
         keep_ids: set[int] = set()
+        pending_updates: list[dict[str, Any]] = []
         for ch in children:
             if not isinstance(ch, dict):
                 continue
@@ -4916,8 +5130,33 @@ def update_order_basic(
             except (TypeError, ValueError):
                 continue
             keep_ids.add(cid_i)
+            pending_updates.append(ch)
+
+        # type9/10：先按勾选同步挂接（对齐 Java checkChilds / updatePurchaseOrder）
+        parent_pk = row.get("parentPkId") or row.get("parentId")
+        try:
+            parent_id = int(parent_pk) if parent_pk not in (None, "", 0, "0") else 0
+        except (TypeError, ValueError):
+            parent_id = 0
+        if str(ot).strip() in ("9", "10"):
+            ok_sync, sync_msg = _sync_sub_order_purchase_children(
+                order_id=order_id, order_type=ot, keep_ids=keep_ids
+            )
+            if not ok_sync:
+                return False, sync_msg
+
+        for ch in pending_updates:
+            cid = ch.get("id") or ch.get("childId")
+            try:
+                cid_i = int(cid)
+            except (TypeError, ValueError):
+                continue
             child_sets: list[str] = []
-            child_params: dict[str, Any] = {"id": cid_i, "oid": order_id}
+            child_params: dict[str, Any] = {
+                "id": cid_i,
+                "oid": order_id,
+                "pid": parent_id or order_id,
+            }
             if ch.get("goodsNums") is not None or ch.get("goods_nums") is not None:
                 try:
                     child_params["nums"] = int(
@@ -5003,6 +5242,7 @@ def update_order_basic(
                     child_params[key] = str(val)[:200]
                     child_sets.append(f"{col} = %({key})s")
             if child_sets:
+                # 子单产品行挂在主单 order_form_id 上，允许按父单 id 更新
                 execute(
                     f"""
                     UPDATE experiment_order_child
@@ -5010,6 +5250,7 @@ def update_order_basic(
                     WHERE id = %(id)s
                       AND (
                         order_form_id = %(oid)s
+                        OR order_form_id = %(pid)s
                         OR EXISTS (
                           SELECT 1 FROM exp_qd_purchase_order_child poc
                           WHERE poc.order_child_id = %(id)s
@@ -5063,29 +5304,31 @@ def update_order_basic(
                     sorted(keep_ids),
                 )
     # 前端显式传入的删除行（兼容 keep_ids 漏删；含新增后未刷新仍带旧 id 的场景）
-    for raw_id in deleted_child_ids or []:
-        try:
-            did = int(raw_id)
-        except (TypeError, ValueError):
-            continue
-        if did <= 0:
-            continue
-        execute(
-            """
-            UPDATE experiment_order_child
-            SET delete_status = 1
-            WHERE id = %(id)s
-              AND (
-                order_form_id = %(oid)s
-                OR EXISTS (
-                  SELECT 1 FROM exp_qd_purchase_order_child poc
-                  WHERE poc.order_child_id = %(id)s
-                    AND poc.purchase_order_id = %(oid)s
-                )
-              )
-            """,
-            {"id": did, "oid": order_id},
-        )
+    # 子单(type9/10)产品行属主单：禁止软删，挂接变更已由 checkChilds 同步完成
+    if str(row.get("orderType") or "").strip() not in ("9", "10"):
+        for raw_id in deleted_child_ids or []:
+            try:
+                did = int(raw_id)
+            except (TypeError, ValueError):
+                continue
+            if did <= 0:
+                continue
+            execute(
+                """
+                UPDATE experiment_order_child
+                SET delete_status = 1
+                WHERE id = %(id)s
+                  AND (
+                    order_form_id = %(oid)s
+                    OR EXISTS (
+                      SELECT 1 FROM exp_qd_purchase_order_child poc
+                      WHERE poc.order_child_id = %(id)s
+                        AND poc.purchase_order_id = %(oid)s
+                    )
+                  )
+                """,
+                {"id": did, "oid": order_id},
+            )
     _write_order_log(order_id, "编辑订单", user_id=staff_user_id)
     return True, "保存成功"
 

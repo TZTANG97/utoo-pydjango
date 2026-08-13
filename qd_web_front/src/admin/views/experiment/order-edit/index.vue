@@ -407,8 +407,17 @@
           <h3>产品明细</h3>
           <el-button v-if="isMainOrder" type="primary" @click="addLine">添加产品</el-button>
         </div>
-        <!-- type9 对齐 Java experimentsub/purchase_edit_orders：成本单价 -->
-        <el-table v-if="isSubcontractSub" :data="lines" border stripe empty-text="暂无产品行">
+        <!-- type9 对齐 Java experimentsub/purchase_edit_orders：勾选 + 成本单价 -->
+        <el-table
+          v-if="isSubcontractSub"
+          ref="subLineTableRef"
+          :data="lines"
+          border
+          stripe
+          empty-text="暂无产品行"
+          @selection-change="onSubLineSelectionChange"
+        >
+          <el-table-column type="selection" width="48" />
           <el-table-column prop="childOrderId" label="子订单编号" min-width="140" show-overflow-tooltip />
           <el-table-column prop="goodsName" label="产品名称" min-width="140" show-overflow-tooltip />
           <el-table-column prop="goodsBrandName" label="产品品牌" min-width="100" show-overflow-tooltip />
@@ -420,8 +429,17 @@
             </template>
           </el-table-column>
         </el-table>
-        <!-- type10：可改测试人员 / 实验平台 / 预计完成时间 -->
-        <el-table v-else-if="isExpSub" :data="lines" border stripe empty-text="暂无产品行">
+        <!-- type10：勾选决定挂接行；可改测试人员 / 实验平台 / 预计完成时间 -->
+        <el-table
+          v-else-if="isExpSub"
+          ref="subLineTableRef"
+          :data="lines"
+          border
+          stripe
+          empty-text="暂无产品行"
+          @selection-change="onSubLineSelectionChange"
+        >
+          <el-table-column type="selection" width="48" />
           <el-table-column prop="childOrderId" label="子订单编号" min-width="150" show-overflow-tooltip />
           <el-table-column prop="goodsName" label="产品名称" min-width="140" show-overflow-tooltip />
           <el-table-column label="产品型号" min-width="120">
@@ -692,9 +710,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onDeactivated, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import type { TableInstance } from 'element-plus'
 import {
   deleteExpOrderFile,
   fetchExpGoodsList,
@@ -733,6 +752,8 @@ type LineRow = {
   testUserId: string
   lineId: string
   expectFinishTime: string
+  /** 子单编辑：是否已挂接到本单（默认勾选） */
+  linkedToThis?: boolean
 }
 
 const route = useRoute()
@@ -745,6 +766,9 @@ const saving = ref(false)
 const uploading = ref(false)
 const detail = ref<Record<string, unknown> | null>(null)
 const lines = ref<LineRow[]>([])
+/** type9/10 勾选列：对齐 Java checkChilds，决定本子单挂接哪些产品行 */
+const subLineTableRef = ref<TableInstance>()
+const selectedSubLines = ref<LineRow[]>([])
 /** 编辑页点「-」移除的已有产品行 id，保存时显式软删 */
 const removedLineIds = ref<(string | number)[]>([])
 const orderFiles = ref<Record<string, unknown>[]>([])
@@ -829,9 +853,68 @@ const totalAmount = computed(() =>
     .reduce((s, r) => s + (Number(r.goodsNums) || 0) * (parseFloat(String(r.goodsPrice || 0)) || 0), 0)
     .toFixed(2)
 )
-const totalCostAmount = computed(() =>
-  lines.value.reduce((s, r) => s + (parseFloat(String(r.costPrice || 0)) || 0), 0).toFixed(2)
-)
+const totalCostAmount = computed(() => {
+  const rows =
+    isSubcontractSub.value && selectedSubLines.value.length
+      ? selectedSubLines.value
+      : lines.value
+  return rows.reduce((s, r) => s + (parseFloat(String(r.costPrice || 0)) || 0), 0).toFixed(2)
+})
+
+function onSubLineSelectionChange(rows: LineRow[]) {
+  selectedSubLines.value = rows
+}
+
+function mapChildToLine(ch: Record<string, unknown>): LineRow {
+  const spec = String(ch.goodsSpec || '')
+  return {
+    id: (ch.id ?? '') as string | number,
+    goodsId: String(ch.goodsId || ch.goods_id || ''),
+    goodsName: String(ch.goodsName || ''),
+    goodsSpec: spec,
+    goodsBrandId: String(ch.goodsBrandId || ch.goods_brand_id || ''),
+    goodsBrandName: String(ch.goodsBrandName || ch.goodsBrand || ''),
+    goodsNums: Number(ch.goodsNums || ch.goodsCount || 1) || 1,
+    goodsPrice:
+      ch.price != null ? String(ch.price) : ch.goodsPrice != null ? String(ch.goodsPrice) : '',
+    referencePrice:
+      ch.referencePrice != null
+        ? String(ch.referencePrice)
+        : ch.reference_price != null
+          ? String(ch.reference_price)
+          : '',
+    costPrice: ch.costPrice != null ? String(ch.costPrice) : '',
+    projectId: String(ch.projectId || ch.experimentProjectId || ''),
+    projectName: String(ch.projectName || ch.experimentProjectName || ''),
+    classId: String(ch.classId || ch.experimentClassId || ''),
+    className: String(ch.className || ch.experimentClassName || ch.deviceName || ''),
+    childOrderId: String(ch.childOrderId || ch.orderId || ''),
+    specOptions: spec ? [spec] : [],
+    testUserId: ch.testUserId != null ? String(ch.testUserId) : '',
+    lineId: ch.lineId != null ? String(ch.lineId) : ch.line_id != null ? String(ch.line_id) : '',
+    expectFinishTime: String(
+      ch.expectFinishTime || ch.expect_finishtime || ch.finishTime || ''
+    ),
+    linkedToThis:
+      ch.linkedToThis === true ||
+      ch.linkedToThis === 1 ||
+      ch.linkedToThis === '1' ||
+      ch.linkedToThis == null,
+  }
+}
+
+async function applyDefaultSubSelection() {
+  await nextTick()
+  await nextTick()
+  const table = subLineTableRef.value
+  if (!table) return
+  table.clearSelection()
+  for (const row of lines.value) {
+    if (row.linkedToThis !== false) {
+      table.toggleRowSelection(row, true)
+    }
+  }
+}
 
 function goBack() {
   router.push({
@@ -1476,40 +1559,14 @@ async function load() {
 
     refreshShareSummary()
 
-    const children = Array.isArray(obj.children) ? (obj.children as Record<string, unknown>[]) : []
+    const childrenRaw = Array.isArray(obj.editSelectableChildren)
+      ? (obj.editSelectableChildren as Record<string, unknown>[])
+      : Array.isArray(obj.children)
+        ? (obj.children as Record<string, unknown>[])
+        : []
     removedLineIds.value = []
-    lines.value = children.map((ch) => {
-      const spec = String(ch.goodsSpec || '')
-      return {
-        id: (ch.id ?? '') as string | number,
-        goodsId: String(ch.goodsId || ch.goods_id || ''),
-        goodsName: String(ch.goodsName || ''),
-        goodsSpec: spec,
-        goodsBrandId: String(ch.goodsBrandId || ch.goods_brand_id || ''),
-        goodsBrandName: String(ch.goodsBrandName || ch.goodsBrand || ''),
-        goodsNums: Number(ch.goodsNums || ch.goodsCount || 1) || 1,
-        goodsPrice:
-          ch.price != null ? String(ch.price) : ch.goodsPrice != null ? String(ch.goodsPrice) : '',
-        referencePrice:
-          ch.referencePrice != null
-            ? String(ch.referencePrice)
-            : ch.reference_price != null
-              ? String(ch.reference_price)
-              : '',
-        costPrice: ch.costPrice != null ? String(ch.costPrice) : '',
-        projectId: String(ch.projectId || ch.experimentProjectId || ''),
-        projectName: String(ch.projectName || ch.experimentProjectName || ''),
-        classId: String(ch.classId || ch.experimentClassId || ''),
-        className: String(ch.className || ch.experimentClassName || ch.deviceName || ''),
-        childOrderId: String(ch.childOrderId || ch.orderId || ''),
-        specOptions: spec ? [spec] : [],
-        testUserId: ch.testUserId != null ? String(ch.testUserId) : '',
-        lineId: ch.lineId != null ? String(ch.lineId) : ch.line_id != null ? String(ch.line_id) : '',
-        expectFinishTime: String(
-          ch.expectFinishTime || ch.expect_finishtime || ch.finishTime || ''
-        ),
-      }
-    })
+    selectedSubLines.value = []
+    lines.value = childrenRaw.map((ch) => mapChildToLine(ch))
 
     if (String(obj.orderType || obj.order_type || '') === '10') {
       await loadPlatforms()
@@ -1517,9 +1574,9 @@ async function load() {
       if (obj.classId) classIds.push(String(obj.classId))
       await loadTestersForClasses(classIds)
       for (const row of lines.value) {
-        ensureTesterOnRow(row, children)
+        ensureTesterOnRow(row, childrenRaw)
         if (row.lineId) {
-          const hit = children.find((c) => String(c.id) === String(row.id))
+          const hit = childrenRaw.find((c) => String(c.id) === String(row.id))
           ensureOpt(
             platformOpts,
             row.lineId,
@@ -1527,6 +1584,12 @@ async function load() {
           )
         }
       }
+    }
+    if (
+      String(obj.orderType || obj.order_type || '') === '9' ||
+      String(obj.orderType || obj.order_type || '') === '10'
+    ) {
+      await applyDefaultSubSelection()
     }
   } finally {
     loading.value = false
@@ -1572,7 +1635,11 @@ async function onSave() {
     return
   }
   if (isSubcontractSub.value) {
-    if (lines.value.some((r) => !String(r.costPrice || '').trim())) {
+    if (!selectedSubLines.value.length) {
+      ElMessage.warning('请至少选择一个子订单!')
+      return
+    }
+    if (selectedSubLines.value.some((r) => !String(r.costPrice || '').trim())) {
       ElMessage.warning('请填写成本单价')
       return
     }
@@ -1596,7 +1663,11 @@ async function onSave() {
     recalcTotal()
   }
   if (isExpSub.value) {
-    for (const [i, row] of lines.value.entries()) {
+    if (!selectedSubLines.value.length) {
+      ElMessage.warning('请至少选择一个子订单!')
+      return
+    }
+    for (const [i, row] of selectedSubLines.value.entries()) {
       if (!row.testUserId) {
         ElMessage.warning(`第 ${i + 1} 行请选择测试人员`)
         return
@@ -1634,6 +1705,8 @@ async function onSave() {
   }
   saving.value = true
   try {
+    const saveLines =
+      isExpSub.value || isSubcontractSub.value ? selectedSubLines.value : lines.value
     const payload: Record<string, unknown> = {
       id: orderId,
       totalPrice: form.totalPrice,
@@ -1650,7 +1723,7 @@ async function onSave() {
       // 清空时显式传空串，避免后端把 null 当成「不改字段」
       customerId: form.customerId || '',
       customUserId: form.customUserId || '',
-      children: lines.value.map((row) => ({
+      children: saveLines.map((row) => ({
         // 新行显式传 null，避免后端把空串当成已有 id
         id: row.id !== '' && row.id != null ? row.id : null,
         goodsId: row.goodsId,
