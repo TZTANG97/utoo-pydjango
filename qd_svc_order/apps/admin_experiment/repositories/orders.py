@@ -3177,57 +3177,42 @@ def attach_expect_pay_actuals(row: dict[str, Any], bills: list[dict[str, Any]]) 
 
 def _link_exp_purchase_child(
     *, purchase_order_id: int, order_child_id: int, order_type: str
-) -> None:
+) -> bool:
     """写入 exp_qd_purchase_order_child。
 
     Java getChildsByPurchaseId2 强制 poc.order_type=9/10，缺该字段时老系统产品表为空。
+    部分库无 addTime / order_type；失败语句必须走 savepoint，避免污染外层事务。
     """
     ot = str(order_type or "").strip()
     params = {"pid": int(purchase_order_id), "cid": int(order_child_id), "ot": ot}
-    try:
-        execute(
-            """
+    variants = (
+        """
             INSERT INTO exp_qd_purchase_order_child
                 (purchase_order_id, order_child_id, order_type, addTime)
             VALUES (%(pid)s, %(cid)s, %(ot)s, NOW())
             """,
-            params,
-        )
-        return
-    except Exception:
-        pass
-    try:
-        execute(
-            """
+        """
             INSERT INTO exp_qd_purchase_order_child
                 (purchase_order_id, order_child_id, order_type)
             VALUES (%(pid)s, %(cid)s, %(ot)s)
             """,
-            params,
-        )
-        return
-    except Exception:
-        pass
-    # 兼容极旧库无 order_type 列
-    try:
-        execute(
-            """
+        """
             INSERT INTO exp_qd_purchase_order_child (purchase_order_id, order_child_id, addTime)
             VALUES (%(pid)s, %(cid)s, NOW())
             """,
-            params,
-        )
-    except Exception:
+        """
+            INSERT INTO exp_qd_purchase_order_child (purchase_order_id, order_child_id)
+            VALUES (%(pid)s, %(cid)s)
+            """,
+    )
+    for sql in variants:
         try:
-            execute(
-                """
-                INSERT INTO exp_qd_purchase_order_child (purchase_order_id, order_child_id)
-                VALUES (%(pid)s, %(cid)s)
-                """,
-                params,
-            )
+            with transaction.atomic():
+                execute(sql, params)
+            return True
         except Exception:
-            pass
+            continue
+    return False
 
 
 def _sync_sub_order_purchase_children(
@@ -3329,14 +3314,10 @@ def _sync_sub_order_purchase_children(
                 {"oid": order_id},
             )
             for cid in sorted(keep_ids):
-                execute(
-                    """
-                    INSERT INTO exp_qd_purchase_order_child
-                        (purchase_order_id, order_child_id, order_type, addTime)
-                    VALUES (%(oid)s, %(cid)s, %(ot)s, NOW())
-                    """,
-                    {"oid": order_id, "cid": cid, "ot": ot},
-                )
+                if not _link_exp_purchase_child(
+                    purchase_order_id=order_id, order_child_id=cid, order_type=ot
+                ):
+                    raise RuntimeError("写入产品挂接失败")
                 execute(
                     """
                     UPDATE experiment_order_child
