@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div v-loading="loading" class="detail-panel">
     <template v-if="detail">
       <header class="hero">
@@ -37,7 +37,7 @@
           </p>
         </div>
         <div class="hero-meta">
-          <div v-if="!isGrabMode && canViewFinance" class="meta-item">
+          <div v-if="!isGrabMode" class="meta-item">
             <span class="meta-label">总价</span>
             <strong>{{ detail.totalPrice ?? '-' }}</strong>
             <small>{{ detail.currencyLabel }}</small>
@@ -309,7 +309,7 @@
 
       <section class="card">
         <h3 class="card-title">基本信息</h3>
-        <!-- 实验分包子订单：对齐 Java experimentsub/purchaseorder/purchase_order_detail -->
+        <!-- 实验分包子订单：对齐 Java purchase_order_detail 字段 -->
         <el-descriptions
           v-if="orderType === '9'"
           :column="3"
@@ -351,15 +351,9 @@
           <el-descriptions-item label="预计完成时间">
             {{ detail.deliveryTime || '-' }}
           </el-descriptions-item>
-          <el-descriptions-item v-if="canViewFinance" label="订单币种">
-            {{ detail.currencyLabel || '-' }}
-          </el-descriptions-item>
-          <el-descriptions-item v-if="canViewFinance" label="付款方式">
-            {{ detail.payWayName || '-' }}
-          </el-descriptions-item>
-          <el-descriptions-item v-if="canViewFinance" label="付款状态">
-            {{ detail.payStatusLabel || '-' }}
-          </el-descriptions-item>
+          <el-descriptions-item v-if="canViewFinance" label="订单币种">{{ detail.currencyLabel || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="canViewFinance" label="付款方式">{{ detail.payWayName || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="canViewFinance" label="付款状态">{{ detail.payStatusLabel || '-' }}</el-descriptions-item>
           <template v-if="canViewFinance && expectPayRows.length">
             <template v-for="(ep, idx) in expectPayRows" :key="'ep-' + idx">
               <el-descriptions-item label="预计付款时间">{{ ep.time || '-' }}</el-descriptions-item>
@@ -386,19 +380,11 @@
               </el-descriptions-item>
             </template>
           </template>
-          <el-descriptions-item v-if="canViewFinance" label="是否开票">
-            {{ detail.invoiceLabel || '-' }}
-          </el-descriptions-item>
-          <el-descriptions-item
-            v-if="canViewFinance && Number(detail.invoiceType) === 1"
-            label="进项开票类型"
-          >
+          <el-descriptions-item v-if="canViewFinance" label="是否开票">{{ detail.invoiceLabel || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="canViewFinance && Number(detail.invoiceType) === 1" label="进项开票类型">
             {{ inBillTypeLabel }}
           </el-descriptions-item>
-          <el-descriptions-item
-            v-if="canViewFinance && Number(detail.invoiceType) === 1"
-            label="税率"
-          >
+          <el-descriptions-item v-if="canViewFinance && Number(detail.invoiceType) === 1" label="税率">
             {{ detail.taxes || '-' }}
           </el-descriptions-item>
           <template v-if="canViewFinance && invoiceBillRows.length">
@@ -667,7 +653,7 @@
                 </el-upload>
               </div>
             </div>
-            <div v-if="canViewFinance" class="files-row">
+            <div class="files-row">
               <span class="files-label">发票资料</span>
               <div class="files-list">
                 <div v-for="f in invoiceFiles" :key="'inv-' + String(f.id)" class="file-item">
@@ -703,6 +689,193 @@
             />
           </div>
         </div>
+      </section>
+
+      <section v-if="isChildKind && !isGrabMode" class="card">
+        <h3 class="card-title">IOT 试验任务</h3>
+        <p class="iot-hint">
+          样品领用后授权 IOT 运维账号；可勾选产品行创建任务。已下发且 IOT 已接收的不可重新下发，需先在
+          UTOO「取消」或 IOT「取消任务」后再创建。仅「下发失败」可点重试。设备在 IOT
+          侧分配，状态回写对应产品行。
+        </p>
+        <div class="iot-step-bar">
+          <el-tag :type="iotAuthAuthorized ? 'success' : 'info'" effect="plain">
+            {{ iotAuthAuthorized ? '已授权' : '未授权' }}
+          </el-tag>
+          <el-tag type="info" effect="plain">产品行 {{ iotOverviewRows.length }}</el-tag>
+          <el-tag v-if="iotSummaryCreated > 0" type="success" effect="plain">
+            已建任务 {{ iotSummaryCreated }}
+          </el-tag>
+          <el-tag v-if="iotSummaryFailed > 0" type="danger" effect="plain">
+            下发失败 {{ iotSummaryFailed }}
+          </el-tag>
+          <span v-if="iotLastError" class="iot-last-error">{{ iotLastError }}</span>
+        </div>
+        <div class="iot-auth-row">
+          <template v-if="iotAuthAuthorized">
+            <span>
+              运维 {{ iotAuthTrueName || iotAuthUserName }}
+              <span v-if="iotAuthUserName" class="iot-auth-sub">({{ iotAuthUserName }})</span>
+            </span>
+            <el-button class="iot-refresh-btn" link type="primary" @click="openIotAuthDialog">
+              重新授权
+            </el-button>
+            <el-button link type="danger" :loading="iotActing" @click="onIotAuthLogout">
+              退出授权
+            </el-button>
+          </template>
+          <template v-else>
+            <el-button type="primary" @click="openIotAuthDialog">授权 IOT 运维账号</el-button>
+          </template>
+          <el-button link type="primary" :loading="iotActing" @click="loadIotOverview">刷新</el-button>
+        </div>
+        <div class="iot-toolbar">
+          <el-button
+            type="primary"
+            :disabled="!iotAuthAuthorized || !iotSelectedIds.length"
+            :loading="iotActing"
+            @click="onIotCreateSelected"
+          >
+            创建选中 ({{ iotSelectedIds.length || 0 }})
+          </el-button>
+          <el-button
+            type="primary"
+            plain
+            :disabled="!iotAuthAuthorized || !iotCreatableCount"
+            :loading="iotActing"
+            @click="onIotCreateAll"
+          >
+            创建全部可建 ({{ iotCreatableCount }})
+          </el-button>
+          <el-button
+            type="warning"
+            :disabled="!iotAuthAuthorized || !iotSelectedIds.length"
+            :loading="iotActing"
+            @click="onIotResyncSelected"
+          >
+            重试失败选中
+          </el-button>
+          <el-button
+            type="warning"
+            plain
+            :disabled="!iotAuthAuthorized || !iotResyncableCount"
+            :loading="iotActing"
+            @click="onIotResyncAll"
+          >
+            重试失败全部
+          </el-button>
+          <el-button
+            type="success"
+            :disabled="!iotAuthAuthorized || !iotCanOpenIotAny"
+            :loading="iotActing"
+            @click="onIotOpenJump()"
+          >
+            打开 IOT
+          </el-button>
+        </div>
+        <el-table
+          :data="iotOverviewRows"
+          border
+          stripe
+          class="detail-table iot-overview-table"
+          row-key="childId"
+          @selection-change="onIotSelectionChange"
+        >
+          <el-table-column type="selection" width="44" :selectable="iotRowSelectable" />
+          <el-table-column prop="childOrderId" label="子单号" min-width="120" show-overflow-tooltip />
+          <el-table-column prop="goodsName" label="产品" min-width="120" show-overflow-tooltip />
+          <el-table-column prop="projectName" label="测试项目" min-width="120" show-overflow-tooltip />
+          <el-table-column label="任务状态" width="110">
+            <template #default="{ row }">
+              {{ iotRowBindLabel(row) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="同步" width="90">
+            <template #default="{ row }">
+              <span :class="{ 'iot-sync-fail': iotRowSyncFailed(row) }">
+                {{ iotRowSyncLabel(row) }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column label="设备" min-width="140" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span class="mono">{{ row.binding?.iotDeviceId || '（IOT 侧分配）' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="任务 ID" min-width="100" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span class="mono">{{ row.binding?.iotTaskId || '-' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="220" fixed="right">
+            <template #default="{ row }">
+              <el-button
+                link
+                type="primary"
+                :disabled="!iotAuthAuthorized || !row.canCreate"
+                :loading="iotActing"
+                @click="onIotCreateOne(row)"
+              >
+                创建
+              </el-button>
+              <el-button
+                link
+                type="success"
+                :disabled="!iotAuthAuthorized || !row.binding?.iotTaskId || iotRowSyncFailed(row)"
+                :loading="iotActing"
+                @click="onIotOpenJump(row)"
+              >
+                打开
+              </el-button>
+              <el-button
+                link
+                type="warning"
+                :disabled="!iotAuthAuthorized || !row.canResync"
+                :loading="iotActing"
+                @click="onIotResyncOne(row)"
+              >
+                重试
+              </el-button>
+              <el-button
+                link
+                type="danger"
+                :disabled="!row.binding || row.binding.bindStatus === 'unbound' || row.binding.bindStatus === 'running' || row.binding.bindStatus === 'finished'"
+                :loading="iotActing"
+                @click="onIotUnbindOne(row)"
+              >
+                取消
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-dialog
+          v-model="iotAuthDialogVisible"
+          title="授权 IOT 运维账号"
+          width="420px"
+          destroy-on-close
+          @closed="iotAuthPassword = ''"
+        >
+          <el-form label-width="80px" @submit.prevent>
+            <el-form-item label="用户名">
+              <el-input v-model="iotAuthUsername" autocomplete="username" />
+            </el-form-item>
+            <el-form-item label="密码">
+              <el-input
+                v-model="iotAuthPassword"
+                type="password"
+                show-password
+                autocomplete="current-password"
+                @keyup.enter="submitIotAuthLogin"
+              />
+            </el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button @click="iotAuthDialogVisible = false">取消</el-button>
+            <el-button type="primary" :loading="iotAuthSubmitting" @click="submitIotAuthLogin">
+              授权
+            </el-button>
+          </template>
+        </el-dialog>
       </section>
 
       <section class="card">
@@ -755,7 +928,7 @@
         <el-table v-else :data="editChildren" border stripe class="detail-table">
           <el-table-column type="index" width="50" label="#" align="center" />
           <el-table-column prop="childOrderId" label="子单号" min-width="130" show-overflow-tooltip />
-          <el-table-column prop="goodsName" label="产品名称" min-width="120" show-overflow-tooltip />
+          <el-table-column prop="goodsName" label="产品名称" min-width="120" show-overflow-tooltip fixed="left" />
           <el-table-column prop="goodsSpec" label="型号" min-width="100" show-overflow-tooltip />
           <el-table-column prop="goodsBrand" label="品牌" min-width="90" show-overflow-tooltip />
           <el-table-column prop="goodsCount" label="数量" width="70" align="center" />
@@ -789,7 +962,7 @@
               }}
             </template>
           </el-table-column>
-          <!-- type=10 实验子订单产品列 -->
+          <!-- type=10 实验子订单产品列：对齐 Java / admin 详情 -->
           <el-table-column v-if="orderType === '10'" prop="price" label="单价" width="90" align="right" />
           <el-table-column
             v-if="orderType === '10'"
@@ -842,9 +1015,8 @@
               <span v-else>-</span>
             </template>
           </el-table-column>
-          <!-- type=9 分包子订单：对齐 Java purchase_order_detail 子表 -->
           <el-table-column
-            v-if="orderType === '9' && canViewFinance"
+            v-if="orderType === '9'"
             prop="costPrice"
             label="分包单价"
             width="90"
@@ -996,7 +1168,7 @@
               <el-button
                 link
                 type="primary"
-                @click="goDetail(row.id, row.orderType, row.orderId)"
+                @click="goDetail(Number(row.id), row.orderType, row.orderId)"
               >
                 {{ row.orderId }}
               </el-button>
@@ -1033,7 +1205,7 @@
               <el-button
                 link
                 type="primary"
-                @click="goDetail(row.id, row.orderType, row.orderId)"
+                @click="goDetail(Number(row.id), row.orderType, row.orderId)"
               >
                 {{ row.orderId }}
               </el-button>
@@ -1070,15 +1242,11 @@
         </el-table>
       </section>
 
-      <section v-if="!isGrabMode && detail.canViewLogs !== false" class="card">
+      <section v-if="!isGrabMode" class="card">
         <h3 class="card-title">操作日志</h3>
         <el-table :data="logs" border stripe class="detail-table" max-height="360">
           <el-table-column prop="addTime" label="时间" width="170" />
-          <el-table-column label="操作人" width="120" show-overflow-tooltip>
-            <template #default="{ row }">
-              {{ row.logUser || row.logUserName || '-' }}
-            </template>
-          </el-table-column>
+          <el-table-column prop="logUser" label="操作人" width="120" />
           <el-table-column prop="logInfo" label="内容" min-width="240" show-overflow-tooltip />
         </el-table>
       </section>
@@ -1192,6 +1360,22 @@
             style="width: 100%"
           />
         </el-form-item>
+        <el-form-item label="附件">
+          <div class="bill-attach">
+            <template v-if="receiveAccessory">
+              <span class="bill-attach-name">{{ receiveAccessory.info || receiveAccessory.name }}</span>
+              <el-button type="danger" link @click="clearReceiveAccessory">删除</el-button>
+            </template>
+            <el-upload
+              v-else
+              :show-file-list="false"
+              :http-request="onUploadReceiveBillFile"
+              accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.xls,.xlsx"
+            >
+              <el-button type="primary" link :loading="billUploading">上传</el-button>
+            </el-upload>
+          </div>
+        </el-form-item>
         <el-form-item v-if="receivePayType !== 2" label="备注">
           <el-input v-model="receiveRemark" type="textarea" :rows="2" placeholder="可选" />
         </el-form-item>
@@ -1205,10 +1389,26 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="invoiceVisible" title="开票" width="420px">
+    <el-dialog v-model="invoiceVisible" title="开票" width="480px" @open="openInvoiceDialog">
       <el-form label-width="100px">
         <el-form-item label="开票金额" required>
           <el-input v-model="invoiceMoney" placeholder="请输入开票金额" clearable />
+        </el-form-item>
+        <el-form-item label="附件">
+          <div class="bill-attach">
+            <template v-if="invoiceAccessory">
+              <span class="bill-attach-name">{{ invoiceAccessory.info || invoiceAccessory.name }}</span>
+              <el-button type="danger" link @click="clearInvoiceAccessory">删除</el-button>
+            </template>
+            <el-upload
+              v-else
+              :show-file-list="false"
+              :http-request="onUploadInvoiceBillFile"
+              accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.xls,.xlsx"
+            >
+              <el-button type="primary" link :loading="billUploading">上传</el-button>
+            </el-upload>
+          </div>
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="invoiceRemark" type="textarea" :rows="2" placeholder="可选" />
@@ -1544,16 +1744,17 @@ import {
   sampleRetainExpOrder,
   sampleReturnExpOrder,
   sampleShipExpOrder,
-  saveExpChildReferencePrice,
   saveExpOrderFinish,
+  saveExpChildReferencePrice,
+  updateExpChildTimeType,
   saveExpOrderInvoiceBill,
   saveExpOrderReceiveBill,
   amountPayExpOrder,
+  uploadExpBillFile,
   submitExpOrderAudit,
   subPayExpOrder,
   testEndExpOrder,
   testStartExpOrder,
-  updateExpChildTimeType,
   updateExpOrderShareRatio,
   uploadSubInvoiceExpOrder,
   uploadSubPayExpOrder,
@@ -1563,6 +1764,16 @@ import {
   previewExpOrderFile,
   updateExpOrderMsg,
   withdrawExpOrderAudit,
+  iotAuthLogin,
+  iotAuthLogout,
+  iotAuthStatus,
+  iotCreateTask,
+  iotCreateTasksBatch,
+  iotTaskOverview,
+  iotSsoJump,
+  iotUnbindDevice,
+  iotResyncDevice,
+  iotResyncTasksBatch,
 } from '@admin/api/experiment'
 import { fetchIncomeUsers, fetchSampleOrderOptions, fetchSampleStorePositions, fetchRemainSampleStoreOptions, fetchRemainSampleStorePositions } from '@admin/api/inventory'
 import { fetchTestAddressList } from '@admin/api/system'
@@ -1587,17 +1798,6 @@ const emit = defineEmits<{ back: []; refreshed: [] }>()
 const route = useRoute()
 const router = useRouter()
 const tagsViewStore = useTagsViewStore()
-
-/** keep-alive 停用期间忽略 orderId 变化，避免其它带 :id 路由误触发「订单不存在」 */
-const panelActive = ref(true)
-onActivated(() => {
-  const fromCache = !panelActive.value
-  panelActive.value = true
-  if (fromCache && props.orderId) load()
-})
-onDeactivated(() => {
-  panelActive.value = false
-})
 
 function syncDetailTagTitle(ot: string, orderNo?: string) {
   if (route.name !== 'ExperimentOrderDetail') return
@@ -1644,6 +1844,8 @@ const receiveDate = ref('')
 const receiveRemark = ref('')
 /** 1=线下收款 2=会员余额收款（对齐 Java payType） */
 const receivePayType = ref(1)
+const receiveAccessory = ref<{ id?: number; info?: string; name?: string } | null>(null)
+const billUploading = ref(false)
 /** 线下订单 + 客户账号不为空 → 显示会员余额收款（Java experimentsub/experiment_order_detail） */
 const showMemberBalanceReceive = computed(() => {
   const d = detail.value
@@ -1665,6 +1867,7 @@ const memberReceiveName = computed(() => {
 const invoiceVisible = ref(false)
 const invoiceMoney = ref('')
 const invoiceRemark = ref('')
+const invoiceAccessory = ref<{ id?: number; info?: string; name?: string } | null>(null)
 const subPayBillVisible = ref(false)
 const subPayMoney = ref('')
 const subPayRemark = ref('')
@@ -1700,6 +1903,68 @@ const sampleRetainStorePosId = ref('')
 const remainStoreOptions = ref<Record<string, unknown>[]>([])
 const remainPosOptions = ref<Record<string, unknown>[]>([])
 
+const iotOverviewRows = ref<
+  {
+    childId: number
+    childOrderId?: string
+    goodsName?: string
+    projectName?: string
+    lineStatus?: number
+    canCreate?: boolean
+    canResync?: boolean
+    binding?: Record<string, unknown> | null
+  }[]
+>([])
+const iotSelectedRows = ref<typeof iotOverviewRows.value>([])
+const iotActing = ref(false)
+const iotLastError = ref('')
+const iotAuthAuthorized = ref(false)
+const iotAuthUserName = ref('')
+const iotAuthTrueName = ref('')
+const iotAuthDialogVisible = ref(false)
+const iotAuthUsername = ref('')
+const iotAuthPassword = ref('')
+const iotAuthSubmitting = ref(false)
+const IOT_BIND_STATUS_LABEL: Record<string, string> = {
+  task_created: '已创建任务',
+  bound: '已分配设备',
+  unbound: '已取消',
+  running: '测试中',
+  finished: '已完成',
+  aborted: '已中止',
+}
+const IOT_SYNC_STATUS_LABEL: Record<string, string> = {
+  ok: '已下发',
+  failed: '下发失败',
+  pending: '待下发',
+}
+const iotSelectedIds = computed(() =>
+  iotSelectedRows.value.map((r) => Number(r.childId)).filter(Boolean)
+)
+const iotCreatableCount = computed(
+  () => iotOverviewRows.value.filter((r) => r.canCreate).length
+)
+const iotResyncableCount = computed(
+  () => iotOverviewRows.value.filter((r) => r.canResync).length
+)
+const iotSummaryCreated = computed(
+  () =>
+    iotOverviewRows.value.filter((r) => {
+      const bs = String(r.binding?.bindStatus || '')
+      return Boolean(r.binding?.iotTaskId) && bs !== 'unbound'
+    }).length
+)
+const iotSummaryFailed = computed(
+  () => iotOverviewRows.value.filter((r) => iotRowSyncFailed(r)).length
+)
+const iotCanOpenIotAny = computed(
+  () =>
+    iotAuthAuthorized.value &&
+    iotOverviewRows.value.some(
+      (r) => Boolean(r.binding?.iotTaskId) && !iotRowSyncFailed(r)
+    )
+)
+
 const logs = computed(() => (detail.value?.logs as Record<string, unknown>[]) || [])
 const consultList = computed(
   () => (detail.value?.consultList as Record<string, unknown>[]) || []
@@ -1712,7 +1977,7 @@ const relatedOrders = computed(
 )
 const orderType = computed(() => String(detail.value?.orderType || ''))
 const isChildKind = computed(() => ['9', '10'].includes(orderType.value))
-/** 对齐 Java isFlag：测试主管/测试人员不可看付款·开票相关数据 */
+/** 对齐 Java isFlag：测试主管/测试人员不可看付款、开票等财务数据。 */
 const canViewFinance = computed(() => detail.value?.canViewFinance !== false)
 const showOrderDocsBlock = computed(() => ['6', '8', '9', '10'].includes(orderType.value))
 const outBillTypeLabel = computed(() => {
@@ -1929,8 +2194,360 @@ async function load() {
     const ot = String(detail.value.orderType || '')
     const orderNo = String(detail.value.orderId || '')
     syncDetailTagTitle(ot, orderNo)
+    if (['9', '10'].includes(ot) && String(route.query.from || '') !== 'grab-orders') {
+      await refreshIotAuthStatus()
+      await loadIotOverview()
+    } else {
+      iotOverviewRows.value = []
+      iotSelectedRows.value = []
+      iotLastError.value = ''
+    }
   } finally {
     loading.value = false
+  }
+}
+
+function iotOrderNo(): string {
+  return String(detail.value?.orderId || '')
+}
+
+function iotFailCode(res: { obj?: unknown } | undefined): string {
+  const obj = res?.obj
+  if (obj && typeof obj === 'object' && 'code' in obj) {
+    return String((obj as { code?: string }).code || '')
+  }
+  return ''
+}
+
+function iotRowBindLabel(row: (typeof iotOverviewRows.value)[0]) {
+  const raw = String(row.binding?.bindStatus || '').trim()
+  if (!raw) return '未创建'
+  return IOT_BIND_STATUS_LABEL[raw] || raw
+}
+
+function iotRowSyncLabel(row: (typeof iotOverviewRows.value)[0]) {
+  const raw = String(row.binding?.iotTaskSyncStatus || '').trim()
+  if (!raw) return '-'
+  return IOT_SYNC_STATUS_LABEL[raw] || raw
+}
+
+function iotRowSyncFailed(row: (typeof iotOverviewRows.value)[0]) {
+  return String(row.binding?.iotTaskSyncStatus || '') === 'failed'
+}
+
+function iotRowSelectable(row: (typeof iotOverviewRows.value)[0]) {
+  return Boolean(row.canCreate || row.canResync)
+}
+
+function onIotSelectionChange(rows: typeof iotOverviewRows.value) {
+  iotSelectedRows.value = rows || []
+}
+
+function summarizeBatchResult(obj: Record<string, unknown> | null | undefined, action: string) {
+  if (!obj) return `${action}完成`
+  const okN = Number(obj.success || 0)
+  const failN = Number(obj.failed || 0)
+  return `${action}完成：成功 ${okN}，失败 ${failN}`
+}
+
+async function refreshIotAuthStatus() {
+  try {
+    const res = await iotAuthStatus()
+    if (isAjaxOk(res) && res.obj && typeof res.obj === 'object') {
+      const obj = res.obj as Record<string, unknown>
+      iotAuthAuthorized.value = Boolean(obj.authorized)
+      iotAuthUserName.value = String(obj.iotUserName || '')
+      iotAuthTrueName.value = String(obj.iotTrueName || '')
+    } else {
+      iotAuthAuthorized.value = false
+      iotAuthUserName.value = ''
+      iotAuthTrueName.value = ''
+    }
+  } catch {
+    iotAuthAuthorized.value = false
+  }
+}
+
+function openIotAuthDialog() {
+  iotAuthDialogVisible.value = true
+}
+
+async function submitIotAuthLogin() {
+  const username = iotAuthUsername.value.trim()
+  const password = iotAuthPassword.value
+  if (!username || !password) {
+    ElMessage.warning('请输入 IOT 用户名和密码')
+    return
+  }
+  iotAuthSubmitting.value = true
+  iotLastError.value = ''
+  try {
+    const res = await iotAuthLogin({ username, password })
+    if (!isAjaxOk(res)) {
+      const msg = ajaxErrorMessage(res, 'IOT 授权失败')
+      iotLastError.value = msg
+      ElMessage.error(msg)
+      return
+    }
+    const obj = (res.obj || {}) as Record<string, unknown>
+    iotAuthAuthorized.value = true
+    iotAuthUserName.value = String(obj.iotUserName || username)
+    iotAuthTrueName.value = String(obj.iotTrueName || obj.iotUserName || username)
+    iotAuthDialogVisible.value = false
+    iotAuthPassword.value = ''
+    ElMessage.success('IOT 账号已授权')
+  } finally {
+    iotAuthSubmitting.value = false
+  }
+}
+
+async function onIotAuthLogout() {
+  iotActing.value = true
+  try {
+    await iotAuthLogout()
+    iotAuthAuthorized.value = false
+    iotAuthUserName.value = ''
+    iotAuthTrueName.value = ''
+    ElMessage.success('已退出 IOT 授权')
+  } finally {
+    iotActing.value = false
+  }
+}
+
+async function loadIotOverview() {
+  const orderId = iotOrderNo()
+  if (!orderId) {
+    iotOverviewRows.value = []
+    return
+  }
+  try {
+    const res = await iotTaskOverview({ orderId })
+    if (isAjaxOk(res) && res.obj) {
+      const items = (res.obj as { items?: typeof iotOverviewRows.value }).items
+      iotOverviewRows.value = Array.isArray(items) ? items : []
+    } else {
+      iotOverviewRows.value = []
+    }
+  } catch {
+    iotOverviewRows.value = []
+  }
+  iotSelectedRows.value = []
+}
+
+async function onIotCreateOne(row: (typeof iotOverviewRows.value)[0]) {
+  if (!iotAuthAuthorized.value) {
+    ElMessage.warning('请先授权 IOT 运维账号')
+    openIotAuthDialog()
+    return
+  }
+  iotActing.value = true
+  iotLastError.value = ''
+  try {
+    const res = await iotCreateTask({
+      orderId: iotOrderNo(),
+      childId: Number(row.childId),
+    })
+    if (!isAjaxOk(res)) {
+      const code = iotFailCode(res)
+      const msg = ajaxErrorMessage(res, '创建试验任务失败')
+      if (code === 'IOT_AUTH_REQUIRED') {
+        iotAuthAuthorized.value = false
+        openIotAuthDialog()
+      }
+      iotLastError.value = msg
+      ElMessage.error(msg)
+      return
+    }
+    ElMessage.success(String(res.resMsg || '试验任务已创建'))
+    await loadIotOverview()
+  } finally {
+    iotActing.value = false
+  }
+}
+
+async function onIotCreateSelected() {
+  if (!iotSelectedIds.value.length) {
+    ElMessage.warning('请先勾选产品行')
+    return
+  }
+  await runIotBatchCreate(iotSelectedIds.value)
+}
+
+async function onIotCreateAll() {
+  await runIotBatchCreate(null)
+}
+
+async function runIotBatchCreate(childIds: number[] | null) {
+  if (!iotAuthAuthorized.value) {
+    ElMessage.warning('请先授权 IOT 运维账号')
+    openIotAuthDialog()
+    return
+  }
+  iotActing.value = true
+  iotLastError.value = ''
+  try {
+    const payload: Record<string, unknown> = { orderId: iotOrderNo() }
+    if (childIds && childIds.length) payload.childIds = childIds
+    else payload.all = 1
+    const res = await iotCreateTasksBatch(payload)
+    if (!isAjaxOk(res)) {
+      const code = iotFailCode(res)
+      const msg = ajaxErrorMessage(res, '批量创建失败')
+      if (code === 'IOT_AUTH_REQUIRED') {
+        iotAuthAuthorized.value = false
+        openIotAuthDialog()
+      }
+      iotLastError.value = msg
+      ElMessage.error(msg)
+      return
+    }
+    const obj = res.obj as Record<string, unknown>
+    const msg = summarizeBatchResult(obj, '创建')
+    if (Number(obj?.failed || 0) > 0) {
+      ElMessage.warning(msg)
+      iotLastError.value = msg
+    } else {
+      ElMessage.success(msg)
+    }
+    await loadIotOverview()
+  } finally {
+    iotActing.value = false
+  }
+}
+
+async function onIotOpenJump(row?: (typeof iotOverviewRows.value)[0]) {
+  if (!iotAuthAuthorized.value) {
+    ElMessage.warning('请先授权 IOT 运维账号')
+    openIotAuthDialog()
+    return
+  }
+  const taskId = String(
+    row?.binding?.iotTaskId ||
+      iotSelectedRows.value.find((r) => r.binding?.iotTaskId)?.binding?.iotTaskId ||
+      iotOverviewRows.value.find((r) => r.binding?.iotTaskId)?.binding?.iotTaskId ||
+      ''
+  )
+  if (!taskId && !iotCanOpenIotAny.value) {
+    ElMessage.warning('请先成功创建试验任务后再打开 IOT')
+    return
+  }
+  iotActing.value = true
+  iotLastError.value = ''
+  try {
+    const res = await iotSsoJump(taskId ? { taskId } : {})
+    if (!isAjaxOk(res)) {
+      const code = iotFailCode(res)
+      const msg = ajaxErrorMessage(res, '打开 IOT 失败')
+      if (code === 'IOT_AUTH_REQUIRED') {
+        iotAuthAuthorized.value = false
+        openIotAuthDialog()
+      }
+      iotLastError.value = msg
+      ElMessage.error(msg)
+      return
+    }
+    const jumpUrl = String((res.obj as Record<string, unknown>)?.jumpUrl || '')
+    if (!jumpUrl) {
+      ElMessage.error('未返回跳转地址')
+      return
+    }
+    window.open(jumpUrl, '_blank')
+  } finally {
+    iotActing.value = false
+  }
+}
+
+async function onIotUnbindOne(row: (typeof iotOverviewRows.value)[0]) {
+  await ElMessageBox.confirm('确认取消该产品行的 IOT 试验任务？', '取消任务', {
+    type: 'warning',
+  })
+  iotActing.value = true
+  try {
+    const res = await iotUnbindDevice({
+      orderId: iotOrderNo(),
+      childId: Number(row.childId),
+    })
+    if (!isAjaxOk(res)) {
+      const msg = ajaxErrorMessage(res, '取消失败')
+      iotLastError.value = msg
+      ElMessage.error(msg)
+      return
+    }
+    ElMessage.success(String(res.resMsg || '已取消'))
+    await loadIotOverview()
+  } finally {
+    iotActing.value = false
+  }
+}
+
+async function onIotResyncOne(row: (typeof iotOverviewRows.value)[0]) {
+  iotActing.value = true
+  iotLastError.value = ''
+  try {
+    const res = await iotResyncDevice({
+      orderId: iotOrderNo(),
+      childId: Number(row.childId),
+    })
+    if (!isAjaxOk(res)) {
+      const msg = ajaxErrorMessage(res, '重试失败')
+      iotLastError.value = msg
+      ElMessage.error(msg)
+      return
+    }
+    ElMessage.success(String(res.resMsg || '已重试下发'))
+    await loadIotOverview()
+  } finally {
+    iotActing.value = false
+  }
+}
+
+async function onIotResyncSelected() {
+  if (!iotSelectedIds.value.length) {
+    ElMessage.warning('请先勾选产品行')
+    return
+  }
+  await runIotBatchResync(iotSelectedIds.value)
+}
+
+async function onIotResyncAll() {
+  await runIotBatchResync(null)
+}
+
+async function runIotBatchResync(childIds: number[] | null) {
+  if (!iotAuthAuthorized.value) {
+    ElMessage.warning('请先授权 IOT 运维账号')
+    openIotAuthDialog()
+    return
+  }
+  iotActing.value = true
+  iotLastError.value = ''
+  try {
+    const payload: Record<string, unknown> = { orderId: iotOrderNo() }
+    if (childIds && childIds.length) payload.childIds = childIds
+    else payload.all = 1
+    const res = await iotResyncTasksBatch(payload)
+    if (!isAjaxOk(res)) {
+      const code = iotFailCode(res)
+      const msg = ajaxErrorMessage(res, '批量下发失败')
+      if (code === 'IOT_AUTH_REQUIRED') {
+        iotAuthAuthorized.value = false
+        openIotAuthDialog()
+      }
+      iotLastError.value = msg
+      ElMessage.error(msg)
+      return
+    }
+    const obj = res.obj as Record<string, unknown>
+    const msg = summarizeBatchResult(obj, '下发')
+    if (Number(obj?.failed || 0) > 0) {
+      ElMessage.warning(msg)
+      iotLastError.value = msg
+    } else {
+      ElMessage.success(msg)
+    }
+    await loadIotOverview()
+  } finally {
+    iotActing.value = false
   }
 }
 
@@ -1973,7 +2590,6 @@ async function onPreviewFile(f: Record<string, unknown>) {
 async function onDownloadFile(f: Record<string, unknown>) {
   const direct = fileUrl(f)
   if (isOssPublicUrl(direct)) {
-    // 与 Java 一致：直接访问 OSS；浏览器会按类型预览或下载
     window.open(direct, '_blank')
     return
   }
@@ -2060,128 +2676,21 @@ async function onSaveOrderMsg() {
   detail.value.msg = orderMsg.value
 }
 
-async function onSaveReferencePrice(row: Record<string, unknown>) {
-  const childId = Number(row.id)
-  if (!childId) return
-  await runAction(async () => {
-    const res = await saveExpChildReferencePrice({
-      id: childId,
-      referencePrice: row.referencePrice,
-    })
-    if (!isAjaxOk(res)) {
-      ElMessage.error(ajaxErrorMessage(res, '保存测试金额失败'))
-      return
-    }
-    ElMessage.success(String(res.resMsg || '已保存'))
-    await load()
-  })
-}
-
-async function onSaveTimeType(row: Record<string, unknown>, timeType: string) {
-  const childId = Number(row.id)
-  if (!childId) return
-  await runAction(async () => {
-    const res = await updateExpChildTimeType({ id: childId, timeType })
-    if (!isAjaxOk(res)) {
-      ElMessage.error(ajaxErrorMessage(res, '保存时间单位失败'))
-      return
-    }
-    row.timeType = timeType
-    ElMessage.success(String(res.resMsg || '已保存'))
-    await load()
-  })
-}
-
-function onOpenSampleOrder(row: Record<string, unknown>) {
-  const gotId = row.gotId
-  const outNum = String(row.outNum || '').trim()
-  if (!gotId && !outNum) {
-    ElMessage.warning('无样品单号')
-    return
-  }
-  // 对齐 Java inTreasury/indetail：跳转库存样品出库/管理单列表并带单号
-  router.push({
-    name: 'InventorySampleOrders',
-    query: {
-      ...(gotId ? { id: String(gotId) } : {}),
-      ...(outNum ? { outNum } : {}),
-    },
-  })
-}
-
-function onViewSampleInfo(row: Record<string, unknown>) {
-  const info = (row.sampleInfo || {}) as Record<string, unknown>
-  const name = String(info.sampleName || row.sampleName || '-')
-  const num = String(info.sampleNum || row.sampleNum || '-')
-  ElMessageBox.alert(
-    `<div>样品名称：${name}</div><div>样品数量：${num}</div>`,
-    '样品信息',
-    { dangerouslyUseHTMLString: true, confirmButtonText: '关闭' }
-  )
-}
-
-async function onUploadChildTestFile(
-  options: { file: File },
-  row: Record<string, unknown>
-) {
-  const childId = Number(row.id)
-  if (!childId) return
-  const fd = new FormData()
-  fd.append('orderdata', options.file)
-  fd.append('id', String(props.orderId))
-  fd.append('childId', String(childId))
-  fd.append('type', '4')
-  await runAction(async () => {
-    const res = await uploadExpOrderFile(fd)
-    if (!isAjaxOk(res)) {
-      ElMessage.error(ajaxErrorMessage(res, '上传失败'))
-      return
-    }
-    ElMessage.success(String(res.resMsg || '上传成功'))
-    await load()
-  })
-}
-
-function resolveDetailPk(
-  id: string | number | undefined | null,
-  orderNo?: string | number
-): number {
-  const n = Number(id)
-  if (Number.isFinite(n) && n > 0) return n
-  const no = String(orderNo || id || '').trim()
-  if (!no) return 0
-  const hit =
-    relatedOrders.value.find((r) => String(r.orderId) === no) ||
-    linkedOrders.value.find((r) => String(r.orderId) === no)
-  const pk = Number(hit?.id)
-  return Number.isFinite(pk) && pk > 0 ? pk : 0
-}
-
-async function goDetail(
-  id: string | number,
+function goDetail(
+  id: number,
   linkedOrderType?: string | number,
   orderNo?: string | number
 ) {
-  const pk = resolveDetailPk(id, orderNo)
-  if (!pk) {
-    ElMessage.warning('无法打开该订单')
-    return
-  }
+  if (!id) return
   // 优先用目标单 orderType；未传时默认按「主单 → 关联子单」
   let ot = linkedOrderType != null && String(linkedOrderType) !== '' ? String(linkedOrderType) : ''
   if (!ot) {
     ot = orderType.value === '8' ? '9' : '10'
   }
   const no = String(orderNo || '').trim()
-  const targetId = String(pk)
-  // 已在目标详情：强制刷新（避免同路由误判为无跳转）
-  if (route.name === 'ExperimentOrderDetail' && String(route.params.id) === targetId) {
-    await load()
-    return
-  }
-  await router.push({
+  router.push({
     name: 'ExperimentOrderDetail',
-    params: { id: targetId },
+    params: { id: String(id) },
     query: {
       from: detailFromByOrderType(ot),
       ...(no ? { orderNo: no } : {}),
@@ -2450,6 +2959,7 @@ async function onSaveReceive() {
     return
   }
   await runAction(async () => {
+    const accessoryId = receiveAccessory.value?.id
     const useBalance = showMemberBalanceReceive.value && receivePayType.value === 2
     const res = useBalance
       ? await amountPayExpOrder({
@@ -2458,12 +2968,14 @@ async function onSaveReceive() {
           money,
           billDate: receiveDate.value || undefined,
           exp_userId: detail.value?.customUserId,
+          ...(accessoryId ? { accessoryId } : {}),
         })
       : await saveExpOrderReceiveBill({
           id: props.orderId,
           money,
           billDate: receiveDate.value || undefined,
           logInfo: receiveRemark.value.trim() || '录入收款',
+          ...(accessoryId ? { accessoryId } : {}),
         })
     if (!isAjaxOk(res)) {
       ElMessage.error(ajaxErrorMessage(res, '收款失败'))
@@ -2475,6 +2987,7 @@ async function onSaveReceive() {
     receiveDate.value = ''
     receiveRemark.value = ''
     receivePayType.value = 1
+    receiveAccessory.value = null
     await load()
     emit('refreshed')
   })
@@ -2485,7 +2998,150 @@ function openReceiveDialog() {
   receiveMoney.value = ''
   receiveDate.value = ''
   receiveRemark.value = ''
+  receiveAccessory.value = null
   receiveVisible.value = true
+}
+
+function clearReceiveAccessory() {
+  receiveAccessory.value = null
+}
+
+function clearInvoiceAccessory() {
+  invoiceAccessory.value = null
+}
+
+function openInvoiceDialog() {
+  invoiceMoney.value = ''
+  invoiceRemark.value = ''
+  invoiceAccessory.value = null
+}
+
+async function onUploadReceiveBillFile(options: { file: File }) {
+  await uploadBillAccessory(options.file, '0', (acc) => {
+    receiveAccessory.value = acc
+  })
+}
+
+async function onUploadInvoiceBillFile(options: { file: File }) {
+  await uploadBillAccessory(options.file, '1', (acc) => {
+    invoiceAccessory.value = acc
+  })
+}
+
+async function uploadBillAccessory(
+  file: File,
+  billType: string,
+  onOk: (acc: { id?: number; info?: string; name?: string }) => void
+) {
+  if (!props.orderId) return
+  const maxBytes = 100 * 1024 * 1024
+  if (file.size > maxBytes) {
+    ElMessage.error('文件大小不能超过100MB，请压缩后重试')
+    return
+  }
+  const fd = new FormData()
+  fd.append('accfile', file)
+  fd.append('id', String(props.orderId))
+  fd.append('ofId', String(props.orderId))
+  fd.append('billType', billType)
+  billUploading.value = true
+  try {
+    const res = await uploadExpBillFile(fd)
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '上传失败'))
+      return
+    }
+    const obj = (res.obj || {}) as { id?: number; info?: string; name?: string }
+    if (!obj.id) {
+      ElMessage.error('上传成功但未返回附件编号')
+      return
+    }
+    onOk(obj)
+    ElMessage.success(String(res.resMsg || '上传成功'))
+  } finally {
+    billUploading.value = false
+  }
+}
+
+async function onSaveReferencePrice(row: Record<string, unknown>) {
+  const childId = Number(row.id)
+  if (!childId) return
+  await runAction(async () => {
+    const res = await saveExpChildReferencePrice({
+      id: childId,
+      referencePrice: row.referencePrice,
+    })
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '保存测试金额失败'))
+      return
+    }
+    ElMessage.success(String(res.resMsg || '已保存'))
+    await load()
+  })
+}
+
+async function onSaveTimeType(row: Record<string, unknown>, timeType: string) {
+  const childId = Number(row.id)
+  if (!childId) return
+  await runAction(async () => {
+    const res = await updateExpChildTimeType({ id: childId, timeType })
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '保存时间单位失败'))
+      return
+    }
+    row.timeType = timeType
+    ElMessage.success(String(res.resMsg || '已保存'))
+    await load()
+  })
+}
+
+function onOpenSampleOrder(row: Record<string, unknown>) {
+  const gotId = row.gotId
+  const outNum = String(row.outNum || '').trim()
+  if (!gotId && !outNum) {
+    ElMessage.warning('无样品单号')
+    return
+  }
+  router.push({
+    name: 'InventorySampleOrders',
+    query: {
+      ...(gotId ? { id: String(gotId) } : {}),
+      ...(outNum ? { outNum } : {}),
+    },
+  })
+}
+
+function onViewSampleInfo(row: Record<string, unknown>) {
+  const info = (row.sampleInfo || {}) as Record<string, unknown>
+  const name = String(info.sampleName || row.sampleName || '-')
+  const num = String(info.sampleNum || row.sampleNum || '-')
+  ElMessageBox.alert(
+    `<div>样品名称：${name}</div><div>样品数量：${num}</div>`,
+    '样品信息',
+    { dangerouslyUseHTMLString: true, confirmButtonText: '关闭' }
+  )
+}
+
+async function onUploadChildTestFile(
+  options: { file: File },
+  row: Record<string, unknown>
+) {
+  const childId = Number(row.id)
+  if (!childId) return
+  const fd = new FormData()
+  fd.append('orderdata', options.file)
+  fd.append('id', String(props.orderId))
+  fd.append('childId', String(childId))
+  fd.append('type', '4')
+  await runAction(async () => {
+    const res = await uploadExpOrderFile(fd)
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '上传失败'))
+      return
+    }
+    ElMessage.success(String(res.resMsg || '上传成功'))
+    await load()
+  })
 }
 
 async function onSaveFinish() {
@@ -2542,10 +3198,12 @@ async function onSaveInvoice() {
     return
   }
   await runAction(async () => {
+    const accessoryId = invoiceAccessory.value?.id
     const res = await saveExpOrderInvoiceBill({
       id: props.orderId,
       money,
       logInfo: invoiceRemark.value.trim() || '录入开票',
+      ...(accessoryId ? { accessoryId } : {}),
     })
     if (!isAjaxOk(res)) {
       ElMessage.error(ajaxErrorMessage(res, '开票失败'))
@@ -2555,6 +3213,7 @@ async function onSaveInvoice() {
     invoiceVisible.value = false
     invoiceMoney.value = ''
     invoiceRemark.value = ''
+    invoiceAccessory.value = null
     await load()
     emit('refreshed')
   })
@@ -2862,11 +3521,10 @@ async function openSampleAction(act: SampleAction) {
   sampleRetainStorePosId.value = ''
   remainPosOptions.value = []
   sampleVisible.value = true
-  if (act === 'arrive' || act === 'return' || act === 'pick' || act === 'ship') {
+  if (act === 'arrive' || act === 'return' || act === 'pick') {
     await loadSampleStoreOptions()
   }
   if (act === 'retain') {
-    await loadSampleStoreOptions()
     await loadRemainStoreOptions()
   }
   await nextTick()
@@ -3006,9 +3664,9 @@ async function onSubmitSampleAction() {
       res = await sampleRetainExpOrder({
         ...base,
         scrap: act === 'scrap' || sampleRetainMode.value === 'scrap',
-        isPosition: sampleRetainMode.value === 'scrap' ? '0' : sampleIsPosition.value,
+        isPosition: sampleIsPosition.value,
         newStorePosId: sampleRetainStorePosId.value || '',
-        storePosId: String(sampleStorePosId.value || sampleSelected.value[0]?.storePosId || ''),
+        storePosId: String(sampleSelected.value[0]?.storePosId || sampleStorePosId.value || ''),
       })
     } else if (act === 'retest') {
       res = await retestExpOrder(base)
@@ -3031,6 +3689,18 @@ async function onSubmitSampleAction() {
     emit('refreshed')
   })
 }
+
+/** keep-alive 停用期间忽略 orderId 变化，避免其它带 :id 路由误触发「订单不存在」 */
+const panelActive = ref(true)
+onActivated(() => {
+  const fromCache = !panelActive.value
+  panelActive.value = true
+  // 从缓存切回时按当前 props 重新拉取（停用期间父级可能已纠正 orderId 却未 load）
+  if (fromCache && props.orderId) load()
+})
+onDeactivated(() => {
+  panelActive.value = false
+})
 
 watch(
   () => props.orderId,
@@ -3230,12 +3900,6 @@ defineExpose({ reload: load })
   max-width: 100%;
   padding: 2px 0;
 }
-.inline-file {
-  line-height: 1.5;
-  a {
-    color: var(--sea);
-  }
-}
 .file-name {
   max-width: 420px;
   flex: 0 1 auto;
@@ -3248,6 +3912,12 @@ defineExpose({ reload: load })
 .file-name:hover {
   text-decoration: underline;
 }
+.inline-file {
+  line-height: 1.5;
+  a {
+    color: var(--sea);
+  }
+}
 .remark-row :deep(.el-textarea) {
   flex: 1;
 }
@@ -3258,11 +3928,70 @@ defineExpose({ reload: load })
   color: var(--muted);
   line-height: 1.5;
 }
+.bill-attach {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  flex-wrap: wrap;
+}
+.bill-attach-name {
+  color: #c0392b;
+  font-weight: 600;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .sample-alert {
   margin-bottom: 12px;
 }
 .sample-extra {
   margin-bottom: 8px;
+}
+.iot-hint {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.iot-step-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.iot-last-error {
+  color: var(--el-color-danger);
+  font-size: 12px;
+}
+.iot-auth-sub {
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.iot-auth-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.iot-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.iot-overview-table {
+  margin-top: 4px;
+}
+.iot-sync-fail {
+  color: var(--el-color-danger);
+}
+.iot-refresh-btn {
+  margin-left: 0;
 }
 
 .soft-desc :deep(.el-descriptions__label) {

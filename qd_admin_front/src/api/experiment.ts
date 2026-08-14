@@ -1,9 +1,9 @@
-﻿import request, {
+import request, {
   type AjaxBody,
   type RequestConfig,
   ajaxErrorMessage,
   isAjaxOk,
-} from '@/utils/request'
+} from '@admin/utils/request'
 
 export type { AjaxBody }
 export { isAjaxOk, ajaxErrorMessage }
@@ -218,6 +218,13 @@ export const uploadExpOrderFile = (formData: FormData) =>
     headers: { 'Content-Type': undefined as unknown as string },
   }) as unknown as Promise<AjaxBody>
 
+/** 对齐 Java bill/uploadBill.ajax：收款/开票弹窗凭据 */
+export const uploadExpBillFile = (formData: FormData) =>
+  request.post(`/bill/uploadBill.ajax`, formData, {
+    timeout: 120000,
+    headers: { 'Content-Type': undefined as unknown as string },
+  }) as unknown as Promise<AjaxBody>
+
 export const deleteExpOrderFile = (id: string | number) =>
   postAjax(`${BASE}/order/deleteFile.ajax`, { id })
 
@@ -247,7 +254,7 @@ export async function fetchExpOrderFileBlob(
   id: string | number,
   displayName?: string
 ): Promise<{ ok: boolean; blob?: Blob; filename?: string; message?: string }> {
-  const { getToken } = await import('@/utils/auth')
+  const { getToken } = await import('@admin/utils/auth')
   const token = getToken() || ''
   const base = (import.meta.env.VITE_APP_BASE_API as string) || '/api'
   const qs = new URLSearchParams({
@@ -353,6 +360,7 @@ export async function previewExpOrderFile(
   return { ok: true }
 }
 
+
 export const updateExpOrderMsg = (id: string | number, msg: string) =>
   postAjax(`${BASE}/order/updateMsg.ajax`, { id, msg })
 
@@ -361,3 +369,34 @@ export const fetchGrabOrderList = (p: Record<string, unknown>) =>
 /** 对齐 Java competitionOrder：参数为子单 id */
 export const grabExpOrder = (childId: string | number) =>
   postAjax(`${BASE}/grab/competition.ajax`, { ofId: childId, id: childId })
+
+// IOT 设备绑定（baseURL 已含 /api，路径勿再加 /api）
+export const iotAuthLogin = (data: Record<string, unknown>) =>
+  postAjax(`/iot/auth/login`, data)
+export const iotAuthStatus = (data?: Record<string, unknown>) =>
+  postAjax(`/iot/auth/status`, data || {})
+export const iotAuthLogout = (data?: Record<string, unknown>) =>
+  postAjax(`/iot/auth/logout`, data || {})
+export const iotListDevices = (data?: Record<string, unknown>) =>
+  postAjax(`/iot/device/list`, data || {})
+export const iotBindDevice = (data: Record<string, unknown>) =>
+  postAjax(`/iot/device/bind`, data)
+/** 创建 IOT 试验任务（不选设备）；可传 childId 单行，或 childIds / all=1 批量 */
+export const iotCreateTask = (data: Record<string, unknown>) =>
+  postAjax(`/iot/task/create`, data)
+export const iotCreateTasksBatch = (data: Record<string, unknown>) =>
+  postAjax(`/iot/task/create-batch`, data)
+/** 一单多行任务总览 */
+export const iotTaskOverview = (data: Record<string, unknown>) =>
+  postAjax(`/iot/task/overview`, data)
+/** 免登跳转 IOT（授权缓存换 ticket） */
+export const iotSsoJump = (data?: Record<string, unknown>) =>
+  postAjax(`/iot/sso/jump`, data || {})
+export const iotUnbindDevice = (data: Record<string, unknown>) =>
+  postAjax(`/iot/device/unbind`, data)
+export const iotGetBinding = (data: Record<string, unknown>) =>
+  postAjax(`/iot/device/binding`, data)
+export const iotResyncDevice = (data: Record<string, unknown>) =>
+  postAjax(`/iot/device/resync`, data)
+export const iotResyncTasksBatch = (data: Record<string, unknown>) =>
+  postAjax(`/iot/device/resync-batch`, data)

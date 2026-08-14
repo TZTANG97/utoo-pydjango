@@ -172,11 +172,13 @@ def add_bill_data(request: Request):
     elif str(data.get("type2") or "") == "2":
         is_invoice = False
 
+    accessory_id = data.get("accessoryId") or data.get("accessory_id") or data.get("fileList")
     if is_invoice:
         ok_flag, msg = order_repo.save_invoice_bill(
             order_id=oid,
             money=money,
             log_info=str(data.get("logInfo") or "录入开票"),
+            accessory_id=accessory_id,
         )
     else:
         row = order_repo.get_order(oid) or {}
@@ -196,6 +198,7 @@ def add_bill_data(request: Request):
                 staff_user_id="",
                 log_info=str(data.get("logInfo") or "录入收款"),
                 bill_date=bill_date,
+                accessory_id=accessory_id,
             )
     return _ok_or_fail(ok_flag, msg)
 
@@ -220,8 +223,60 @@ def amount_pay(request: Request):
         or "",
         staff_user_id="",
         bill_date=str(data.get("billDate") or data.get("bill_date") or ""),
+        accessory_id=data.get("accessoryId") or data.get("accessory_id"),
     )
     return _ok_or_fail(ok_flag, msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def upload_bill(request: Request):
+    """对齐 Java bill/uploadBill.ajax：收款/开票凭据上传。"""
+    from apps.core.db_utils import scalar
+    from apps.orders.services import accessory_upload as accessory_upload_svc
+
+    uploaded = request.FILES.get("accfile") or request.FILES.get("orderdata") or request.FILES.get("file")
+    if not uploaded:
+        return Response(ajax_fail("文件为空"))
+    data = merge_payload(request)
+    oid = _order_pk(data) or to_int(data.get("id"))
+    if not oid:
+        return Response(ajax_fail("参数错误"))
+    bill_type = str(data.get("billType") or data.get("type") or "0").strip()
+    # Java：0收款 SK / 1开票 KP / 2付款 FK；命名序号按 qd_bill.type(1开票/2收款)
+    if bill_type == "1":
+        tag, qd_type = "KP", 1
+    elif bill_type == "2":
+        tag, qd_type = "FK", 2
+    else:
+        tag, qd_type = "SK", 2
+    of = order_repo.get_order(oid) or {}
+    order_no = str(of.get("orderId") or oid)
+    try:
+        cnt = int(
+            scalar(
+                "SELECT COUNT(1) FROM qd_bill WHERE exp_of_id = %(oid)s AND type = %(tp)s",
+                {"oid": oid, "tp": qd_type},
+                0,
+            )
+            or 0
+        )
+    except Exception:
+        cnt = 0
+    info_name = f"{order_no}{tag}{cnt + 1}"
+    ok_flag, msg, obj = accessory_upload_svc.save_order_attachment(
+        data=uploaded.read(),
+        orig_name=uploaded.name or "upload",
+        content_type=uploaded.content_type or "application/octet-stream",
+        acc_type=qd_type,
+        exp_of_id=oid,
+        subdir="bill",
+        info=info_name,
+    )
+    if not ok_flag:
+        return Response(ajax_fail(msg))
+    return Response(ajax_ok(obj, res_msg=msg))
 
 
 @api_view(["GET", "POST"])

@@ -218,6 +218,13 @@ export const uploadExpOrderFile = (formData: FormData) =>
     headers: { 'Content-Type': undefined as unknown as string },
   }) as unknown as Promise<AjaxBody>
 
+/** 对齐 Java bill/uploadBill.ajax：收款/开票弹窗凭据 */
+export const uploadExpBillFile = (formData: FormData) =>
+  request.post(`/bill/uploadBill.ajax`, formData, {
+    timeout: 120000,
+    headers: { 'Content-Type': undefined as unknown as string },
+  }) as unknown as Promise<AjaxBody>
+
 export const deleteExpOrderFile = (id: string | number) =>
   postAjax(`${BASE}/order/deleteFile.ajax`, { id })
 

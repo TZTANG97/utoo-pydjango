@@ -1360,6 +1360,22 @@
             style="width: 100%"
           />
         </el-form-item>
+        <el-form-item label="附件">
+          <div class="bill-attach">
+            <template v-if="receiveAccessory">
+              <span class="bill-attach-name">{{ receiveAccessory.info || receiveAccessory.name }}</span>
+              <el-button type="danger" link @click="clearReceiveAccessory">删除</el-button>
+            </template>
+            <el-upload
+              v-else
+              :show-file-list="false"
+              :http-request="onUploadReceiveBillFile"
+              accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.xls,.xlsx"
+            >
+              <el-button type="primary" link :loading="billUploading">上传</el-button>
+            </el-upload>
+          </div>
+        </el-form-item>
         <el-form-item v-if="receivePayType !== 2" label="备注">
           <el-input v-model="receiveRemark" type="textarea" :rows="2" placeholder="可选" />
         </el-form-item>
@@ -1373,10 +1389,26 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="invoiceVisible" title="开票" width="420px">
+    <el-dialog v-model="invoiceVisible" title="开票" width="480px" @open="openInvoiceDialog">
       <el-form label-width="100px">
         <el-form-item label="开票金额" required>
           <el-input v-model="invoiceMoney" placeholder="请输入开票金额" clearable />
+        </el-form-item>
+        <el-form-item label="附件">
+          <div class="bill-attach">
+            <template v-if="invoiceAccessory">
+              <span class="bill-attach-name">{{ invoiceAccessory.info || invoiceAccessory.name }}</span>
+              <el-button type="danger" link @click="clearInvoiceAccessory">删除</el-button>
+            </template>
+            <el-upload
+              v-else
+              :show-file-list="false"
+              :http-request="onUploadInvoiceBillFile"
+              accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.xls,.xlsx"
+            >
+              <el-button type="primary" link :loading="billUploading">上传</el-button>
+            </el-upload>
+          </div>
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="invoiceRemark" type="textarea" :rows="2" placeholder="可选" />
@@ -1718,6 +1750,7 @@ import {
   saveExpOrderInvoiceBill,
   saveExpOrderReceiveBill,
   amountPayExpOrder,
+  uploadExpBillFile,
   submitExpOrderAudit,
   subPayExpOrder,
   testEndExpOrder,
@@ -1811,6 +1844,8 @@ const receiveDate = ref('')
 const receiveRemark = ref('')
 /** 1=线下收款 2=会员余额收款（对齐 Java payType） */
 const receivePayType = ref(1)
+const receiveAccessory = ref<{ id?: number; info?: string; name?: string } | null>(null)
+const billUploading = ref(false)
 /** 线下订单 + 客户账号不为空 → 显示会员余额收款（Java experimentsub/experiment_order_detail） */
 const showMemberBalanceReceive = computed(() => {
   const d = detail.value
@@ -1832,6 +1867,7 @@ const memberReceiveName = computed(() => {
 const invoiceVisible = ref(false)
 const invoiceMoney = ref('')
 const invoiceRemark = ref('')
+const invoiceAccessory = ref<{ id?: number; info?: string; name?: string } | null>(null)
 const subPayBillVisible = ref(false)
 const subPayMoney = ref('')
 const subPayRemark = ref('')
@@ -2923,6 +2959,7 @@ async function onSaveReceive() {
     return
   }
   await runAction(async () => {
+    const accessoryId = receiveAccessory.value?.id
     const useBalance = showMemberBalanceReceive.value && receivePayType.value === 2
     const res = useBalance
       ? await amountPayExpOrder({
@@ -2931,12 +2968,14 @@ async function onSaveReceive() {
           money,
           billDate: receiveDate.value || undefined,
           exp_userId: detail.value?.customUserId,
+          ...(accessoryId ? { accessoryId } : {}),
         })
       : await saveExpOrderReceiveBill({
           id: props.orderId,
           money,
           billDate: receiveDate.value || undefined,
           logInfo: receiveRemark.value.trim() || '录入收款',
+          ...(accessoryId ? { accessoryId } : {}),
         })
     if (!isAjaxOk(res)) {
       ElMessage.error(ajaxErrorMessage(res, '收款失败'))
@@ -2948,6 +2987,7 @@ async function onSaveReceive() {
     receiveDate.value = ''
     receiveRemark.value = ''
     receivePayType.value = 1
+    receiveAccessory.value = null
     await load()
     emit('refreshed')
   })
@@ -2958,7 +2998,69 @@ function openReceiveDialog() {
   receiveMoney.value = ''
   receiveDate.value = ''
   receiveRemark.value = ''
+  receiveAccessory.value = null
   receiveVisible.value = true
+}
+
+function clearReceiveAccessory() {
+  receiveAccessory.value = null
+}
+
+function clearInvoiceAccessory() {
+  invoiceAccessory.value = null
+}
+
+function openInvoiceDialog() {
+  invoiceMoney.value = ''
+  invoiceRemark.value = ''
+  invoiceAccessory.value = null
+}
+
+async function onUploadReceiveBillFile(options: { file: File }) {
+  await uploadBillAccessory(options.file, '0', (acc) => {
+    receiveAccessory.value = acc
+  })
+}
+
+async function onUploadInvoiceBillFile(options: { file: File }) {
+  await uploadBillAccessory(options.file, '1', (acc) => {
+    invoiceAccessory.value = acc
+  })
+}
+
+async function uploadBillAccessory(
+  file: File,
+  billType: string,
+  onOk: (acc: { id?: number; info?: string; name?: string }) => void
+) {
+  if (!props.orderId) return
+  const maxBytes = 100 * 1024 * 1024
+  if (file.size > maxBytes) {
+    ElMessage.error('文件大小不能超过100MB，请压缩后重试')
+    return
+  }
+  const fd = new FormData()
+  fd.append('accfile', file)
+  fd.append('id', String(props.orderId))
+  fd.append('ofId', String(props.orderId))
+  fd.append('billType', billType)
+  billUploading.value = true
+  try {
+    const res = await uploadExpBillFile(fd)
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '上传失败'))
+      return
+    }
+    const obj = (res.obj || {}) as { id?: number; info?: string; name?: string }
+    if (!obj.id) {
+      ElMessage.error('上传成功但未返回附件编号')
+      return
+    }
+    onOk(obj)
+    ElMessage.success(String(res.resMsg || '上传成功'))
+  } finally {
+    billUploading.value = false
+  }
 }
 
 async function onSaveReferencePrice(row: Record<string, unknown>) {
@@ -3096,10 +3198,12 @@ async function onSaveInvoice() {
     return
   }
   await runAction(async () => {
+    const accessoryId = invoiceAccessory.value?.id
     const res = await saveExpOrderInvoiceBill({
       id: props.orderId,
       money,
       logInfo: invoiceRemark.value.trim() || '录入开票',
+      ...(accessoryId ? { accessoryId } : {}),
     })
     if (!isAjaxOk(res)) {
       ElMessage.error(ajaxErrorMessage(res, '开票失败'))
@@ -3109,6 +3213,7 @@ async function onSaveInvoice() {
     invoiceVisible.value = false
     invoiceMoney.value = ''
     invoiceRemark.value = ''
+    invoiceAccessory.value = null
     await load()
     emit('refreshed')
   })
@@ -3822,6 +3927,21 @@ defineExpose({ reload: load })
   font-size: 12px;
   color: var(--muted);
   line-height: 1.5;
+}
+.bill-attach {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  flex-wrap: wrap;
+}
+.bill-attach-name {
+  color: #c0392b;
+  font-weight: 600;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .sample-alert {
   margin-bottom: 12px;

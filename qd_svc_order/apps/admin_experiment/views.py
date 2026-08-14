@@ -912,6 +912,7 @@ def order_save_receive_bill(request: Request, user=None):
         staff_user_id=staff_id,
         log_info=str(data.get("logInfo") or data.get("remark") or "录入收款"),
         bill_date=str(data.get("billDate") or data.get("bill_date") or ""),
+        accessory_id=data.get("accessoryId") or data.get("accessory_id"),
     )
     if not ok_flag:
         return fail(msg)
@@ -943,6 +944,7 @@ def order_amount_pay(request: Request, user=None):
         or "",
         staff_user_id=staff_id,
         bill_date=str(data.get("billDate") or data.get("bill_date") or ""),
+        accessory_id=data.get("accessoryId") or data.get("accessory_id"),
     )
     if not ok_flag:
         return fail(msg)
@@ -1465,6 +1467,7 @@ def order_save_invoice_bill(request: Request, user=None):
         money=data.get("money") or data.get("amount"),
         staff_user_id=staff,
         log_info=str(data.get("logInfo") or data.get("remark") or "录入开票"),
+        accessory_id=data.get("accessoryId") or data.get("accessory_id"),
     )
     return ok(res_msg=msg) if ok_flag else fail(msg)
 

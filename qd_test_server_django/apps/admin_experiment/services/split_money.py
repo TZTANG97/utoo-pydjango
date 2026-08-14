@@ -584,8 +584,9 @@ def save_receive_bill(
     staff_user_id: str | int = "",
     log_info: str = "录入收款",
     bill_date: str = "",
+    accessory_id: int | str | None = None,
 ) -> tuple[bool, str]:
-    """后台录入收款票据并按需分钱。"""
+    """后台录入收款票据并按需分钱。对齐 Java saveBillAndAccessory(type=2)。"""
     order = _load_order(order_id)
     if not order:
         return False, "订单不存在"
@@ -595,30 +596,45 @@ def save_receive_bill(
     amt = _d(money)
     if amt <= 0:
         return False, "收款金额须大于 0"
+    try:
+        acc_id = int(accessory_id) if accessory_id not in (None, "") else None
+    except (TypeError, ValueError):
+        acc_id = None
+    if acc_id is not None and acc_id <= 0:
+        acc_id = None
     params = {
         "oid": order_id,
         "money": float(amt),
         "log_info": (log_info or "录入收款")[:500],
         "uid": str(staff_user_id or "") or None,
+        "aid": acc_id,
     }
     if bill_date:
-        execute(
-            """
+        sql = """
             INSERT INTO qd_bill
-                (add_time, add_user_id, exp_of_id, money, type, is_split, bill_date, mark)
+                (add_time, add_user_id, exp_of_id, money, type, is_split, bill_date, mark{acc_col})
             VALUES
-                (NOW(), %(uid)s, %(oid)s, %(money)s, 2, 0, %(bdate)s, %(log_info)s)
-            """,
+                (NOW(), %(uid)s, %(oid)s, %(money)s, 2, 0, %(bdate)s, %(log_info)s{acc_val})
+            """
+        execute(
+            sql.format(
+                acc_col=", accessory_id" if acc_id else "",
+                acc_val=", %(aid)s" if acc_id else "",
+            ),
             {**params, "bdate": bill_date},
         )
     else:
-        execute(
-            """
+        sql = """
             INSERT INTO qd_bill
-                (add_time, add_user_id, exp_of_id, money, type, is_split, bill_date, mark)
+                (add_time, add_user_id, exp_of_id, money, type, is_split, bill_date, mark{acc_col})
             VALUES
-                (NOW(), %(uid)s, %(oid)s, %(money)s, 2, 0, NOW(), %(log_info)s)
-            """,
+                (NOW(), %(uid)s, %(oid)s, %(money)s, 2, 0, NOW(), %(log_info)s{acc_val})
+            """
+        execute(
+            sql.format(
+                acc_col=", accessory_id" if acc_id else "",
+                acc_val=", %(aid)s" if acc_id else "",
+            ),
             params,
         )
     try:
@@ -681,6 +697,7 @@ def save_member_balance_receive(
     exp_user_id: str | int = "",
     staff_user_id: str | int = "",
     bill_date: str = "",
+    accessory_id: int | str | None = None,
 ) -> tuple[bool, str]:
     """
     对齐 Java bill/amountPay.ajax：线下订单 + 客户账号 → 会员余额收款。
@@ -749,6 +766,7 @@ def save_member_balance_receive(
         staff_user_id=staff_user_id,
         log_info="后端-会员余额收款",
         bill_date=bill_date,
+        accessory_id=accessory_id,
     )
     if not ok_flag:
         transaction.set_rollback(True)

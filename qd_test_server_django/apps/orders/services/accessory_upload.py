@@ -95,6 +95,8 @@ def save_order_attachment(
     acc_type: int = 7,
     exp_of_id: int | None = None,
     child_of_id: int | None = None,
+    subdir: str = "order",
+    info: str | None = None,
 ) -> tuple[bool, str, dict[str, Any]]:
     if not data:
         return False, "文件为空", {}
@@ -110,8 +112,9 @@ def save_order_attachment(
     if not upload_root.is_absolute():
         base = Path(getattr(settings, "BASE_DIR", Path.cwd()))
         upload_root = base / upload_root
-    # 本地临时目录（与 Java 先落盘再推 OSS 一致）
-    target_dir = upload_root / "order"
+    # 本地临时目录（与 Java 先落盘再推 OSS 一致）；收款/开票凭据用 bill
+    folder = (subdir or "order").strip().strip("/\\") or "order"
+    target_dir = upload_root / folder
     local_path = target_dir / filename
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -132,13 +135,14 @@ def save_order_attachment(
     upload_file_path = "upload"
     if config and config.get("uploadFilePath"):
         upload_file_path = str(config["uploadFilePath"]).strip().strip("/\\") or "upload"
-    # OSS key 前缀与 Java：config.getUploadFilePath()+"/order"
-    path_rel = f"{upload_file_path}/order"
-    # 库表 path 对齐 Java：imageWebServer + "/" + uploadFilePath + "/order"
+    # OSS key 前缀与 Java：config.getUploadFilePath()+"/order|bill"
+    path_rel = f"{upload_file_path}/{folder}"
+    # 库表 path 对齐 Java：imageWebServer + "/" + uploadFilePath + "/order|bill"
     path_store = f"{image_base.rstrip('/')}/{path_rel}" if image_base else path_rel
 
     mime = (content_type or "").strip() or "application/octet-stream"
     ext_store = (mime[:64] if len(mime) <= 64 else file_ext.lstrip(".") or "bin")[:64]
+    info_store = (info if info is not None else (orig_name or "upload"))[:255]
 
     oss_key = _object_key(path_rel, filename)
     oss_ok, oss_msg = _try_oss_upload(oss_key, data, mime)
@@ -156,7 +160,7 @@ def save_order_attachment(
             name=filename,
             path=path_store,
             ext=ext_store,
-            info=(orig_name or "upload")[:255],
+            info=info_store,
             acc_type=acc_type,
             exp_of_id=exp_of_id,
             child_of_id=child_of_id,
@@ -166,7 +170,7 @@ def save_order_attachment(
             "id": acc_id,
             "name": filename,
             "path": path_store,
-            "info": orig_name or "upload",
+            "info": info_store,
             "ext": ext_store,
             "type": acc_type,
             "childOfId": child_of_id,
