@@ -321,7 +321,7 @@
         </el-table-column>
         <el-table-column label="标准测试金额" width="120">
           <template #default="{ row }">
-            <el-input v-model="row.reference_price" :disabled="readonly" size="small" />
+            <el-input v-model="row.reference_price" :disabled="readonly" readonly size="small" />
           </template>
         </el-table-column>
         <el-table-column label="样品" min-width="140">
@@ -910,8 +910,9 @@ async function loadOptions() {
       return {
         value: (row.id ?? '') as string | number,
         label: String(
-          row.name ||
-            [row.true_name, row.mobile, row.address].filter(Boolean).join(' ') ||
+          [row.trueName || row.true_name || row.name, row.mobile, row.address]
+            .filter(Boolean)
+            .join(' · ') ||
             row.id ||
             ''
         ),
@@ -927,8 +928,9 @@ async function loadOptions() {
       return {
         value: (row.id ?? '') as string | number,
         label: String(
-          row.name ||
-            [row.company_name, row.bankCardNum, row.bank].filter(Boolean).join(' ') ||
+          [row.company_name || row.companyName || row.name, row.bankCardNum || row.bank_card_num, row.bank]
+            .filter(Boolean)
+            .join(' · ') ||
             row.id ||
             ''
         ),
