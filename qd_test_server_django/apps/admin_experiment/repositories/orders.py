@@ -3880,11 +3880,11 @@ def _viewer_role_context(viewer_user_id: str | int | None) -> dict[str, Any]:
         ctx["can_share_ratio"] = False
         ctx["can_view_logs"] = False
     if is_c:
-        # Java：分成区只显示空的「毛利/成本」；业务要求 C 类不可看操作记录
+        # Java：分成区只显示空的「毛利/成本」；操作记录仅 R 类隐藏，C 类可看完整日志
         ctx["can_view_share"] = True
         ctx["can_view_share_detail"] = False
         ctx["can_share_ratio"] = False
-        ctx["can_view_logs"] = False
+        ctx["can_view_all_logs"] = True
     if role in ("销售主管", "系统管理员") or utoo in ("销售主管", "系统管理员"):
         ctx["can_view_all_logs"] = True
     return ctx
