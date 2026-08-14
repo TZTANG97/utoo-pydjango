@@ -2,8 +2,8 @@
   <div v-loading="loading" class="edit-page">
     <header class="page-head">
       <button type="button" class="back-link" @click="goBack">← 返回列表</button>
-      <h2>咨询详情</h2>
-      <p v-if="form.id" class="sub">
+      <h2>{{ pageTitle }}</h2>
+      <p v-if="form.id && !isViewMode" class="sub">
         <span class="mono">#{{ form.id }}</span>
         · {{ statusLabel(form.status) }}
         <template v-if="form.order_num"> · 预约单号：{{ form.order_num }}</template>
@@ -16,7 +16,92 @@
       </p>
     </header>
 
-    <el-form v-if="form.id" label-width="130px" class="form-card" :disabled="readonly" @submit.prevent>
+    <!-- 对齐 Java consultDetailxq.html：列表「详情」→ 预约详情（只读） -->
+    <section v-if="form.id && isViewMode" class="view-card">
+      <el-descriptions :column="3" border>
+        <el-descriptions-item label="实验测试分类">{{ viewClassName }}</el-descriptions-item>
+        <el-descriptions-item label="姓名">{{ form.userName || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="生成订单编号">
+          <el-link v-if="form.relatedOrderNo" type="primary" :underline="false" @click="goRelatedOrder">
+            {{ form.relatedOrderNo }}
+          </el-link>
+          <span v-else>-</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="手机号">{{ form.mobile || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="公司名">{{ form.company_name || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="">&nbsp;</el-descriptions-item>
+        <el-descriptions-item :span="3" label="实验需求">
+          <div class="view-content">{{ form.content || '-' }}</div>
+        </el-descriptions-item>
+        <el-descriptions-item :span="2" label="样品寄回地址">
+          {{ form.send_address || '-' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="样品是否回收">{{ form.reverso_context ? '是' : '否' }}</el-descriptions-item>
+      </el-descriptions>
+
+      <h3 class="view-section-title">产品信息</h3>
+      <el-table :data="viewChilds" border stripe empty-text="暂无产品信息">
+        <el-table-column label="产品名称" min-width="130">
+          <template #default="{ row }">{{ row.goods_name || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="产品型号" min-width="120">
+          <template #default="{ row }">{{ row.goods_spec || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="产品品牌" min-width="100">
+          <template #default="{ row }">{{ row.goods_brand_name || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="数量" width="80">
+          <template #default="{ row }">{{ row.goods_nums || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="实验测试项目" min-width="130">
+          <template #default="{ row }">{{ row.experiment_project_name || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="实验测试分类" min-width="130">
+          <template #default="{ row }">{{ row.experiment_class_name || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="实际测试金额" width="120">
+          <template #default="{ row }">{{ row.goods_price || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="标准测试金额" width="120">
+          <template #default="{ row }">{{ row.reference_price || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="总价" width="100">
+          <template #default="{ row }">{{ lineTotal(row) }}</template>
+        </el-table-column>
+      </el-table>
+
+      <template v-if="sampleInfos.length">
+        <h3 class="view-section-title">样品信息</h3>
+        <el-table :data="sampleInfos" border stripe>
+          <el-table-column label="样品名称" min-width="140">
+            <template #default="{ row }">{{ row.sample_name || row.sampleName || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="样品数量" width="100">
+            <template #default="{ row }">{{ row.sample_num ?? row.sampleNum ?? '-' }}</template>
+          </el-table-column>
+          <el-table-column label="主要成分" min-width="120">
+            <template #default="{ row }">{{ row.main_component || row.mainComponent || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="是否含磁" width="100">
+            <template #default="{ row }">{{ magneticLabel(row.is_magnetic ?? row.isMagnetic) }}</template>
+          </el-table-column>
+          <el-table-column label="是否含金" width="100">
+            <template #default="{ row }">{{ magneticLabel(row.is_gold_spraying ?? row.isGoldSpraying) }}</template>
+          </el-table-column>
+          <el-table-column
+            v-for="name in sampleAttrNameList"
+            :key="'view-attr-' + name"
+            :label="name"
+            min-width="120"
+          >
+            <template #default="{ row }">{{ sampleAttrCell(row, name) }}</template>
+          </el-table-column>
+        </el-table>
+      </template>
+      <div class="actions"><el-button @click="goBack">返回</el-button></div>
+    </section>
+
+    <el-form v-else-if="form.id" label-width="130px" class="form-card" :disabled="readonly" @submit.prevent>
       <div class="section-head"><h3>预约信息</h3></div>
       <el-row :gutter="16">
         <el-col :span="12">
@@ -352,7 +437,7 @@
       </div>
     </el-form>
 
-    <div v-if="form.id" class="actions">
+    <div v-if="form.id && !isViewMode" class="actions">
       <template v-if="!readonly">
         <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
         <el-button type="success" :loading="ordering" @click="onSaveOrder">生成订单</el-button>
@@ -440,14 +525,23 @@ import {
   fetchUserList,
 } from '@/api/system'
 import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
+import { useTagsViewStore } from '@/stores/tags-view'
 
 type Opt = { value: string | number; label: string }
 type ChildRow = Record<string, unknown>
 
 const route = useRoute()
 const router = useRouter()
+const tagsView = useTagsViewStore()
 const consultId = String(route.params.id || '')
 const mode = String(route.query.mode || 'edit')
+/** Java：查看→咨询详情；详情→预约详情 */
+const pageTitle = computed(() => (mode === 'view' ? '预约详情' : '咨询详情'))
+function syncTabTitle() {
+  if (route.name !== 'ServiceConsultDetail') return
+  tagsView.updateViewTitle(route.path, pageTitle.value)
+  document.title = `${pageTitle.value} - 愉兔检测管理平台`
+}
 
 const loading = ref(false)
 const saving = ref(false)
@@ -460,7 +554,9 @@ const form = reactive({
   order_num: '',
   relatedOrderId: '',
   relatedOrderNo: '',
+  relatedOrderType: '' as string | number | '',
   class_id: '' as string | number | '',
+  className: '',
   userName: '',
   mobile: '',
   company_name: '',
@@ -515,6 +611,16 @@ const readonly = computed(() => {
   const st = Number(form.status)
   return st === 2 || st === 3
 })
+const isViewMode = computed(() => mode === 'view')
+const viewClassName = computed(
+  () =>
+    form.className ||
+    classOpts.value.find((item) => String(item.value) === String(form.class_id))?.label ||
+    String(form.class_id || '-')
+)
+const viewChilds = computed(() =>
+  childs.value.filter((row) => String(row.goods_id || row.goods_name || '').trim() !== '')
+)
 
 const STATUS_MAP: Record<number, string> = {
   0: '待处理',
@@ -973,10 +1079,13 @@ async function loadDetail() {
     form.id = (consult.id as string | number) || consultId
     form.status = Number(consult.status ?? -1)
     form.order_num = String(consult.order_num || consult.orderNum || '')
-    const linkedOrder = (obj.linkedOrder || consult.linkedOrder || {}) as Record<string, unknown>
+    const linkedOrder = (obj.linkedOrder || obj.of || consult.linkedOrder || {}) as Record<string, unknown>
     form.relatedOrderId = String(linkedOrder.id || consult.order_id || consult.orderId || '')
     form.relatedOrderNo = String(linkedOrder.orderNo || linkedOrder.order_id || '')
+    form.relatedOrderType = (linkedOrder.orderType ?? linkedOrder.order_type ?? '') as string | number | ''
     form.class_id = (consult.class_id ?? consult.classId ?? '') as string | number | ''
+    form.className = String(obj.className || consult.className || '')
+    if (form.class_id && form.className) ensureOpt(classOpts, form.class_id, form.className)
     form.userName = String(consult.userName || '')
     form.mobile = String(consult.mobile || '')
     form.company_name = String(consult.company_name || consult.companyName || '')
@@ -1170,6 +1279,7 @@ async function onCancel() {
 }
 
 onMounted(async () => {
+  syncTabTitle()
   await loadOptions()
   await loadDetail()
 })
@@ -1208,6 +1318,24 @@ onMounted(async () => {
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 20px 20px 8px;
+}
+.view-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 20px;
+}
+.view-section-title {
+  margin: 22px 0 12px;
+  font-size: 15px;
+}
+.view-content {
+  white-space: pre-wrap;
+  line-height: 1.6;
+  min-height: 1.5em;
+}
+.view-file {
+  display: block;
 }
 .section-head {
   display: flex;

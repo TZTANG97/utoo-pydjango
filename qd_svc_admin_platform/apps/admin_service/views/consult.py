@@ -147,7 +147,7 @@ def _parse_payload_list(request: Request) -> list:
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def consult_detail_xq(request: Request, user=None):
-    """后台咨询详情（xq）— 与 consultDetail 同形。"""
+    """后台预约详情（xq）— 对齐 Java consultDetailxq；数据与 consultDetail 同形。"""
     del user
     data = merge_payload(request)
     consult_id = data.get("id")
