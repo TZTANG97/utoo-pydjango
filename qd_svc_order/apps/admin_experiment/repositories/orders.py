@@ -1907,7 +1907,7 @@ def get_order(order_id: int) -> dict[str, Any] | None:
     row["canAddRelated"] = parent_kind
     # Java 子订单详情无「更多信息」按钮；主单保留
     row["canMoreInfo"] = parent_kind
-    # Java isSave：仅实验子订单 type=10，且 status∉{0,50}
+    # Java isSave：仅实验子订单 type=10，且 status∉{0,50}；具体人员在详情 bundle 再按 viewer 收窄
     row["canSaveFinish"] = ot == "10" and st not in (0, 50)
     # Java：子单 order_status < 30 可改测试金额
     row["canEditReferencePrice"] = ot == "10" and st < 30
@@ -3000,6 +3000,68 @@ def apply_pay_audit_permission(row: dict[str, Any], viewer_user_id: str | int | 
     row["canAuditPay"] = False
 
 
+def _apply_save_finish_permission(
+    row: dict[str, Any], viewer_user_id: str | int | None
+) -> None:
+    """对齐 Java isSave：管理员 / 父单或本单销售主管 / 子行测试员。仓库管理员不可保存。"""
+    if not row.get("canSaveFinish"):
+        return
+    uid = str(viewer_user_id or "").strip()
+    if not uid:
+        row["canSaveFinish"] = False
+        return
+    if _is_audit_admin(uid):
+        return
+    allowed: set[str] = set()
+    for key in ("saleManagerId",):
+        v = str(row.get(key) or "").strip()
+        if v:
+            allowed.add(v)
+    # 父单销售主管
+    parent_pk = row.get("parentPkId") or row.get("parentId")
+    try:
+        pid = int(parent_pk) if parent_pk not in (None, "", 0, "0") else 0
+    except (TypeError, ValueError):
+        pid = 0
+    if pid:
+        parent = fetch_one(
+            "SELECT sale_manager AS saleManagerId FROM experiment_order WHERE id = %(id)s LIMIT 1",
+            {"id": pid},
+        )
+        v = str((parent or {}).get("saleManagerId") or "").strip()
+        if v:
+            allowed.add(v)
+    try:
+        oid = int(row.get("id") or 0)
+    except (TypeError, ValueError):
+        oid = 0
+    if oid:
+        testers = fetch_all(
+            """
+            SELECT DISTINCT c.test_user_id AS tid
+            FROM experiment_order_child c
+            WHERE (
+                c.order_form_id = %(oid)s
+                OR EXISTS (
+                    SELECT 1 FROM exp_qd_purchase_order_child poc
+                    WHERE poc.purchase_order_id = %(oid)s
+                      AND poc.order_child_id = c.id
+                )
+            )
+              AND IFNULL(c.delete_status, 2) <> 1
+              AND c.test_user_id IS NOT NULL
+              AND CAST(c.test_user_id AS CHAR) NOT IN ('0', '22', '')
+            """,
+            {"oid": oid},
+        )
+        for t in testers or []:
+            tid = str(t.get("tid") or "").strip()
+            if tid:
+                allowed.add(tid)
+    if uid not in allowed:
+        row["canSaveFinish"] = False
+
+
 def _apply_child_edit_permission(
     row: dict[str, Any],
     viewer_user_id: str | int | None,
@@ -3490,6 +3552,12 @@ def get_order_detail_bundle(
     if not role_ctx.get("can_share_ratio"):
         row["canShareRatio"] = False
     _apply_child_edit_permission(row, viewer_user_id, role_ctx=role_ctx)
+    _apply_save_finish_permission(row, viewer_user_id)
+    # 样品按钮按当前登录人再过滤（仓库管理员只保留到货）
+    if ot in ("9", "10"):
+        from apps.admin_experiment.repositories import sample_flow as sample_flow_repo
+
+        sample_flow_repo.attach_sample_action_flags(row, viewer_user_id=viewer_user_id)
     # 子单编辑勾选：已挂接 ∪ 父单待处理行（对齐 Java saleChilds）
     edit_selectable: list[dict[str, Any]] = []
     if ot in ("9", "10"):
@@ -3804,6 +3872,8 @@ def _viewer_role_context(viewer_user_id: str | int | None) -> dict[str, Any]:
         ctx["can_view_share_detail"] = False
         ctx["can_share_ratio"] = False
         ctx["can_view_finance"] = False
+        # 对齐 Java 详情：测试主管/测试人员可看完整操作记录（非仅本人）
+        ctx["can_view_all_logs"] = True
     if role in ("R类人员", "H类用户"):
         ctx["can_view_share"] = False
         ctx["can_view_share_detail"] = False
@@ -4013,6 +4083,7 @@ def save_finish_times(
     row = get_order(order_id)
     if not row:
         return False, "订单不存在"
+    _apply_save_finish_permission(row, staff_user_id)
     if not row.get("canSaveFinish"):
         return False, "当前不可保存完成时间"
     if not items:
@@ -4959,6 +5030,13 @@ def update_order_basic(
         return False, "订单不存在"
     if not row.get("canEdit"):
         return False, "当前不可编辑"
+    try:
+        st = int(row.get("orderStatus") or 0)
+    except (TypeError, ValueError):
+        st = 0
+    ot = str(row.get("orderType") or "")
+    # 子单审核通过后只允许改备注/产品行，抬头字段与审核状态保持不变
+    header_locked = ot in ("9", "10") and st >= 30
     sets = []
     params: dict[str, Any] = {"id": order_id}
     if mark is not None:
@@ -5021,8 +5099,6 @@ def update_order_basic(
             sets.append("taxes = %(taxes)s")
     for key, col in (
         ("out_bill_type_id", "out_bill_type_id"),
-        ("sale_manager", "sale_manager"),
-        ("sale_user", "sale_user"),
         ("supplier_id", "supplier_name"),
         ("class_id", "class_id"),
         ("test_address_id", "test_address_id"),
@@ -5035,6 +5111,13 @@ def update_order_basic(
                 sets.append(f"{col} = %({key})s")
             except (TypeError, ValueError):
                 pass
+    # 对齐 Java：sale_user / sale_manager 为字符串员工 ID（UUID 或带前导零），禁止 int() 静默丢弃
+    if sale_manager not in (None, ""):
+        params["sale_manager"] = str(sale_manager).strip()[:64]
+        sets.append("sale_manager = %(sale_manager)s")
+    if sale_user not in (None, ""):
+        params["sale_user"] = str(sale_user).strip()[:64]
+        sets.append("sale_user = %(sale_user)s")
     # 客户名称 / 客户账号：前端 clearable 会传空串或 null；显式传入时允许清空（None=不改）
     for key, col in (
         ("customer_id", "customer_name"),
@@ -5082,15 +5165,10 @@ def update_order_basic(
         except (TypeError, ValueError):
             pass
     # 对齐 Java：type=6 editSave status==10→5 / 66→67 / >=30→20；
-    # type=9/10 updateOrder 一律回退到 5（待提交审核），并重置样品子行状态以便重走流程
-    try:
-        st = int(row.get("orderStatus") or 0)
-    except (TypeError, ValueError):
-        st = 0
-    ot = str(row.get("orderType") or "")
+    # type=9/10 未审核编辑回退到 5；审核通过后不回退，仅保存备注/产品行
     next_st = None
     if ot in ("9", "10"):
-        if st not in (0, 5):
+        if st not in (0, 5) and not header_locked:
             next_st = 5
     elif st == 10:
         next_st = 5
@@ -5098,6 +5176,8 @@ def update_order_basic(
         next_st = 67
     elif st >= 30:
         next_st = 20
+    if header_locked:
+        sets = [s for s in sets if s.startswith("mark =") or s.startswith("msg =")]
     if next_st is not None:
         sets.append("order_status = %(next_st)s")
         params["next_st"] = next_st

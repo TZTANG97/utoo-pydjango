@@ -217,8 +217,15 @@ def _child_has_real_tester(c: dict[str, Any]) -> bool:
     return bool(tid and tid not in ("0", "22"))
 
 
-def attach_sample_action_flags(row: dict[str, Any]) -> None:
-    """写入 Java 同名 *Show 标志；适用实验子订单 type=10 / 分包子订单 type=9。"""
+def attach_sample_action_flags(
+    row: dict[str, Any], *, viewer_user_id: str | int | None = None
+) -> None:
+    """写入 Java 同名 *Show 标志；适用实验子订单 type=10 / 分包子订单 type=9。
+
+    viewer_user_id：对齐 Java getChildsByPurchaseId* 的 userId / userId1 过滤。
+    - 样品到货(userId1)：含子单 warehouse_user
+    - 领用/开始测试等(userId)：不含 warehouse_user
+    """
     ot = str(row.get("orderType") or "")
     defaults = {
         "ypdhShow": False,
@@ -261,7 +268,9 @@ def attach_sample_action_flags(row: dict[str, Any]) -> None:
     if row.get("parentId"):
         parent = fetch_one(
             """
-            SELECT is_online AS isOnline, reverso_context AS reversoContext, is_video AS isVideo
+            SELECT is_online AS isOnline, reverso_context AS reversoContext, is_video AS isVideo,
+                   sale_user AS saleUserId, sale_manager AS saleManagerId,
+                   add_user_id AS addUserId
             FROM experiment_order WHERE id = %(id)s LIMIT 1
             """,
             {"id": row["parentId"]},
@@ -355,6 +364,180 @@ def attach_sample_action_flags(row: dict[str, Any]) -> None:
                 video_show = True
                 break
     row["videoShow"] = video_show
+
+    _filter_sample_flags_by_viewer(
+        row,
+        viewer_user_id=viewer_user_id,
+        children=children,
+        parent=parent,
+    )
+
+
+def _is_sample_admin(user_id: str | int | None) -> bool:
+    uid = str(user_id or "").strip()
+    if not uid:
+        return False
+    u = fetch_one(
+        """
+        SELECT user_name AS userName, utoo_type AS utooType, is_czqx AS isCzqx
+        FROM sy_users WHERE CAST(id AS CHAR) = CAST(%(id)s AS CHAR) LIMIT 1
+        """,
+        {"id": uid},
+    )
+    if not u:
+        return False
+    name = str(u.get("userName") or "").strip().lower()
+    utoo = str(u.get("utooType") or "").strip()
+    try:
+        czqx = int(u.get("isCzqx") or 0)
+    except (TypeError, ValueError):
+        czqx = 0
+    return name == "admin" or czqx == 1 or utoo in ("系统管理员",)
+
+
+def _filter_sample_flags_by_viewer(
+    row: dict[str, Any],
+    *,
+    viewer_user_id: str | int | None,
+    children: list[dict[str, Any]],
+    parent: dict[str, Any] | None,
+) -> None:
+    """对齐 Java：仓库管理员(warehouse_user)仅样品到货；领用等不含仓库。"""
+    uid = str(viewer_user_id or "").strip()
+    if not uid or _is_sample_admin(uid):
+        return
+
+    ot = str(row.get("orderType") or "")
+    full_ids: set[str] = set()
+    arrive_ids: set[str] = set()
+
+    for key in (
+        "saleUserId",
+        "addUserId",
+        "saleManagerId",
+        "testUserId",
+        "testManagerId",
+    ):
+        v = str(row.get(key) or "").strip()
+        if v:
+            full_ids.add(v)
+            arrive_ids.add(v)
+
+    if parent:
+        for key in ("saleUserId", "addUserId", "saleManagerId"):
+            v = str(parent.get(key) or "").strip()
+            if v:
+                full_ids.add(v)
+                arrive_ids.add(v)
+
+    for c in children:
+        tid = str(c.get("testUserId") or "").strip()
+        if tid and tid not in ("0", "22"):
+            full_ids.add(tid)
+            arrive_ids.add(tid)
+
+    # Java type=10 到货：userId1 含 warehouse_user；领用等 userId 不含
+    wh = str(row.get("warehouseUserId") or "").strip()
+    if ot == "10" and wh:
+        arrive_ids.add(wh)
+
+    sample_keys = (
+        "ypdhShow",
+        "yplyShow",
+        "kscsShow",
+        "cswcShow",
+        "ypghShow",
+        "ypjhShow",
+        "yplcShow",
+        "ypfcShow",
+        "qrwcShow",
+        "videoShow",
+        "canConfirmDone",
+    )
+    if uid not in arrive_ids:
+        for k in sample_keys:
+            row[k] = False
+        return
+
+    # 仅仓库管理员：只保留样品到货
+    if uid not in full_ids:
+        for k in sample_keys:
+            if k != "ypdhShow":
+                row[k] = False
+
+
+def viewer_can_sample_action(
+    *,
+    order_id: int,
+    action: str,
+    viewer_user_id: str | int | None,
+) -> tuple[bool, str]:
+    """写操作权限：仓库管理员仅允许样品到货。"""
+    if _is_sample_admin(viewer_user_id):
+        return True, ""
+    uid = str(viewer_user_id or "").strip()
+    if not uid:
+        return False, "无操作权限"
+    order = fetch_one(
+        """
+        SELECT
+            id, order_type AS orderType, warehouse_user AS warehouseUserId,
+            sale_user AS saleUserId, sale_manager AS saleManagerId,
+            add_user_id AS addUserId, test_manager AS testManagerId,
+            parent_id AS parentId
+        FROM experiment_order WHERE id = %(id)s LIMIT 1
+        """,
+        {"id": order_id},
+    )
+    if not order:
+        return False, "订单不存在"
+    children = list_children_for_order(order_id)
+    parent = None
+    if order.get("parentId"):
+        parent = fetch_one(
+            """
+            SELECT sale_user AS saleUserId, sale_manager AS saleManagerId,
+                   add_user_id AS addUserId
+            FROM experiment_order WHERE id = %(id)s LIMIT 1
+            """,
+            {"id": order["parentId"]},
+        )
+    # 复用过滤逻辑：先打开全部相关标志再按 viewer 收窄
+    probe = {
+        **dict(order),
+        "ypdhShow": True,
+        "yplyShow": True,
+        "kscsShow": True,
+        "cswcShow": True,
+        "ypghShow": True,
+        "ypjhShow": True,
+        "yplcShow": True,
+        "ypfcShow": True,
+        "qrwcShow": True,
+        "videoShow": True,
+        "canConfirmDone": True,
+    }
+    _filter_sample_flags_by_viewer(
+        probe, viewer_user_id=uid, children=children, parent=parent
+    )
+    action_flag = {
+        "arrive": "ypdhShow",
+        "pick": "yplyShow",
+        "testStart": "kscsShow",
+        "testEnd": "cswcShow",
+        "return": "ypghShow",
+        "ship": "ypjhShow",
+        "retain": "yplcShow",
+        "scrap": "yplcShow",
+        "retest": "ypfcShow",
+        "confirmDone": "qrwcShow",
+        "video": "videoShow",
+    }.get(action)
+    if not action_flag:
+        return True, ""
+    if not probe.get(action_flag):
+        return False, "当前账号无此操作权限"
+    return True, ""
 
 
 def attach_type10_action_flags(row: dict[str, Any]) -> None:

@@ -48,6 +48,16 @@ def _staff_id(user) -> str:
     return str(user.get("user_id") or user.get("id") or user.get("userId") or "").strip()
 
 
+def _deny_sample_if_needed(oid: int, action: str, user) -> Response | None:
+    """仓库管理员等：对齐 Java 样品按钮权限，无权限则直接拒绝。"""
+    ok_perm, msg = sample_flow_repo.viewer_can_sample_action(
+        order_id=oid, action=action, viewer_user_id=_staff_id(user)
+    )
+    if ok_perm:
+        return None
+    return fail(msg or "当前账号无此操作权限")
+
+
 def _parse_children_payload(data: dict) -> list | None:
     """解析编辑保存的产品行；兼容 list / JSON 字符串。"""
     raw = data.get("children")
@@ -1235,6 +1245,9 @@ def order_sample_arrive(request: Request, user=None):
     oid = _order_id_from(data)
     if not oid:
         return fail("参数错误")
+    denied = _deny_sample_if_needed(oid, "arrive", user)
+    if denied:
+        return denied
     ok_flag, msg = sample_flow_repo.sample_arrive(
         order_id=oid,
         child_ids=_child_ids_from(data),
@@ -1259,6 +1272,9 @@ def order_sample_pick(request: Request, user=None):
     oid = _order_id_from(data)
     if not oid:
         return fail("参数错误")
+    denied = _deny_sample_if_needed(oid, "pick", user)
+    if denied:
+        return denied
     ok_flag, msg = sample_flow_repo.sample_pick(
         order_id=oid,
         child_ids=_child_ids_from(data),
@@ -1282,6 +1298,9 @@ def order_test_start(request: Request, user=None):
     oid = _order_id_from(data)
     if not oid:
         return fail("参数错误")
+    denied = _deny_sample_if_needed(oid, "testStart", user)
+    if denied:
+        return denied
     ok_flag, msg = sample_flow_repo.test_start(
         order_id=oid,
         child_ids=_child_ids_from(data),
@@ -1300,6 +1319,9 @@ def order_test_end(request: Request, user=None):
     oid = _order_id_from(data)
     if not oid:
         return fail("参数错误")
+    denied = _deny_sample_if_needed(oid, "testEnd", user)
+    if denied:
+        return denied
     ok_flag, msg = sample_flow_repo.test_end(
         order_id=oid, child_ids=_child_ids_from(data), staff_user_id=_staff_id(user)
     )
@@ -1315,6 +1337,9 @@ def order_sample_return(request: Request, user=None):
     oid = _order_id_from(data)
     if not oid:
         return fail("参数错误")
+    denied = _deny_sample_if_needed(oid, "return", user)
+    if denied:
+        return denied
     ok_flag, msg = sample_flow_repo.sample_return(
         order_id=oid,
         child_ids=_child_ids_from(data),
@@ -1339,6 +1364,9 @@ def order_sample_ship(request: Request, user=None):
     oid = _order_id_from(data)
     if not oid:
         return fail("参数错误")
+    denied = _deny_sample_if_needed(oid, "ship", user)
+    if denied:
+        return denied
     ok_flag, msg = sample_flow_repo.sample_ship_back(
         order_id=oid,
         child_ids=_child_ids_from(data),
@@ -1374,6 +1402,9 @@ def order_sample_retain(request: Request, user=None):
             "true",
             "scrap",
         )
+    denied = _deny_sample_if_needed(oid, "scrap" if scrap else "retain", user)
+    if denied:
+        return denied
     ok_flag, msg = sample_flow_repo.sample_retain(
         order_id=oid,
         child_ids=_child_ids_from(data),
@@ -1407,6 +1438,9 @@ def order_add_video(request: Request, user=None):
     oid = _order_id_from(data)
     if not oid:
         return fail("参数错误")
+    denied = _deny_sample_if_needed(oid, "video", user)
+    if denied:
+        return denied
     ok_flag, msg = sample_flow_repo.add_video_meeting(
         order_id=oid,
         child_ids=_child_ids_from(data),
@@ -1426,6 +1460,9 @@ def order_confirm_done(request: Request, user=None):
     oid = _order_id_from(data)
     if not oid:
         return fail("参数错误")
+    denied = _deny_sample_if_needed(oid, "confirmDone", user)
+    if denied:
+        return denied
     ok_flag, msg = sample_flow_repo.confirm_children(
         order_id=oid,
         child_ids=_child_ids_from(data),
@@ -1444,6 +1481,9 @@ def order_retest(request: Request, user=None):
     oid = _order_id_from(data)
     if not oid:
         return fail("参数错误")
+    denied = _deny_sample_if_needed(oid, "retest", user)
+    if denied:
+        return denied
     ok_flag, msg = sample_flow_repo.retest_apply(
         order_id=oid,
         child_ids=_child_ids_from(data),
@@ -1578,10 +1618,13 @@ def order_update_basic(request: Request, user=None):
         out_bill_type_id=data.get("outBillTypeId")
         if "outBillTypeId" in data or "out_bill_type_id" in data
         else None,
-        sale_manager=data.get("saleManagerId")
-        if "saleManagerId" in data or "sale_manager" in data
-        else None,
-        sale_user=data.get("saleUserId") if "saleUserId" in data or "sale_user" in data else None,
+        sale_manager=_explicit_id_or_clear(
+            data, ("saleManagerId", "sale_manager", "saleManager")
+        ),
+        # Java sale_user 是字符串员工 ID；勿只用 saleUserId，避免只带 sale_user 时被读成 None
+        sale_user=_explicit_id_or_clear(
+            data, ("saleUserId", "sale_user", "saleUser", "sale_user_id")
+        ),
         supplier_id=data.get("supplierId")
         if "supplierId" in data or "supplier_name" in data or "supplier_id" in data
         else None,
