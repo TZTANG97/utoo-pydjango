@@ -1803,6 +1803,7 @@ def order_upload_sub_pay(request: Request, user=None):
         money=data.get("money") or data.get("amount"),
         staff_user_id=staff,
         log_info=str(data.get("logInfo") or data.get("remark") or "上传付款信息"),
+        accessory_id=data.get("accessoryId") or data.get("accessory_id"),
     )
     return ok(res_msg=msg) if ok_flag else fail(msg)
 
@@ -1822,6 +1823,7 @@ def order_upload_sub_invoice(request: Request, user=None):
         money=data.get("money") or data.get("amount"),
         staff_user_id=staff,
         log_info=str(data.get("logInfo") or data.get("remark") or "上传发票信息"),
+        accessory_id=data.get("accessoryId") or data.get("accessory_id"),
     )
     return ok(res_msg=msg) if ok_flag else fail(msg)
 

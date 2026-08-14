@@ -378,6 +378,7 @@
 
       <el-table
         :data="pendingRows"
+        row-key="id"
         border
         stripe
         class="line-table"

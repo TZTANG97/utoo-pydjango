@@ -229,7 +229,7 @@
         <el-col v-if="isMainOrder" :span="12" />
 
         <el-col :span="12">
-          <el-form-item :label="isSubcontractSub ? '预计发货时间' : '预计收货时间'" required>
+          <el-form-item :label="isSubcontractSub ? '预计完成时间' : '预计收货时间'" required>
             <el-date-picker
               v-model="form.deliveryTime"
               type="date"
@@ -412,6 +412,7 @@
           v-if="isSubcontractSub"
           ref="subLineTableRef"
           :data="lines"
+          row-key="id"
           border
           stripe
           empty-text="暂无产品行"
@@ -453,6 +454,7 @@
           v-else-if="isExpSub"
           ref="subLineTableRef"
           :data="lines"
+          row-key="id"
           border
           stripe
           empty-text="暂无产品行"
@@ -1662,7 +1664,7 @@ async function onSave() {
     return
   }
   if (!form.deliveryTime) {
-    ElMessage.warning(isSubcontractSub.value ? '请填写预计发货时间' : '请填写预计收货时间')
+    ElMessage.warning(isSubcontractSub.value ? '请填写预计完成时间' : '请填写预计收货时间')
     return
   }
   if (!isExpSub.value && !form.payWay) {

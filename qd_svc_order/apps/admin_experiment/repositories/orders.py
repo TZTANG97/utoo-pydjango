@@ -2706,6 +2706,8 @@ def list_linked_child_orders(parent_id: int, *, child_order_type: str) -> list[d
             t.id, t.order_id AS orderId, t.order_status AS orderStatus,
             t.totalPrice AS totalPrice, t.order_time AS orderTime, t.addTime,
             t.is_confirm AS isConfirm, t.order_type AS orderType,
+            t.currency_type AS currencyType,
+            t.stock_company_name AS stockCompanyName,
             u.company_name AS supplierName,
             sm.user_name AS managerName, sm.true_name AS managerTrueName,
             su.user_name AS saleUserName, su.true_name AS saleUserTrueName
@@ -2725,6 +2727,15 @@ def list_linked_child_orders(parent_id: int, *, child_order_type: str) -> list[d
         r["saleManager"] = str(r.get("managerName") or r.get("managerTrueName") or "").strip()
         r["saleUser"] = str(r.get("saleUserName") or r.get("saleUserTrueName") or "").strip()
         r["supplierName"] = r.get("supplierName") or "-"
+        if str(child_order_type) == "9":
+            r["purchaseTotalPrice"] = r.get("totalPrice")
+            stock = str(r.get("stockCompanyName") or "").strip()
+            r["stockCompanyName"] = stock or "-"
+            try:
+                ct_i = int(r.get("currencyType") or 1)
+            except (TypeError, ValueError):
+                ct_i = 1
+            r["currencyLabel"] = "美金" if ct_i == 2 else "人民币"
         try:
             conf_i = int(r.get("isConfirm")) if r.get("isConfirm") is not None else 0
         except (TypeError, ValueError):
@@ -4735,13 +4746,13 @@ def auto_generate_appointment_after_online_pay(
 ) -> None:
     """对齐 Java BillController.saveBillData → geranateYyd：
 
-    实验单(order_type 6/8) 在写入收款单(type=2)后，若尚未生成预约单则自动生成。
-    线上单靠此钩子生成（无手动按钮）；线下付款申请同意写收款时也会触发。
+    仅线上单(is_online=1)在写入收款单(type=2)后自动生成预约单；
+    线下单须手动点「生成预约单」。
     """
     row = fetch_one(
         """
-        SELECT id, order_type AS orderType, is_yyd AS isYyd,
-               test_address_id AS testAddressId
+        SELECT id, order_type AS orderType, is_online AS isOnline,
+               is_yyd AS isYyd, test_address_id AS testAddressId
         FROM experiment_order
         WHERE id = %(id)s AND IFNULL(deleteStatus, 0) = 0
         LIMIT 1
@@ -4751,6 +4762,12 @@ def auto_generate_appointment_after_online_pay(
     if not row:
         return
     if str(row.get("orderType") or "") not in ("6", "8"):
+        return
+    try:
+        is_online = int(row.get("isOnline") or 0)
+    except (TypeError, ValueError):
+        is_online = 0
+    if is_online != 1:
         return
     try:
         is_yyd = int(row.get("isYyd") or 0)
@@ -5624,7 +5641,12 @@ def update_sub_pay(
 
 
 def upload_sub_pay_bill(
-    *, order_id: int, money: Any, staff_user_id: str = "", log_info: str = "上传付款信息"
+    *,
+    order_id: int,
+    money: Any,
+    staff_user_id: str = "",
+    log_info: str = "上传付款信息",
+    accessory_id: int | str | None = None,
 ) -> tuple[bool, str]:
     """type=9 上传付款信息（qd_bill type=2），并推进 pay_status 36/38。"""
     row = get_order(order_id)
@@ -5638,19 +5660,30 @@ def upload_sub_pay_bill(
         amt = 0
     if amt <= 0:
         return False, "付款金额须大于 0"
+    try:
+        acc_id = int(accessory_id) if accessory_id not in (None, "") else None
+    except (TypeError, ValueError):
+        acc_id = None
+    if acc_id is not None and acc_id <= 0:
+        acc_id = None
+    params = {
+        "oid": order_id,
+        "money": amt,
+        "log_info": (log_info or "上传付款信息")[:500],
+        "uid": staff_user_id or None,
+        "aid": acc_id,
+    }
     execute(
         """
         INSERT INTO qd_bill
-            (add_time, add_user_id, exp_of_id, money, type, is_split, bill_date, mark)
+            (add_time, add_user_id, exp_of_id, money, type, is_split, bill_date, mark{acc_col})
         VALUES
-            (NOW(), %(uid)s, %(oid)s, %(money)s, 2, 0, NOW(), %(log_info)s)
-        """,
-        {
-            "oid": order_id,
-            "money": amt,
-            "log_info": (log_info or "上传付款信息")[:500],
-            "uid": staff_user_id or None,
-        },
+            (NOW(), %(uid)s, %(oid)s, %(money)s, 2, 0, NOW(), %(log_info)s{acc_val})
+        """.format(
+            acc_col=", accessory_id" if acc_id else "",
+            acc_val=", %(aid)s" if acc_id else "",
+        ),
+        params,
     )
     # pay_times +1；收齐则 38 否则 36
     coll = str(row.get("collectionTime") or "").strip()
@@ -5680,7 +5713,12 @@ def upload_sub_pay_bill(
 
 
 def upload_sub_invoice_bill(
-    *, order_id: int, money: Any, staff_user_id: str = "", log_info: str = "上传发票信息"
+    *,
+    order_id: int,
+    money: Any,
+    staff_user_id: str = "",
+    log_info: str = "上传发票信息",
+    accessory_id: int | str | None = None,
 ) -> tuple[bool, str]:
     """type=9 上传发票信息（qd_bill type=1）。"""
     row = get_order(order_id)
@@ -5694,19 +5732,30 @@ def upload_sub_invoice_bill(
         amt = 0
     if amt <= 0:
         return False, "发票金额须大于 0"
+    try:
+        acc_id = int(accessory_id) if accessory_id not in (None, "") else None
+    except (TypeError, ValueError):
+        acc_id = None
+    if acc_id is not None and acc_id <= 0:
+        acc_id = None
+    params = {
+        "oid": order_id,
+        "money": amt,
+        "log_info": (log_info or "上传发票信息")[:500],
+        "uid": staff_user_id or None,
+        "aid": acc_id,
+    }
     execute(
         """
         INSERT INTO qd_bill
-            (add_time, add_user_id, exp_of_id, money, type, is_split, bill_date, mark)
+            (add_time, add_user_id, exp_of_id, money, type, is_split, bill_date, mark{acc_col})
         VALUES
-            (NOW(), %(uid)s, %(oid)s, %(money)s, 1, 0, NOW(), %(log_info)s)
-        """,
-        {
-            "oid": order_id,
-            "money": amt,
-            "log_info": (log_info or "上传发票信息")[:500],
-            "uid": staff_user_id or None,
-        },
+            (NOW(), %(uid)s, %(oid)s, %(money)s, 1, 0, NOW(), %(log_info)s{acc_val})
+        """.format(
+            acc_col=", accessory_id" if acc_id else "",
+            acc_val=", %(aid)s" if acc_id else "",
+        ),
+        params,
     )
     _write_order_log(order_id, f"上传发票信息 {amt}", user_id=staff_user_id)
     return True, "上传发票成功"

@@ -148,7 +148,7 @@
           v-if="detail.canUploadPay"
           type="warning"
           :loading="acting"
-          @click="subPayBillVisible = true"
+          @click="openSubPayDialog"
         >
           上传付款信息
         </el-button>
@@ -156,7 +156,7 @@
           v-if="detail.canUploadInvoice"
           type="warning"
           :loading="acting"
-          @click="subInvoiceVisible = true"
+          @click="openSubInvoiceDialog"
         >
           上传发票信息
         </el-button>
@@ -1197,7 +1197,7 @@
         <el-table :data="linkedOrders" border stripe class="detail-table">
           <el-table-column
             prop="orderId"
-            :label="orderType === '8' ? '分包子订单编号' : '实验子订单编号'"
+            :label="orderType === '8' ? '实验分包子订单编号' : '实验子订单编号'"
             min-width="180"
             show-overflow-tooltip
           >
@@ -1212,7 +1212,33 @@
             </template>
           </el-table-column>
           <el-table-column prop="addTime" label="创建时间" width="170" />
-          <el-table-column prop="supplierName" label="所属公司" min-width="140" show-overflow-tooltip />
+          <el-table-column
+            v-if="orderType !== '8'"
+            prop="supplierName"
+            label="所属公司"
+            min-width="140"
+            show-overflow-tooltip
+          />
+          <el-table-column
+            v-if="orderType === '8'"
+            prop="stockCompanyName"
+            label="进货公司"
+            min-width="160"
+            show-overflow-tooltip
+          />
+          <el-table-column
+            v-if="orderType === '8'"
+            prop="purchaseTotalPrice"
+            label="进货总价"
+            width="110"
+            align="right"
+          />
+          <el-table-column
+            v-if="orderType === '8'"
+            prop="currencyLabel"
+            label="订单类型"
+            width="100"
+          />
           <el-table-column prop="orderStatusLabel" label="状态" width="120" />
         </el-table>
       </section>
@@ -1420,10 +1446,26 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="subPayBillVisible" title="上传付款信息" width="420px">
+    <el-dialog v-model="subPayBillVisible" title="上传付款信息" width="480px" @open="openSubPayDialog">
       <el-form label-width="100px">
         <el-form-item label="付款金额" required>
           <el-input v-model="subPayMoney" placeholder="请输入付款金额" clearable />
+        </el-form-item>
+        <el-form-item label="附件">
+          <div class="bill-attach">
+            <template v-if="subPayAccessory">
+              <span class="bill-attach-name">{{ subPayAccessory.info || subPayAccessory.name }}</span>
+              <el-button type="danger" link @click="clearSubPayAccessory">删除</el-button>
+            </template>
+            <el-upload
+              v-else
+              :show-file-list="false"
+              :http-request="onUploadSubPayBillFile"
+              accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.xls,.xlsx"
+            >
+              <el-button type="primary" link :loading="billUploading">上传</el-button>
+            </el-upload>
+          </div>
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="subPayRemark" type="textarea" :rows="2" placeholder="可选" />
@@ -1435,10 +1477,26 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="subInvoiceVisible" title="上传发票信息" width="420px">
+    <el-dialog v-model="subInvoiceVisible" title="上传发票信息" width="480px" @open="openSubInvoiceDialog">
       <el-form label-width="100px">
         <el-form-item label="发票金额" required>
           <el-input v-model="subInvoiceMoney" placeholder="请输入发票金额" clearable />
+        </el-form-item>
+        <el-form-item label="附件">
+          <div class="bill-attach">
+            <template v-if="subInvoiceAccessory">
+              <span class="bill-attach-name">{{ subInvoiceAccessory.info || subInvoiceAccessory.name }}</span>
+              <el-button type="danger" link @click="clearSubInvoiceAccessory">删除</el-button>
+            </template>
+            <el-upload
+              v-else
+              :show-file-list="false"
+              :http-request="onUploadSubInvoiceBillFile"
+              accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.xls,.xlsx"
+            >
+              <el-button type="primary" link :loading="billUploading">上传</el-button>
+            </el-upload>
+          </div>
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="subInvoiceRemark" type="textarea" :rows="2" placeholder="可选" />
@@ -1550,13 +1608,14 @@
         <el-form-item
           v-if="
             (sampleAction === 'ship' ||
+              (sampleAction === 'retain' && sampleRetainMode === 'retain') ||
               (sampleAction === 'retain' && sampleRetainMode === 'scrap')) &&
             sampleSelected.length === 1
           "
           label="确认位置"
         >
           <el-input
-            :model-value="sampleConfirmLocation || '该子行暂无仓库位置记录，请上方选择后确认'"
+            :model-value="sampleConfirmLocation || '该子行暂无仓库位置记录'"
             disabled
           />
         </el-form-item>
@@ -1585,9 +1644,6 @@
           </el-radio-group>
         </el-form-item>
         <template v-if="sampleAction === 'retain' && sampleRetainMode === 'retain'">
-          <el-form-item v-if="sampleConfirmLocation" label="确认位置">
-            <el-input :model-value="sampleConfirmLocation" disabled />
-          </el-form-item>
           <el-form-item label="是否入库" required>
             <el-radio-group v-model="sampleIsPosition">
               <el-radio value="1">入库到留存仓库</el-radio>
@@ -1642,6 +1698,7 @@
       <el-table
         ref="sampleTableRef"
         :data="sampleSelectableRows"
+        row-key="id"
         border
         stripe
         max-height="360"
@@ -1871,9 +1928,11 @@ const invoiceAccessory = ref<{ id?: number; info?: string; name?: string } | nul
 const subPayBillVisible = ref(false)
 const subPayMoney = ref('')
 const subPayRemark = ref('')
+const subPayAccessory = ref<{ id?: number; info?: string; name?: string } | null>(null)
 const subInvoiceVisible = ref(false)
 const subInvoiceMoney = ref('')
 const subInvoiceRemark = ref('')
+const subInvoiceAccessory = ref<{ id?: number; info?: string; name?: string } | null>(null)
 const moreVisible = ref(false)
 const moreInfo = ref<Record<string, unknown> | null>(null)
 const appointmentVisible = ref(false)
@@ -2104,15 +2163,18 @@ const sampleConfirmPlatform = computed(() => {
 const sampleConfirmLocation = computed(() => {
   if (sampleSelected.value.length !== 1) return ''
   const row = sampleSelected.value[0]
+  const storePos = String(row.storePosition || row.store_position || '').trim()
+  if (storePos) return storePos
   const parts = [
-    row.sampleStoreName || row.storeName,
+    row.sampleStoreName || row.sample_store_name || row.storeName,
     row.storeBlock || row.blockName,
     row.storeNumber || row.storePosNumber || row.number,
-    row.storePosition,
   ]
     .map((x) => String(x || '').trim())
     .filter(Boolean)
-  return parts.length ? parts.join(' / ') : String(row.storePosId || '')
+  if (parts.length) return parts.join(' / ')
+  const sid = row.storePosId ?? row.store_pos_id
+  return sid != null && String(sid) !== '' ? String(sid) : ''
 })
 const sampleExtraHint = computed(() => {
   if (sampleAction.value === 'arrive')
@@ -3022,6 +3084,40 @@ async function onUploadReceiveBillFile(options: { file: File }) {
   })
 }
 
+function openSubPayDialog() {
+  subPayMoney.value = ''
+  subPayRemark.value = ''
+  subPayAccessory.value = null
+  subPayBillVisible.value = true
+}
+
+function openSubInvoiceDialog() {
+  subInvoiceMoney.value = ''
+  subInvoiceRemark.value = ''
+  subInvoiceAccessory.value = null
+  subInvoiceVisible.value = true
+}
+
+function clearSubPayAccessory() {
+  subPayAccessory.value = null
+}
+
+function clearSubInvoiceAccessory() {
+  subInvoiceAccessory.value = null
+}
+
+async function onUploadSubPayBillFile(options: { file: File }) {
+  await uploadBillAccessory(options.file, '0', (acc) => {
+    subPayAccessory.value = acc
+  })
+}
+
+async function onUploadSubInvoiceBillFile(options: { file: File }) {
+  await uploadBillAccessory(options.file, '1', (acc) => {
+    subInvoiceAccessory.value = acc
+  })
+}
+
 async function onUploadInvoiceBillFile(options: { file: File }) {
   await uploadBillAccessory(options.file, '1', (acc) => {
     invoiceAccessory.value = acc
@@ -3277,10 +3373,12 @@ async function onUploadSubPay() {
     return
   }
   await runAction(async () => {
+    const accessoryId = subPayAccessory.value?.id
     const res = await uploadSubPayExpOrder({
       id: props.orderId,
       money,
       logInfo: subPayRemark.value.trim() || '上传付款信息',
+      ...(accessoryId ? { accessoryId } : {}),
     })
     if (!isAjaxOk(res)) {
       ElMessage.error(ajaxErrorMessage(res, '上传失败'))
@@ -3290,6 +3388,7 @@ async function onUploadSubPay() {
     subPayBillVisible.value = false
     subPayMoney.value = ''
     subPayRemark.value = ''
+    subPayAccessory.value = null
     await load()
     emit('refreshed')
   })
@@ -3302,10 +3401,12 @@ async function onUploadSubInvoice() {
     return
   }
   await runAction(async () => {
+    const accessoryId = subInvoiceAccessory.value?.id
     const res = await uploadSubInvoiceExpOrder({
       id: props.orderId,
       money,
       logInfo: subInvoiceRemark.value.trim() || '上传发票信息',
+      ...(accessoryId ? { accessoryId } : {}),
     })
     if (!isAjaxOk(res)) {
       ElMessage.error(ajaxErrorMessage(res, '上传失败'))
@@ -3315,6 +3416,7 @@ async function onUploadSubInvoice() {
     subInvoiceVisible.value = false
     subInvoiceMoney.value = ''
     subInvoiceRemark.value = ''
+    subInvoiceAccessory.value = null
     await load()
     emit('refreshed')
   })
