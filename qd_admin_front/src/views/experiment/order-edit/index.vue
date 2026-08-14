@@ -36,6 +36,7 @@
               value-format="YYYY-MM-DD"
               placeholder="yyyy-mm-dd"
               style="width: 100%"
+              :disabled="headerLocked"
             />
           </el-form-item>
         </el-col>
@@ -51,6 +52,7 @@
                 clearable
                 placeholder="请选择"
                 style="flex: 1"
+                :disabled="headerLocked"
                 @change="onCustomerChange"
               >
                 <el-option
@@ -60,8 +62,8 @@
                   :value="o.value"
                 />
               </el-select>
-              <el-button type="primary" link @click="openAddCustomer">添加</el-button>
-              <el-button type="primary" link @click="reloadCustomers">刷新</el-button>
+              <el-button type="primary" link :disabled="headerLocked" @click="openAddCustomer">添加</el-button>
+              <el-button type="primary" link :disabled="headerLocked" @click="reloadCustomers">刷新</el-button>
             </div>
           </el-form-item>
         </el-col>
@@ -93,6 +95,7 @@
               clearable
               placeholder="请选择"
               style="width: 100%"
+              :disabled="headerLocked"
             >
               <el-option
                 v-for="o in managerOpts"
@@ -111,6 +114,7 @@
               clearable
               placeholder="请选择"
               style="width: 100%"
+              :disabled="headerLocked"
             >
               <el-option
                 v-for="o in saleUserOpts"
@@ -131,6 +135,7 @@
                 clearable
                 placeholder="请选择"
                 style="flex: 1"
+                :disabled="headerLocked"
               >
                 <el-option
                   v-for="o in supplierOpts"
@@ -139,8 +144,8 @@
                   :value="o.value"
                 />
               </el-select>
-              <el-button type="primary" link @click="openAddSupplier">添加</el-button>
-              <el-button type="primary" link @click="reloadSuppliers">刷新</el-button>
+              <el-button type="primary" link :disabled="headerLocked" @click="openAddSupplier">添加</el-button>
+              <el-button type="primary" link :disabled="headerLocked" @click="reloadSuppliers">刷新</el-button>
             </div>
           </el-form-item>
         </el-col>
@@ -157,6 +162,7 @@
                 clearable
                 placeholder="请选择"
                 style="flex: 1"
+                :disabled="headerLocked"
               >
                 <el-option
                   v-for="o in supplierOpts"
@@ -165,8 +171,8 @@
                   :value="o.value"
                 />
               </el-select>
-              <el-button type="primary" link @click="openAddSupplier">添加</el-button>
-              <el-button type="primary" link @click="reloadSuppliers">刷新</el-button>
+              <el-button type="primary" link :disabled="headerLocked" @click="openAddSupplier">添加</el-button>
+              <el-button type="primary" link :disabled="headerLocked" @click="reloadSuppliers">刷新</el-button>
             </div>
           </el-form-item>
         </el-col>
@@ -178,6 +184,7 @@
               clearable
               placeholder="请选择"
               style="width: 100%"
+              :disabled="headerLocked"
             >
               <el-option
                 v-for="o in accountOpts"
@@ -196,6 +203,7 @@
               clearable
               placeholder="请选择"
               style="width: 100%"
+              :disabled="headerLocked"
             >
               <el-option
                 v-for="o in saleUserOpts"
@@ -208,7 +216,7 @@
         </el-col>
         <el-col v-if="!isExpSub" :span="12">
           <el-form-item label="订单币种" required>
-            <el-select v-model="form.currencyType" style="width: 100%">
+            <el-select v-model="form.currencyType" style="width: 100%" :disabled="headerLocked">
               <el-option :value="1" label="人民币" />
               <el-option :value="2" label="美金" />
             </el-select>
@@ -236,6 +244,7 @@
               value-format="YYYY-MM-DD"
               placeholder="yyyy-mm-dd"
               style="width: 100%"
+              :disabled="headerLocked"
             />
           </el-form-item>
         </el-col>
@@ -244,10 +253,10 @@
             <el-select
               v-model="form.payWay"
               filterable
-              :clearable="!payWayLocked"
+              :clearable="!payWayLocked && !headerLocked"
               placeholder="请选择"
               style="width: 100%"
-              :disabled="payWayLocked"
+              :disabled="payWayLocked || headerLocked"
               @change="onPayWayChange"
             >
               <el-option
@@ -272,6 +281,7 @@
                 value-format="YYYY-MM-DD"
                 placeholder="yyyy-mm-dd"
                 style="width: 100%"
+                :disabled="headerLocked"
               />
             </el-form-item>
           </el-col>
@@ -279,12 +289,18 @@
 
         <el-col v-if="!isExpSub" :span="12">
           <el-form-item :label="isSubcontractSub ? '实验分包总价' : '订单总价'" required>
-            <el-input v-model="form.totalPrice" clearable placeholder="订单总价" />
+            <el-input v-model="form.totalPrice" clearable placeholder="订单总价" :disabled="headerLocked" />
           </el-form-item>
         </el-col>
         <el-col v-if="!isExpSub" :span="12">
           <el-form-item label="是否开票">
-            <el-switch v-model="form.invoiceType" inline-prompt active-text="ON" inactive-text="OFF" />
+            <el-switch
+              v-model="form.invoiceType"
+              inline-prompt
+              active-text="ON"
+              inactive-text="OFF"
+              :disabled="headerLocked"
+            />
           </el-form-item>
         </el-col>
 
@@ -299,6 +315,7 @@
                 clearable
                 placeholder="请选择"
                 style="width: 100%"
+                :disabled="headerLocked"
               >
                 <el-option
                   v-for="o in inBillOpts"
@@ -314,6 +331,7 @@
                 clearable
                 placeholder="请选择"
                 style="width: 100%"
+                :disabled="headerLocked"
               >
                 <el-option
                   v-for="o in outBillOpts"
@@ -332,6 +350,7 @@
                 clearable
                 placeholder="请选择"
                 style="width: 100%"
+                :disabled="headerLocked"
               >
                 <el-option
                   v-for="o in taxOpts"
@@ -377,14 +396,14 @@
         <el-col :span="24">
           <el-form-item label="订单资料">
             <div class="file-row">
-              <el-upload :show-file-list="false" :http-request="onUploadOrderFile">
-                <el-button type="primary" :loading="uploading">上传文件</el-button>
+              <el-upload :show-file-list="false" :disabled="headerLocked" :http-request="onUploadOrderFile">
+                <el-button type="primary" :loading="uploading" :disabled="headerLocked">上传文件</el-button>
               </el-upload>
               <div v-if="orderFiles.length" class="file-list">
                 <el-tag
                   v-for="(f, idx) in orderFiles"
                   :key="String(f.id || idx)"
-                  closable
+                  :closable="!headerLocked"
                   class="file-tag"
                   @close="removeOrderFile(idx)"
                 >
@@ -418,7 +437,7 @@
           empty-text="暂无产品行"
           @selection-change="onSubLineSelectionChange"
         >
-          <el-table-column type="selection" width="48" />
+          <el-table-column type="selection" width="48" :selectable="() => !headerLocked" />
           <el-table-column prop="childOrderId" label="子订单编号" min-width="140" show-overflow-tooltip />
           <el-table-column prop="goodsName" label="产品名称" min-width="140" show-overflow-tooltip />
           <el-table-column prop="goodsBrandName" label="产品品牌" min-width="100" show-overflow-tooltip />
@@ -460,7 +479,7 @@
           empty-text="暂无产品行"
           @selection-change="onSubLineSelectionChange"
         >
-          <el-table-column type="selection" width="48" />
+          <el-table-column type="selection" width="48" :selectable="() => !headerLocked" />
           <el-table-column prop="childOrderId" label="子订单编号" min-width="150" show-overflow-tooltip />
           <el-table-column prop="goodsName" label="产品名称" min-width="140" show-overflow-tooltip />
           <el-table-column label="产品型号" min-width="120">
@@ -810,6 +829,12 @@ const isMainOrder = computed(() => orderType.value === '6' || orderType.value ==
 const isSubcontractMain = computed(() => orderType.value === '8')
 const isSubcontractSub = computed(() => orderType.value === '9')
 const isExpSub = computed(() => orderType.value === '10')
+/** 子单审核通过后锁定抬头字段，仅备注与产品行可改 */
+const headerLocked = computed(() => {
+  if (!isExpSub.value && !isSubcontractSub.value) return false
+  const st = Number(detail.value?.orderStatus ?? detail.value?.order_status ?? 0)
+  return st >= 30
+})
 
 const form = reactive({
   totalPrice: '',
@@ -1638,42 +1663,45 @@ async function load() {
 }
 
 async function onSave() {
-  // 对齐 Java：客户名称 / 客户账号二选一，仅两者都空才拦截
-  if (!isSubcontractSub.value && !form.customerId && !form.customUserId) {
-    ElMessage.warning('客户名称和客户账号不能同时为空')
-    return
-  }
-  if (!form.saleManagerId) {
-    ElMessage.warning(isExpSub.value ? '请选择实验室主管' : '请选择销售主管')
-    return
-  }
-  if (!isSubcontractSub.value && !form.saleUserId) {
-    ElMessage.warning('请选择销售人员')
-    return
-  }
-  if (isSubcontractSub.value && !form.stockCompanyId) {
-    ElMessage.warning('请选择实验分包公司')
-    return
-  }
-  if (!isSubcontractSub.value && !form.supplierId) {
-    ElMessage.warning(isMainOrder.value ? '请选择供应商' : '请选择所属公司')
-    return
-  }
-  if (isExpSub.value && !form.warehouseUserId) {
-    ElMessage.warning('请选择仓库管理员')
-    return
-  }
-  if (!form.deliveryTime) {
-    ElMessage.warning(isSubcontractSub.value ? '请填写预计完成时间' : '请填写预计收货时间')
-    return
-  }
-  if (!isExpSub.value && !form.payWay) {
-    ElMessage.warning('请选择付款方式')
-    return
-  }
-  if (!isExpSub.value && collectionTimes.value.length && collectionTimes.value.some((t) => !t)) {
-    ElMessage.warning(isSubcontractSub.value ? '请填写预计付款时间' : '请填写预计收款时间')
-    return
+  // 对齐 Java：审核通过后抬头只读，跳过抬头必填校验，只改备注/产品行
+  if (!headerLocked.value) {
+    // 对齐 Java：客户名称 / 客户账号二选一，仅两者都空才拦截
+    if (!isSubcontractSub.value && !form.customerId && !form.customUserId) {
+      ElMessage.warning('客户名称和客户账号不能同时为空')
+      return
+    }
+    if (!form.saleManagerId) {
+      ElMessage.warning(isExpSub.value ? '请选择实验室主管' : '请选择销售主管')
+      return
+    }
+    if (!isSubcontractSub.value && !form.saleUserId) {
+      ElMessage.warning('请选择销售人员')
+      return
+    }
+    if (isSubcontractSub.value && !form.stockCompanyId) {
+      ElMessage.warning('请选择实验分包公司')
+      return
+    }
+    if (!isSubcontractSub.value && !form.supplierId) {
+      ElMessage.warning(isMainOrder.value ? '请选择供应商' : '请选择所属公司')
+      return
+    }
+    if (isExpSub.value && !form.warehouseUserId) {
+      ElMessage.warning('请选择仓库管理员')
+      return
+    }
+    if (!form.deliveryTime) {
+      ElMessage.warning(isSubcontractSub.value ? '请填写预计完成时间' : '请填写预计收货时间')
+      return
+    }
+    if (!isExpSub.value && !form.payWay) {
+      ElMessage.warning('请选择付款方式')
+      return
+    }
+    if (!isExpSub.value && collectionTimes.value.length && collectionTimes.value.some((t) => !t)) {
+      ElMessage.warning(isSubcontractSub.value ? '请填写预计付款时间' : '请填写预计收款时间')
+      return
+    }
   }
   if (isSubcontractSub.value) {
     if (!selectedSubLines.value.length) {
@@ -1739,7 +1767,7 @@ async function onSave() {
     ElMessage.warning('请填写分成比例')
     return
   }
-  if (form.invoiceType && !isExpSub.value) {
+  if (!headerLocked.value && form.invoiceType && !isExpSub.value) {
     const billId = isSubcontractSub.value ? form.inBillTypeId : form.outBillTypeId
     if (!billId || form.taxes === '') {
       ElMessage.warning(
@@ -1765,6 +1793,8 @@ async function onSave() {
       taxes: form.invoiceType ? form.taxes : '',
       saleManagerId: form.saleManagerId,
       saleUserId: form.saleUserId,
+      sale_user: form.saleUserId,
+      sale_manager: form.saleManagerId,
       // 清空时显式传空串，避免后端把 null 当成「不改字段」
       customerId: form.customerId || '',
       customUserId: form.customUserId || '',
@@ -1823,6 +1853,10 @@ async function onSave() {
 
 async function onUploadOrderFile(options: { file: File }) {
   if (!orderId) return
+  if (headerLocked.value) {
+    ElMessage.warning('审核通过后不可修改订单资料')
+    return
+  }
   uploading.value = true
   try {
     const fd = new FormData()
@@ -1842,6 +1876,10 @@ async function onUploadOrderFile(options: { file: File }) {
 }
 
 async function removeOrderFile(idx: number) {
+  if (headerLocked.value) {
+    ElMessage.warning('审核通过后不可修改订单资料')
+    return
+  }
   const f = orderFiles.value[idx]
   if (!f) return
   const aid = f.id
