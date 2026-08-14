@@ -1029,7 +1029,7 @@
             width="100"
           />
           <el-table-column
-            v-if="orderType === '9' || orderType === '10'"
+            v-if="orderType === '10'"
             prop="jtTime"
             label="具体完成时间"
             width="160"

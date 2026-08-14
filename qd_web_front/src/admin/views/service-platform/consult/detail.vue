@@ -6,7 +6,13 @@
       <p v-if="form.id" class="sub">
         <span class="mono">#{{ form.id }}</span>
         · {{ statusLabel(form.status) }}
-        <template v-if="form.order_num"> · {{ form.order_num }}</template>
+        <template v-if="form.order_num"> · 预约单号：{{ form.order_num }}</template>
+        <template v-if="form.relatedOrderNo">
+          · 关联单号：
+          <el-link type="primary" :underline="false" @click="goRelatedOrder">
+            {{ form.relatedOrderNo }}
+          </el-link>
+        </template>
       </p>
     </header>
 
@@ -421,6 +427,7 @@ import {
 import {
   cancelConsult,
   getConsultDetail,
+  getConsultDetailXq,
   saveConsultOrder,
   updateConsult,
 } from '@admin/api/service-platform'
@@ -451,6 +458,8 @@ const form = reactive({
   id: '' as string | number,
   status: -1,
   order_num: '',
+  relatedOrderId: '',
+  relatedOrderNo: '',
   class_id: '' as string | number | '',
   userName: '',
   mobile: '',
@@ -522,6 +531,14 @@ function statusLabel(val: unknown) {
 
 function goBack() {
   router.push({ name: 'ServiceConsult' })
+}
+
+function goRelatedOrder() {
+  if (!form.relatedOrderId) return
+  router.push({
+    name: 'ExperimentOrderDetail',
+    params: { id: form.relatedOrderId },
+  })
 }
 
 function fileHref(file: Record<string, unknown>) {
@@ -944,7 +961,7 @@ async function loadDetail() {
   if (!consultId) return
   loading.value = true
   try {
-    const res = await getConsultDetail(consultId)
+    const res = await (readonly.value ? getConsultDetailXq(consultId) : getConsultDetail(consultId))
     if (!isAjaxOk(res) || !res.obj) {
       ElMessage.error(ajaxErrorMessage(res, '加载详情失败'))
       return
@@ -954,6 +971,9 @@ async function loadDetail() {
     form.id = (consult.id as string | number) || consultId
     form.status = Number(consult.status ?? -1)
     form.order_num = String(consult.order_num || consult.orderNum || '')
+    const linkedOrder = (obj.linkedOrder || consult.linkedOrder || {}) as Record<string, unknown>
+    form.relatedOrderId = String(linkedOrder.id || consult.order_id || consult.orderId || '')
+    form.relatedOrderNo = String(linkedOrder.orderNo || linkedOrder.order_id || '')
     form.class_id = (consult.class_id ?? consult.classId ?? '') as string | number | ''
     form.userName = String(consult.userName || '')
     form.mobile = String(consult.mobile || '')

@@ -49,17 +49,6 @@
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="预计完成时间" required>
-                <el-date-picker
-                  v-model="form.deliveryTime"
-                  type="date"
-                  value-format="YYYY-MM-DD"
-                  placeholder="YYYY-MM-DD"
-                  style="width: 100%"
-                />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
               <el-form-item label="实验室测试主管" required>
                 <el-select
                   v-model="form.testManager"
@@ -886,7 +875,6 @@ function validateSubcontract(): string | null {
   if (!form.testManager) return '请选择实验室测试主管'
   if (!form.stockCompanyName.trim()) return '请选择实验分包公司'
   if (!form.orderTime) return '请填写下单时间'
-  if (!form.deliveryTime) return '请填写预计完成时间'
   if (!form.payWay) return '请选择付款方式'
   if (!form.currencyType) return '请选择订单币种'
   if (form.invoiceOn) {
@@ -955,7 +943,6 @@ async function onCreate() {
       payload.inBillTypeId = form.invoiceOn ? form.inBillTypeId : ''
       payload.taxes = form.invoiceOn ? form.taxes : ''
       payload.orderTime = form.orderTime
-      payload.deliveryTime = form.deliveryTime
       payload.payWay = form.payWay
       payload.currencyType = form.currencyType
       payload.collectionTime = form.collectionTimes.filter(Boolean).join(',')
