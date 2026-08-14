@@ -1156,12 +1156,6 @@
               <span v-else>{{ row.finishTime || row.expectFinishTime || '-' }}</span>
             </template>
           </el-table-column>
-          <el-table-column
-            v-else-if="orderType === '9'"
-            prop="finishTime"
-            label="完成时间"
-            width="170"
-          />
         </el-table>
       </section>
 

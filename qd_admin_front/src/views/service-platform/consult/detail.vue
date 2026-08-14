@@ -51,17 +51,17 @@
             <el-input v-model="form.syUserName" disabled />
           </el-form-item>
         </el-col>
-        <el-col :span="24">
-          <el-form-item label="咨询详情">
-            <el-input v-model="form.content" type="textarea" :rows="3" maxlength="500" show-word-limit />
-          </el-form-item>
-        </el-col>
-        <el-col :span="24">
+        <el-col :span="12">
           <el-form-item label="备注">
             <el-input v-model="form.remark" type="textarea" :rows="2" maxlength="500" />
           </el-form-item>
         </el-col>
-        <el-col :span="24">
+        <el-col :span="12">
+          <el-form-item label="咨询详情">
+            <el-input v-model="form.content" type="textarea" :rows="3" maxlength="500" show-word-limit />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
           <el-form-item label="用户上传资料">
             <div v-if="files.length" class="file-list">
               <a
@@ -78,17 +78,17 @@
             <span v-else class="muted">无</span>
           </el-form-item>
         </el-col>
-        <el-col :span="24">
-          <el-form-item label="样品寄回地址">
-            <el-input v-model="form.send_address" type="textarea" :rows="2" />
-          </el-form-item>
-        </el-col>
         <el-col :span="12">
           <el-form-item label="样品是否回收">
             <el-switch v-model="form.reverso_context" />
           </el-form-item>
         </el-col>
         <template v-if="form.reverso_context">
+          <el-col :span="24">
+            <el-form-item label="样品寄回地址">
+              <el-input v-model="form.send_address" type="textarea" :rows="2" />
+            </el-form-item>
+          </el-col>
           <el-col :span="12">
             <el-form-item label="收件人姓名">
               <el-input v-model="form.addressee_name" clearable />

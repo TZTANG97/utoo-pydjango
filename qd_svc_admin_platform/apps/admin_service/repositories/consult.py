@@ -166,17 +166,20 @@ def get_consult_detail(consult_id: int) -> dict[str, Any] | None:
     consult["syUserName"] = sy_user_name
     linked_order = None
     linked_order_ref = str(consult.get("order_id") or "").strip()
-    if linked_order_ref:
-        linked_order = fetch_one(
-            """
-            SELECT id, order_id AS orderNo, order_type AS orderType
-            FROM experiment_order
-            WHERE (CAST(id AS CHAR) = %(ref)s OR order_id = %(ref)s)
-              AND IFNULL(deleteStatus, 0) = 0
-            LIMIT 1
-            """,
-            {"ref": linked_order_ref},
+    linked_order = fetch_one(
+        """
+        SELECT id, order_id AS orderNo, order_type AS orderType
+        FROM experiment_order
+        WHERE (
+            consultid = %(consult_id)s
+            OR (%(ref)s <> '' AND (CAST(id AS CHAR) = %(ref)s OR order_id = %(ref)s))
         )
+          AND IFNULL(deleteStatus, 0) = 0
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        {"consult_id": consult_id, "ref": linked_order_ref},
+    )
 
     children = fetch_all(
         """
