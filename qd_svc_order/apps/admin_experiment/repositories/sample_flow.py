@@ -223,8 +223,8 @@ def attach_sample_action_flags(
     """写入 Java 同名 *Show 标志；适用实验子订单 type=10 / 分包子订单 type=9。
 
     viewer_user_id：对齐 Java getChildsByPurchaseId* 的 userId / userId1 过滤。
-    - 样品到货(userId1)：含子单 warehouse_user
-    - 领用/开始测试等(userId)：不含 warehouse_user
+    - 到货/寄回/留存(userId1 / 0107)：含子单 warehouse_user
+    - 领用/开始测试/归还/复测等(userId / 1122)：不含 warehouse_user
     """
     ot = str(row.get("orderType") or "")
     defaults = {
@@ -402,14 +402,14 @@ def _filter_sample_flags_by_viewer(
     children: list[dict[str, Any]],
     parent: dict[str, Any] | None,
 ) -> None:
-    """对齐 Java：仓库管理员(warehouse_user)仅样品到货；领用等不含仓库。"""
+    """对齐 Java：仓库管理员(warehouse_user)可到货/寄回/留存；领用等不含仓库。"""
     uid = str(viewer_user_id or "").strip()
     if not uid or _is_sample_admin(uid):
         return
 
     ot = str(row.get("orderType") or "")
     full_ids: set[str] = set()
-    arrive_ids: set[str] = set()
+    warehouse_scope_ids: set[str] = set()
 
     for key in (
         "saleUserId",
@@ -421,25 +421,25 @@ def _filter_sample_flags_by_viewer(
         v = str(row.get(key) or "").strip()
         if v:
             full_ids.add(v)
-            arrive_ids.add(v)
+            warehouse_scope_ids.add(v)
 
     if parent:
         for key in ("saleUserId", "addUserId", "saleManagerId"):
             v = str(parent.get(key) or "").strip()
             if v:
                 full_ids.add(v)
-                arrive_ids.add(v)
+                warehouse_scope_ids.add(v)
 
     for c in children:
         tid = str(c.get("testUserId") or "").strip()
         if tid and tid not in ("0", "22"):
             full_ids.add(tid)
-            arrive_ids.add(tid)
+            warehouse_scope_ids.add(tid)
 
-    # Java type=10 到货：userId1 含 warehouse_user；领用等 userId 不含
+    # Java type=10：0107(userId1) 含 warehouse_user → 到货/寄回/留存
     wh = str(row.get("warehouseUserId") or "").strip()
     if ot == "10" and wh:
-        arrive_ids.add(wh)
+        warehouse_scope_ids.add(wh)
 
     sample_keys = (
         "ypdhShow",
@@ -454,15 +454,17 @@ def _filter_sample_flags_by_viewer(
         "videoShow",
         "canConfirmDone",
     )
-    if uid not in arrive_ids:
+    # 仓库侧可操作：到货(含入库选仓)、寄回、留存/报废
+    warehouse_keys = ("ypdhShow", "ypjhShow", "yplcShow")
+    if uid not in warehouse_scope_ids:
         for k in sample_keys:
             row[k] = False
         return
 
-    # 仅仓库管理员：只保留样品到货
+    # 仅仓库管理员（不在销售/测试等 full 名单）：只保留仓库侧按钮
     if uid not in full_ids:
         for k in sample_keys:
-            if k != "ypdhShow":
+            if k not in warehouse_keys:
                 row[k] = False
 
 
@@ -472,7 +474,7 @@ def viewer_can_sample_action(
     action: str,
     viewer_user_id: str | int | None,
 ) -> tuple[bool, str]:
-    """写操作权限：仓库管理员仅允许样品到货。"""
+    """写操作权限：仓库管理员允许到货/寄回/留存报废。"""
     if _is_sample_admin(viewer_user_id):
         return True, ""
     uid = str(viewer_user_id or "").strip()
