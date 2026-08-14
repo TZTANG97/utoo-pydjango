@@ -381,7 +381,7 @@
         </el-table-column>
         <el-table-column label="标准测试金额" width="120">
           <template #default="{ row }">
-            <el-input v-model="row.referencePrice" />
+            <el-input v-model="row.referencePrice" readonly />
           </template>
         </el-table-column>
         <el-table-column label="总价" width="100">

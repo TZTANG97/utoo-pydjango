@@ -23,6 +23,8 @@ deploy/ci-local/*.env.ps1
 *.log
 .DS_Store
 Thumbs.db
+.runner_system_id
+.tmp_yyd_javap/
 
 # Django
 staticfiles/
@@ -30,6 +32,7 @@ media/
 
 # Frontend
 node_modules/
+**/node_modules_broken_*/
 dist/
 .vite/
 *.local

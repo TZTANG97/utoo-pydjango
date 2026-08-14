@@ -812,7 +812,8 @@ async function load() {
       ...c,
       _testUserId: c.testUserId != null ? String(c.testUserId) : '',
       _lineId: c.lineId != null ? String(c.lineId) : '',
-      _costPrice: c.price != null ? String(c.price) : '',
+      // 对齐 Java 分包创建页：分包单价由用户填写，不能带入主单标准测试金额。
+      _costPrice: '',
       _finishTime: '',
     }))
     const ot = String(obj.orderType || '')
@@ -949,7 +950,8 @@ async function onCreate() {
       payload.saleManager = form.saleManager
       payload.testManager = form.testManager
       payload.stockCompanyName = form.stockCompanyName.trim()
-      payload.invoiceType = form.invoiceOn ? 1 : 0
+      // Java invoiceType：1=开票，2=不开票；0 会导致「否」仍允许上传开票信息。
+      payload.invoiceType = form.invoiceOn ? 1 : 2
       payload.inBillTypeId = form.invoiceOn ? form.inBillTypeId : ''
       payload.taxes = form.invoiceOn ? form.taxes : ''
       payload.orderTime = form.orderTime

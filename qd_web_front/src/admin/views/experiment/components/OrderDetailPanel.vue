@@ -343,7 +343,7 @@
           <el-descriptions-item label="实验分包公司名称">
             {{ detail.stockCompanyName || '-' }}
           </el-descriptions-item>
-          <el-descriptions-item label="实验分包总价">
+          <el-descriptions-item v-if="canViewFinance" label="实验分包总价">
             {{ detail.totalPrice ?? '-' }}
             <template v-if="detail.currencyLabel === '人民币'"> 元</template>
           </el-descriptions-item>
@@ -351,27 +351,65 @@
           <el-descriptions-item label="预计完成时间">
             {{ detail.deliveryTime || '-' }}
           </el-descriptions-item>
-          <el-descriptions-item label="订单币种">{{ detail.currencyLabel || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="付款方式">{{ detail.payWayName || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="付款状态">{{ detail.payStatusLabel || '-' }}</el-descriptions-item>
-          <template v-if="expectPayRows.length">
+          <el-descriptions-item v-if="canViewFinance" label="订单币种">{{ detail.currencyLabel || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="canViewFinance" label="付款方式">{{ detail.payWayName || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="canViewFinance" label="付款状态">{{ detail.payStatusLabel || '-' }}</el-descriptions-item>
+          <template v-if="canViewFinance && expectPayRows.length">
             <template v-for="(ep, idx) in expectPayRows" :key="'ep-' + idx">
               <el-descriptions-item label="预计付款时间">{{ ep.time || '-' }}</el-descriptions-item>
               <el-descriptions-item label="预计付款金额" :span="2">
                 {{ ep.price || '-' }}
               </el-descriptions-item>
+              <el-descriptions-item v-if="ep.actualReceiveTime" label="实际付款时间">
+                {{ ep.actualReceiveTime }}
+              </el-descriptions-item>
+              <el-descriptions-item
+                v-if="ep.actualReceiveAmount != null && ep.actualReceiveAmount !== ''"
+                label="实际付款金额"
+                :span="2"
+              >
+                {{ ep.actualReceiveAmount }}
+              </el-descriptions-item>
             </template>
           </template>
-          <el-descriptions-item label="是否开票">{{ detail.invoiceLabel || '-' }}</el-descriptions-item>
-          <el-descriptions-item v-if="Number(detail.invoiceType) === 1" label="进项开票类型">
+          <template v-if="canViewFinance && receiveBillRows.length && !expectPayRows.length">
+            <template v-for="(b, idx) in receiveBillRows" :key="'rb9-' + idx">
+              <el-descriptions-item label="实际付款时间">{{ b.billDate || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="实际付款金额" :span="2">
+                {{ b.money ?? '-' }}
+              </el-descriptions-item>
+            </template>
+          </template>
+          <el-descriptions-item v-if="canViewFinance" label="是否开票">{{ detail.invoiceLabel || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="canViewFinance && Number(detail.invoiceType) === 1" label="进项开票类型">
             {{ inBillTypeLabel }}
           </el-descriptions-item>
-          <el-descriptions-item v-if="Number(detail.invoiceType) === 1" label="税率">
+          <el-descriptions-item v-if="canViewFinance && Number(detail.invoiceType) === 1" label="税率">
             {{ detail.taxes || '-' }}
           </el-descriptions-item>
+          <template v-if="canViewFinance && invoiceBillRows.length">
+            <template v-for="(b, idx) in invoiceBillRows" :key="'ib9-' + idx">
+              <el-descriptions-item :label="'开票时间' + (invoiceBillRows.length > 1 ? idx + 1 : '')">
+                {{ b.billDate || '-' }}
+              </el-descriptions-item>
+              <el-descriptions-item
+                :label="'开票金额' + (invoiceBillRows.length > 1 ? idx + 1 : '')"
+                :span="2"
+              >
+                {{ b.money ?? '-' }}
+              </el-descriptions-item>
+            </template>
+          </template>
           <el-descriptions-item label="联系电话">{{ detail.contactPhone || '-' }}</el-descriptions-item>
           <el-descriptions-item label="样品是否回收">
             {{ detail.reversoLabel || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item
+            v-if="detail.showShipAddress"
+            label="样品寄回地址"
+            :span="2"
+          >
+            {{ detail.shipAddress || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="是否云视频">{{ detail.isVideoLabel || '-' }}</el-descriptions-item>
         </el-descriptions>
@@ -416,6 +454,13 @@
             {{ detail.contactPhone || detail.mobile || detail.shipPhone || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="样品是否回收">{{ detail.reversoLabel || '-' }}</el-descriptions-item>
+          <el-descriptions-item
+            v-if="detail.showShipAddress"
+            label="样品寄回地址"
+            :span="2"
+          >
+            {{ detail.shipAddress || '-' }}
+          </el-descriptions-item>
         </el-descriptions>
         <el-descriptions v-else-if="orderType === '10'" :column="3" border class="soft-desc">
           <el-descriptions-item label="订单状态">{{ detail.orderStatusLabel || '-' }}</el-descriptions-item>
@@ -1902,6 +1947,8 @@ const relatedOrders = computed(
 )
 const orderType = computed(() => String(detail.value?.orderType || ''))
 const isChildKind = computed(() => ['9', '10'].includes(orderType.value))
+/** 对齐 Java isFlag：测试主管/测试人员不可看付款、开票等财务数据。 */
+const canViewFinance = computed(() => detail.value?.canViewFinance !== false)
 const showOrderDocsBlock = computed(() => ['6', '8', '9', '10'].includes(orderType.value))
 const outBillTypeLabel = computed(() => {
   const d = detail.value

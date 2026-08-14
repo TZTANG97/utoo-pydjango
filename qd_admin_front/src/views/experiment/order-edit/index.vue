@@ -570,7 +570,7 @@
           </el-table-column>
           <el-table-column label="标准测试金额" width="120">
             <template #default="{ row }">
-              <el-input v-model="row.referencePrice" clearable />
+              <el-input v-model="row.referencePrice" readonly />
             </template>
           </el-table-column>
           <el-table-column label="总价" width="100">
@@ -579,9 +579,14 @@
             </template>
           </el-table-column>
           <el-table-column label="操作" width="100" fixed="right">
-            <template #default="{ $index }">
+            <template #default="{ row, $index }">
               <el-button type="primary" link @click="addLine">+</el-button>
-              <el-button type="danger" link :disabled="lines.length <= 1" @click="removeLine($index)">
+              <el-button
+                type="danger"
+                link
+                :disabled="lines.length <= 1 || row.alreadyLinked"
+                @click="removeLine($index)"
+              >
                 -
               </el-button>
             </template>
@@ -754,6 +759,8 @@ type LineRow = {
   expectFinishTime: string
   /** 子单编辑：是否已挂接到本单（默认勾选） */
   linkedToThis?: boolean
+  /** 主单编辑：已挂接有效子订单的产品行不可删除。 */
+  alreadyLinked?: boolean
 }
 
 const route = useRoute()
@@ -900,6 +907,8 @@ function mapChildToLine(ch: Record<string, unknown>): LineRow {
       ch.linkedToThis === 1 ||
       ch.linkedToThis === '1' ||
       ch.linkedToThis == null,
+    alreadyLinked:
+      ch.alreadyLinked === true || ch.alreadyLinked === 1 || ch.alreadyLinked === '1',
   }
 }
 
@@ -1038,6 +1047,10 @@ function removeLine(idx: number) {
     return
   }
   const row = lines.value[idx]
+  if (row?.alreadyLinked) {
+    ElMessage.warning('该产品已创建子订单，不可删除')
+    return
+  }
   if (row && row.id !== '' && row.id != null) {
     removedLineIds.value.push(row.id)
   }
@@ -1560,11 +1573,17 @@ async function load() {
 
     refreshShareSummary()
 
-    const childrenRaw = Array.isArray(obj.editSelectableChildren)
-      ? (obj.editSelectableChildren as Record<string, unknown>[])
-      : Array.isArray(obj.children)
-        ? (obj.children as Record<string, unknown>[])
-        : []
+    const orderTypeRaw = String(obj.orderType || obj.order_type || '')
+    const childrenRaw =
+      orderTypeRaw === '9' || orderTypeRaw === '10'
+        ? Array.isArray(obj.editSelectableChildren)
+          ? (obj.editSelectableChildren as Record<string, unknown>[])
+          : Array.isArray(obj.children)
+            ? (obj.children as Record<string, unknown>[])
+            : []
+        : Array.isArray(obj.children)
+          ? (obj.children as Record<string, unknown>[])
+          : []
     removedLineIds.value = []
     selectedSubLines.value = []
     lines.value = childrenRaw.map((ch) => mapChildToLine(ch))

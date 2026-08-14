@@ -468,6 +468,13 @@
             {{ detail.contactPhone || detail.mobile || detail.shipPhone || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="样品是否回收">{{ detail.reversoLabel || '-' }}</el-descriptions-item>
+          <el-descriptions-item
+            v-if="detail.showShipAddress"
+            label="样品寄回地址"
+            :span="2"
+          >
+            {{ detail.shipAddress || '-' }}
+          </el-descriptions-item>
         </el-descriptions>
         <el-descriptions v-else-if="orderType === '10'" :column="3" border class="soft-desc">
           <el-descriptions-item label="订单状态">{{ detail.orderStatusLabel || '-' }}</el-descriptions-item>

@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from django.db import transaction
+
 from apps.admin_experiment.helpers import page_clause
 from apps.core.db_utils import execute, execute_insert, fetch_all, fetch_one, scalar
 
@@ -1726,7 +1728,7 @@ def get_order(order_id: int) -> dict[str, Any] | None:
                 or str(row.get("shipAddress") or "").strip()
             )
             row["shipAddress"] = addr
-            row["showShipAddress"] = bool(addr)
+            row["showShipAddress"] = True
         else:
             row["shipAddress"] = ""
             row["showShipAddress"] = False
@@ -2107,7 +2109,7 @@ def get_order(order_id: int) -> dict[str, Any] | None:
         inv_slots_full = inv_amt >= total_p > 0
         if slots and inv_bill_cnt >= len(slots):
             inv_slots_full = True
-        row["canUploadInvoice"] = st >= 30 and not inv_slots_full and inv_type != 2
+        row["canUploadInvoice"] = st >= 30 and not inv_slots_full and inv_type == 1
     # type=9/10 样品流转（确认完成仅 type=10）
     if ot in ("9", "10"):
         from apps.admin_experiment.repositories import sample_flow as sample_flow_repo
@@ -3158,6 +3160,84 @@ def repair_exp_purchase_child_order_types(purchase_order_id: int | None = None) 
             )
     except Exception:
         pass
+
+
+def _sync_sub_order_purchase_children(
+    *, order_id: int, order_type: str, keep_ids: set[int]
+) -> tuple[bool, str]:
+    """按子单勾选原子重建产品挂接，取消项回到父单待处理。"""
+    if not keep_ids:
+        return False, "请至少选择一个子订单"
+    order = get_order(order_id)
+    parent_id = int((order or {}).get("parentPkId") or (order or {}).get("parentId") or 0)
+    if not parent_id:
+        return False, "子订单缺少来源主订单"
+    placeholders = ", ".join(f"%(c{i})s" for i in range(len(keep_ids)))
+    params = {f"c{i}": cid for i, cid in enumerate(sorted(keep_ids))}
+    try:
+        with transaction.atomic():
+            # 锁住待挂接产品行，避免并发编辑把同一行关联到多个子订单。
+            locked_rows = fetch_all(
+                f"""
+                SELECT id FROM experiment_order_child
+                WHERE id IN ({placeholders})
+                FOR UPDATE
+                """,
+                params,
+            )
+            if {int(row["id"]) for row in locked_rows} != keep_ids:
+                return False, "所选产品不存在"
+            owned = fetch_all(
+                f"""
+                SELECT DISTINCT c.id
+                FROM experiment_order_child c
+                LEFT JOIN exp_qd_purchase_order_child poc
+                  ON poc.order_child_id = c.id AND poc.purchase_order_id = %(oid)s
+                WHERE c.id IN ({placeholders})
+                  AND IFNULL(c.delete_status, 2) <> 1
+                  AND (c.order_form_id = %(pid)s OR poc.purchase_order_id = %(oid)s)
+                """,
+                {**params, "oid": order_id, "pid": parent_id},
+            )
+            if {int(row["id"]) for row in owned} != keep_ids:
+                return False, "所选产品不属于当前子订单的来源主单"
+            conflict = fetch_all(
+                f"""
+                SELECT DISTINCT p.order_child_id AS cid, o.order_id AS ono
+                FROM exp_qd_purchase_order_child p
+                INNER JOIN experiment_order o ON o.id = p.purchase_order_id
+                WHERE p.order_child_id IN ({placeholders})
+                  AND p.purchase_order_id <> %(oid)s
+                  AND IFNULL(o.deleteStatus, 0) = 0
+                  AND IFNULL(o.order_status, -1) <> 0
+                """,
+                {**params, "oid": order_id},
+            )
+            if conflict:
+                nos = ", ".join(str(row.get("ono") or row.get("cid")) for row in conflict[:5])
+                return False, f"所选产品行已挂接其他子订单：{nos}"
+            linked = fetch_all(
+                "SELECT order_child_id AS cid FROM exp_qd_purchase_order_child WHERE purchase_order_id = %(oid)s",
+                {"oid": order_id},
+            )
+            for row in linked:
+                execute("UPDATE experiment_order_child SET op_status = 1 WHERE id = %(cid)s", row)
+            execute("DELETE FROM exp_qd_purchase_order_child WHERE purchase_order_id = %(oid)s", {"oid": order_id})
+            for child_id in sorted(keep_ids):
+                execute(
+                    """
+                    INSERT INTO exp_qd_purchase_order_child
+                        (purchase_order_id, order_child_id, order_type, addTime)
+                    VALUES (%(oid)s, %(cid)s, %(ot)s, NOW())
+                    """,
+                    {"oid": order_id, "cid": child_id, "ot": str(order_type)},
+                )
+                execute("UPDATE experiment_order_child SET op_status = 2 WHERE id = %(cid)s", {"cid": child_id})
+    except Exception as exc:
+        logger.exception("sync purchase children failed order=%s", order_id)
+        return False, f"更新产品挂接失败：{exc}"
+    repair_exp_purchase_child_order_types(order_id)
+    return True, "ok"
 
 
 def get_order_detail_bundle(
@@ -5028,6 +5108,12 @@ def update_order_basic(
                     """,
                     child_params,
                 )
+        if ot in ("9", "10"):
+            ok_sync, sync_msg = _sync_sub_order_purchase_children(
+                order_id=order_id, order_type=ot, keep_ids=keep_ids
+            )
+            if not ok_sync:
+                return False, sync_msg
         # 主单编辑：软删本次未提交的原产品行（对齐 Java editSaveSaleOrdersExp）
         # 同时查 order_form_id / 采购关联，避免新增行关联方式不一致导致漏删
         if str(ot).strip() in ("6", "8"):
@@ -5219,7 +5305,9 @@ def _insert_edit_child_line(*, order_id: int, ch: dict[str, Any], order_no: str)
     return int(child_pk)
 
 
-def confirm_ordered(*, order_id: int) -> tuple[bool, str]:
+def confirm_ordered(
+    *, order_id: int, staff_user_id: str | int | None = None
+) -> tuple[bool, str]:
     """对齐 Java addOrderData / saveXdData：status 30 → 35 确认已下单。"""
     row = get_order(order_id)
     if not row:
@@ -5227,11 +5315,16 @@ def confirm_ordered(*, order_id: int) -> tuple[bool, str]:
     if not row.get("canConfirmOrdered"):
         return False, "当前不可确认已下单"
     _set_order_status(order_id, 35)
-    _write_order_log(order_id, "确认已下单")
+    _write_order_log(order_id, "确认已下单", user_id=staff_user_id)
     return True, "已确认下单"
 
 
-def update_sub_order_status(*, order_id: int, order_status: int) -> tuple[bool, str]:
+def update_sub_order_status(
+    *,
+    order_id: int,
+    order_status: int,
+    staff_user_id: str | int | None = None,
+) -> tuple[bool, str]:
     """对齐 Java updateOrderStatus：厂家已发货等（常见 45）。"""
     row = get_order(order_id)
     if not row:
@@ -5249,7 +5342,7 @@ def update_sub_order_status(*, order_id: int, order_status: int) -> tuple[bool, 
         if st >= 45:
             return False, "已发货或已完成"
         _set_order_status(order_id, 45)
-        _write_order_log(order_id, "厂家已发货")
+        _write_order_log(order_id, "厂家已发货", user_id=staff_user_id)
         return True, "发货成功"
     return False, "不支持的状态变更"
 
@@ -5292,7 +5385,7 @@ def update_sub_pay(
             "UPDATE experiment_order SET pay_status = 32 WHERE id = %(id)s",
             {"id": order_id},
         )
-        _write_order_log(order_id, log_txt)
+        _write_order_log(order_id, log_txt, user_id=staff_user_id)
         try:
             from apps.admin_experiment.services.wx_suborder_notify import notify_pay_flow
 
@@ -5310,7 +5403,7 @@ def update_sub_pay(
             "UPDATE experiment_order SET pay_status = 34 WHERE id = %(id)s",
             {"id": order_id},
         )
-        _write_order_log(order_id, "申请付款审核通过")
+        _write_order_log(order_id, "申请付款审核通过", user_id=staff_user_id)
         try:
             from apps.admin_experiment.services.wx_suborder_notify import notify_pay_flow
 
@@ -5328,7 +5421,7 @@ def update_sub_pay(
             "UPDATE experiment_order SET pay_status = 33 WHERE id = %(id)s",
             {"id": order_id},
         )
-        _write_order_log(order_id, "申请付款驳回")
+        _write_order_log(order_id, "申请付款驳回", user_id=staff_user_id)
         try:
             from apps.admin_experiment.services.wx_suborder_notify import notify_pay_flow
 
@@ -5393,7 +5486,7 @@ def upload_sub_pay_bill(
         """,
         {"ps": new_pay, "pt": pay_times, "id": order_id},
     )
-    _write_order_log(order_id, f"上传付款信息 {amt}")
+    _write_order_log(order_id, f"上传付款信息 {amt}", user_id=staff_user_id)
     return True, "上传付款成功"
 
 
@@ -5426,7 +5519,7 @@ def upload_sub_invoice_bill(
             "uid": staff_user_id or None,
         },
     )
-    _write_order_log(order_id, f"上传发票信息 {amt}")
+    _write_order_log(order_id, f"上传发票信息 {amt}", user_id=staff_user_id)
     return True, "上传发票成功"
 
 
@@ -5576,9 +5669,9 @@ def create_sub_order_from_parent(
         form.get("stockCompanyName") or form.get("stock_company_name") or ""
     ).strip()
     try:
-        invoice_type = int(form.get("invoiceType") if form.get("invoiceType") is not None else 1)
+        invoice_type = int(form.get("invoiceType") if form.get("invoiceType") is not None else 2)
     except (TypeError, ValueError):
-        invoice_type = 1
+        invoice_type = 2
     in_bill_type_id = str(form.get("inBillTypeId") or form.get("in_bill_type_id") or "").strip()
     taxes = str(form.get("taxes") or "").strip()
     delivery_time = str(form.get("deliveryTime") or form.get("delivery_time") or "").strip()
@@ -5813,7 +5906,7 @@ def create_sub_order_from_parent(
                     UPDATE experiment_order_child
                     SET test_user_id = COALESCE(NULLIF(%(tu)s, ''), test_user_id),
                         cost_price = COALESCE(NULLIF(%(cp)s, ''), cost_price),
-                        reference_price = COALESCE(NULLIF(%(cp)s, ''), reference_price),
+                        pcost_price = COALESCE(NULLIF(%(cp)s, ''), pcost_price),
                         expect_finishtime = COALESCE(NULLIF(%(ft)s, ''), expect_finishtime),
                         line_id = COALESCE(NULLIF(%(lid)s, ''), line_id),
                         op_status = 2,
