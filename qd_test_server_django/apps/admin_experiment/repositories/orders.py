@@ -4029,6 +4029,7 @@ def save_invoice_bill(
     staff_user_id: str = "",
     log_info: str = "录入开票",
     accessory_id: int | str | None = None,
+    bill_date: str = "",
 ) -> tuple[bool, str]:
     row = get_order(order_id)
     if not row:
@@ -4047,23 +4048,26 @@ def save_invoice_bill(
         acc_id = None
     if acc_id is not None and acc_id <= 0:
         acc_id = None
+    bdate = str(bill_date or "").strip()[:19]
     params = {
         "oid": order_id,
         "money": amt,
         "log_info": (log_info or "录入开票")[:500],
         "uid": staff_user_id or None,
         "aid": acc_id,
+        "bdate": bdate,
     }
     sql = """
         INSERT INTO qd_bill
             (add_time, add_user_id, exp_of_id, money, type, is_split, bill_date, mark{acc_col})
         VALUES
-            (NOW(), %(uid)s, %(oid)s, %(money)s, 1, 0, NOW(), %(log_info)s{acc_val})
+            (NOW(), %(uid)s, %(oid)s, %(money)s, 1, 0, {bdate_sql}, %(log_info)s{acc_val})
         """
     execute(
         sql.format(
             acc_col=", accessory_id" if acc_id else "",
             acc_val=", %(aid)s" if acc_id else "",
+            bdate_sql="%(bdate)s" if bdate else "NOW()",
         ),
         params,
     )

@@ -1420,6 +1420,16 @@
         <el-form-item label="开票金额" required>
           <el-input v-model="invoiceMoney" placeholder="请输入开票金额" clearable />
         </el-form-item>
+        <el-form-item label="开票时间">
+          <el-date-picker
+            v-model="invoiceDate"
+            type="datetime"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            placeholder="yyyy-mm-dd HH:mm:ss"
+            clearable
+            style="width: 100%"
+          />
+        </el-form-item>
         <el-form-item label="附件">
           <div class="bill-attach">
             <template v-if="invoiceAccessory">
@@ -1435,9 +1445,6 @@
               <el-button type="primary" link :loading="billUploading">上传</el-button>
             </el-upload>
           </div>
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="invoiceRemark" type="textarea" :rows="2" placeholder="可选" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -1923,7 +1930,7 @@ const memberReceiveName = computed(() => {
 })
 const invoiceVisible = ref(false)
 const invoiceMoney = ref('')
-const invoiceRemark = ref('')
+const invoiceDate = ref('')
 const invoiceAccessory = ref<{ id?: number; info?: string; name?: string } | null>(null)
 const subPayBillVisible = ref(false)
 const subPayMoney = ref('')
@@ -3074,7 +3081,7 @@ function clearInvoiceAccessory() {
 
 function openInvoiceDialog() {
   invoiceMoney.value = ''
-  invoiceRemark.value = ''
+  invoiceDate.value = ''
   invoiceAccessory.value = null
 }
 
@@ -3298,7 +3305,8 @@ async function onSaveInvoice() {
     const res = await saveExpOrderInvoiceBill({
       id: props.orderId,
       money,
-      logInfo: invoiceRemark.value.trim() || '录入开票',
+      logInfo: '录入开票',
+      ...(invoiceDate.value ? { billDate: invoiceDate.value } : {}),
       ...(accessoryId ? { accessoryId } : {}),
     })
     if (!isAjaxOk(res)) {
@@ -3308,7 +3316,7 @@ async function onSaveInvoice() {
     ElMessage.success(String(res.resMsg || '开票成功'))
     invoiceVisible.value = false
     invoiceMoney.value = ''
-    invoiceRemark.value = ''
+    invoiceDate.value = ''
     invoiceAccessory.value = null
     await load()
     emit('refreshed')

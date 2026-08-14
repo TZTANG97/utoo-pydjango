@@ -1468,6 +1468,7 @@ def order_save_invoice_bill(request: Request, user=None):
         staff_user_id=staff,
         log_info=str(data.get("logInfo") or data.get("remark") or "录入开票"),
         accessory_id=data.get("accessoryId") or data.get("accessory_id"),
+        bill_date=str(data.get("billDate") or data.get("bill_date") or ""),
     )
     return ok(res_msg=msg) if ok_flag else fail(msg)
 

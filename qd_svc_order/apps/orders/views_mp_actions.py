@@ -179,6 +179,7 @@ def add_bill_data(request: Request):
             money=money,
             log_info=str(data.get("logInfo") or "录入开票"),
             accessory_id=accessory_id,
+            bill_date=bill_date,
         )
     else:
         row = order_repo.get_order(oid) or {}
