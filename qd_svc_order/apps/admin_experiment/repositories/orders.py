@@ -5840,8 +5840,8 @@ def create_sub_order_from_parent(
         supplier_id=parent.get("supplierId"),
         id_prefix=id_prefix,
     )
-    # 分包提交审核 → status=20；实验子单创建 → status=5
-    init_status = 20 if child_ot == "9" and form.get("submitAudit") else 5
+    # 分包/实验子单创建后均为未提交审核（status=5），提交审核走独立入口
+    init_status = 5
     try:
         total_price = float(form.get("totalPrice") or 0)
     except (TypeError, ValueError):

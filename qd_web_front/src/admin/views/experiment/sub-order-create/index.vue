@@ -477,7 +477,7 @@
           :disabled="!selected.length"
           @click="onCreate"
         >
-          {{ isSubcontract ? '提交审核' : '创建子订单' }}
+          创建子订单
         </el-button>
         <span v-if="isSubcontract" class="total-cost">总成本：{{ totalCostText }}</span>
         <el-button @click="goBack">取消</el-button>
@@ -961,7 +961,6 @@ async function onCreate() {
       payload.currencyType = form.currencyType
       payload.collectionTime = form.collectionTimes.filter(Boolean).join(',')
       payload.msg = form.msg
-      payload.submitAudit = true
       payload.testUserIds = selected.value.map((r) => String(r._testUserId || ''))
       payload.costPrices = selected.value.map((r) => String(r._costPrice || ''))
       payload.totalPrice = Number(totalCostText.value)

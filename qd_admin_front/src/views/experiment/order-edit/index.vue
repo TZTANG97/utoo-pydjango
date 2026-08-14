@@ -423,6 +423,25 @@
           <el-table-column prop="goodsBrandName" label="产品品牌" min-width="100" show-overflow-tooltip />
           <el-table-column prop="goodsSpec" label="型号" min-width="120" show-overflow-tooltip />
           <el-table-column prop="goodsNums" label="数量" width="90" />
+          <el-table-column label="测试人员" width="160">
+            <template #default="{ row }">
+              <el-select
+                v-model="row.testUserId"
+                filterable
+                clearable
+                placeholder="请选择"
+                style="width: 140px"
+              >
+                <el-option label="抢单" :value="GRAB_POOL_TEST_USER_ID" />
+                <el-option
+                  v-for="u in testerOptionsForRow(row)"
+                  :key="String(u.id)"
+                  :label="testerLabel(u)"
+                  :value="String(u.id)"
+                />
+              </el-select>
+            </template>
+          </el-table-column>
           <el-table-column label="成本单价" width="130">
             <template #default="{ row }">
               <el-input v-model="row.costPrice" clearable @change="recalcCostTotal" />
@@ -1588,14 +1607,14 @@ async function load() {
     selectedSubLines.value = []
     lines.value = childrenRaw.map((ch) => mapChildToLine(ch))
 
-    if (String(obj.orderType || obj.order_type || '') === '10') {
-      await loadPlatforms()
+    if (orderTypeRaw === '9' || orderTypeRaw === '10') {
+      if (orderTypeRaw === '10') await loadPlatforms()
       const classIds = lines.value.map((r) => r.classId).filter(Boolean)
       if (obj.classId) classIds.push(String(obj.classId))
       await loadTestersForClasses(classIds)
       for (const row of lines.value) {
         ensureTesterOnRow(row, childrenRaw)
-        if (row.lineId) {
+        if (orderTypeRaw === '10' && row.lineId) {
           const hit = childrenRaw.find((c) => String(c.id) === String(row.id))
           ensureOpt(
             platformOpts,
@@ -1657,6 +1676,10 @@ async function onSave() {
   if (isSubcontractSub.value) {
     if (!selectedSubLines.value.length) {
       ElMessage.warning('请至少选择一个子订单!')
+      return
+    }
+    if (selectedSubLines.value.some((r) => !String(r.testUserId || '').trim())) {
+      ElMessage.warning('请选择测试人员')
       return
     }
     if (selectedSubLines.value.some((r) => !String(r.costPrice || '').trim())) {
