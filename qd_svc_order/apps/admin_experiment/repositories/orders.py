@@ -4995,6 +4995,26 @@ def try_finish_main_order(
     )
 
 
+def _parse_money(val: Any) -> float | None:
+    """解析金额：兼容逗号/货币符号；无法解析返回 None。"""
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    s = str(val).strip()
+    if not s or s.lower() in ("none", "null", "undefined"):
+        return None
+    # 去掉常见货币符与千分位
+    for ch in ("￥", "¥", "$", "元", ",", "，", " "):
+        s = s.replace(ch, "")
+    if not s:
+        return None
+    try:
+        return float(s)
+    except (TypeError, ValueError):
+        return None
+
+
 def update_order_basic(
     *,
     order_id: int,
@@ -5068,12 +5088,15 @@ def update_order_basic(
     if collection_time is not None and str(collection_time).strip():
         sets.append("collection_time = %(collection_time)s")
         params["collection_time"] = str(collection_time).strip()[:200]
-    if total_price is not None and str(total_price) != "":
-        try:
-            params["tp"] = float(total_price)
-            sets.append("totalPrice = %(tp)s")
-        except (TypeError, ValueError):
-            pass
+    # 订单总价：显式传入时必须写入（含 0）；解析失败直接报错，避免静默跳过
+    parsed_total: float | None = None
+    total_price_provided = total_price is not None and str(total_price).strip() != ""
+    if total_price_provided:
+        parsed_total = _parse_money(total_price)
+        if parsed_total is None:
+            return False, "订单总价格式不正确"
+        params["tp"] = round(float(parsed_total), 2)
+        sets.append("`totalPrice` = %(tp)s")
     if currency_type not in (None, ""):
         try:
             params["currency_type"] = int(currency_type)
@@ -5090,7 +5113,7 @@ def update_order_basic(
         # 1/0 或 ON/OFF
         inv = str(invoice_type).strip().upper()
         params["invoice_type"] = 1 if inv in ("1", "ON", "TRUE", "YES") else 0
-        sets.append("invoiceType = %(invoice_type)s")
+        sets.append("`invoiceType` = %(invoice_type)s")
     if reverso_context not in (None, ""):
         # 对齐 Java：1=回收 2=不回收（勿再写 ON/OFF 字符串）
         rev = str(reverso_context).strip().upper()
@@ -5183,7 +5206,9 @@ def update_order_basic(
     elif st >= 30:
         next_st = 20
     if header_locked:
+        # 审核通过子单：抬头（含总价）锁定，仅备注可改
         sets = [s for s in sets if s.startswith("mark =") or s.startswith("msg =")]
+        parsed_total = None
     if next_st is not None:
         sets.append("order_status = %(next_st)s")
         params["next_st"] = next_st
@@ -5501,6 +5526,16 @@ def update_order_basic(
                 """,
                 {"id": did, "oid": order_id},
             )
+    # 产品行变更后再次回写总价，避免历史逻辑/触发器把总价冲掉
+    if parsed_total is not None and not header_locked:
+        execute(
+            """
+            UPDATE experiment_order
+            SET `totalPrice` = %(tp)s
+            WHERE id = %(id)s
+            """,
+            {"tp": round(float(parsed_total), 2), "id": order_id},
+        )
     _write_order_log(order_id, "编辑订单", user_id=staff_user_id)
     return True, "保存成功"
 

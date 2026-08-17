@@ -3821,6 +3821,16 @@ watch(
   { immediate: true }
 )
 
+// 编辑保存后同 id 回详情时带 _r，强制重新拉取（避免 keep-alive 仍显示旧总价等）
+watch(
+  () => String(route.query._r || ''),
+  (v, old) => {
+    if (!panelActive.value) return
+    if (!v || v === old) return
+    if (props.orderId) load()
+  }
+)
+
 defineExpose({ reload: load })
 </script>
 

@@ -289,7 +289,13 @@
 
         <el-col v-if="!isExpSub" :span="12">
           <el-form-item :label="isSubcontractSub ? '实验分包总价' : '订单总价'" required>
-            <el-input v-model="form.totalPrice" clearable placeholder="订单总价" :disabled="headerLocked" />
+            <el-input
+              v-model="form.totalPrice"
+              clearable
+              placeholder="订单总价"
+              :disabled="headerLocked"
+              @input="onTotalPriceManual"
+            />
           </el-form-item>
         </el-col>
         <el-col v-if="!isExpSub" :span="12">
@@ -863,6 +869,13 @@ const form = reactive({
   reversoOn: false,
 })
 
+/** 用户手动改过订单总价后，不再被产品行合计自动覆盖 */
+const totalPriceManual = ref(false)
+
+function onTotalPriceManual() {
+  totalPriceManual.value = true
+}
+
 const supplierOpts = ref<Opt[]>([])
 const customerOpts = ref<Opt[]>([])
 const accountOpts = ref<Opt[]>([])
@@ -1070,10 +1083,12 @@ function lineTotal(row: LineRow) {
 }
 
 function recalcTotal() {
+  if (totalPriceManual.value) return
   form.totalPrice = totalAmount.value
 }
 
 function recalcCostTotal() {
+  if (totalPriceManual.value && !isSubcontractSub.value) return
   form.totalPrice = totalCostAmount.value
 }
 
@@ -1566,6 +1581,7 @@ async function load() {
     const files = Array.isArray(obj.files) ? (obj.files as Record<string, unknown>[]) : []
     orderFiles.value = files.map((f) => ({ ...f }))
     form.totalPrice = obj.totalPrice != null ? String(obj.totalPrice) : ''
+    totalPriceManual.value = false
     form.mark = String(obj.mark || obj.msg || '')
     form.deliveryTime = String(obj.deliveryTime || '').slice(0, 10)
     form.orderTime = String(obj.orderTime || '').slice(0, 10)
@@ -1735,7 +1751,9 @@ async function onSave() {
       ElMessage.warning('请填写成本单价')
       return
     }
-    form.totalPrice = totalCostAmount.value
+    if (!totalPriceManual.value) {
+      form.totalPrice = totalCostAmount.value
+    }
   }
   if (isMainOrder.value) {
     if (!lines.value.length) {
@@ -1799,9 +1817,12 @@ async function onSave() {
   try {
     const saveLines =
       isExpSub.value || isSubcontractSub.value ? resolveSubSaveLines() : lines.value
+    const totalPriceRaw = String(form.totalPrice || '')
+      .replace(/[￥¥$,，\s元]/g, '')
+      .trim()
     const payload: Record<string, unknown> = {
       id: orderId,
-      totalPrice: form.totalPrice,
+      totalPrice: totalPriceRaw,
       mark: form.mark,
       deliveryTime: form.deliveryTime,
       orderTime: form.orderTime,
