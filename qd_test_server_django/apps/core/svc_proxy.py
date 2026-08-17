@@ -75,7 +75,13 @@ def svc_auth_enabled() -> bool:
 
 
 def _plain_form_dict(data) -> dict:
-    """QueryDict/dict → 单值 dict，避免 json 序列化成 list。"""
+    """QueryDict/dict → 单值 dict，避免 json 序列化成 list。
+
+    仅展开「单元素且元素为标量」的 list（QueryDict 常见形态）。
+    禁止展开 children / checkChilds 等对象数组，否则
+    children:[{...}] 会变成 {...}，上游 _parse_children_payload 丢弃产品行，
+    表现为子单编辑保存成功但测试人员/平台/预计完成时间不回写。
+    """
     if data is None:
         return {}
     keys = getattr(data, "keys", None)
@@ -84,7 +90,11 @@ def _plain_form_dict(data) -> dict:
     out: dict = {}
     for k in data.keys():
         v = data.get(k) if hasattr(data, "get") else data[k]
-        if isinstance(v, list) and len(v) == 1:
+        if (
+            isinstance(v, list)
+            and len(v) == 1
+            and not isinstance(v[0], (dict, list))
+        ):
             v = v[0]
         out[k] = v
     return out

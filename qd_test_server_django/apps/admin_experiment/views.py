@@ -59,12 +59,17 @@ def _deny_sample_if_needed(oid: int, action: str, user) -> Response | None:
 
 
 def _parse_children_payload(data: dict) -> list | None:
-    """解析编辑保存的产品行；兼容 list / JSON 字符串。"""
+    """解析编辑保存的产品行；兼容 list / 单对象 / JSON 字符串。
+
+    网关曾把单行 children:[{...}] 展成 {...}，此处兜底包成 list，避免静默丢行。
+    """
     raw = data.get("children")
     if raw is None and "children" not in data:
         return None
     if isinstance(raw, list):
         return raw
+    if isinstance(raw, dict):
+        return [raw]
     if isinstance(raw, str) and raw.strip():
         import json
 
@@ -72,6 +77,8 @@ def _parse_children_payload(data: dict) -> list | None:
             parsed = json.loads(raw)
             if isinstance(parsed, list):
                 return parsed
+            if isinstance(parsed, dict):
+                return [parsed]
         except Exception:
             return None
     return None
