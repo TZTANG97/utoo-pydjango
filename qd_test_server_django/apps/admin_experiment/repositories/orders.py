@@ -841,7 +841,7 @@ def list_sub_orders(
             SELECT COUNT(*)
             FROM experiment_order t
             LEFT JOIN experiment_order p ON t.parent_id = p.id
-            LEFT JOIN qd_user_company q ON t.customer_name = q.id
+            LEFT JOIN qd_user_company q ON CAST(t.customer_name AS CHAR) = CAST(q.id AS CHAR)
             {where}
             """,
             params,
@@ -864,8 +864,8 @@ def list_sub_orders(
             tu.user_name AS testName, tu.true_name AS testTrueName
         FROM experiment_order t
         LEFT JOIN experiment_order p ON t.parent_id = p.id
-        LEFT JOIN qd_user_company q ON t.customer_name = q.id
-        LEFT JOIN qd_user_company qs ON t.stock_company_name = qs.id
+        LEFT JOIN qd_user_company q ON CAST(t.customer_name AS CHAR) = CAST(q.id AS CHAR)
+        LEFT JOIN qd_user_company qs ON CAST(t.stock_company_name AS CHAR) = CAST(qs.id AS CHAR)
         LEFT JOIN sy_users sm ON t.sale_manager = sm.id
         LEFT JOIN sy_users su ON t.sale_user = su.id
         LEFT JOIN (
@@ -1351,7 +1351,8 @@ def get_order(order_id: int) -> dict[str, Any] | None:
             t.id, t.addTime, t.order_id AS orderId, t.order_type AS orderType,
             t.order_status AS orderStatus, t.totalPrice AS totalPrice,
             t.order_time AS orderTime, t.is_confirm AS isConfirm,
-            t.stock_company_name AS stockCompanyName, t.mark, t.msg AS msg,
+            t.stock_company_name AS stockCompanyId,
+            qs.name AS stockCompanyName, t.mark, t.msg AS msg,
             t.invoiceType AS invoiceType, t.currency_type AS currencyType,
             t.collection_time AS collectionTime, t.parent_id AS parentId,
             t.purchase_type AS purchaseType, t.delivery_time AS deliveryTime,
@@ -1406,7 +1407,8 @@ def get_order(order_id: int) -> dict[str, Any] | None:
             tu.user_name AS testName, tu.true_name AS testTrueName
         FROM experiment_order t
         LEFT JOIN experiment_order p ON t.parent_id = p.id
-        LEFT JOIN qd_user_company q ON t.customer_name = q.id
+        LEFT JOIN qd_user_company q ON CAST(t.customer_name AS CHAR) = CAST(q.id AS CHAR)
+        LEFT JOIN qd_user_company qs ON CAST(t.stock_company_name AS CHAR) = CAST(qs.id AS CHAR)
         LEFT JOIN `user` u ON t.supplier_name = u.id
         LEFT JOIN exp_user cu ON CAST(t.custom_user_id AS CHAR) = CAST(cu.id AS CHAR)
         LEFT JOIN `user` cu2 ON CAST(t.custom_user_id AS CHAR) = CAST(cu2.id AS CHAR)
@@ -1456,8 +1458,11 @@ def get_order(order_id: int) -> dict[str, Any] | None:
         else _status_label(row.get("orderStatus"))
     )
     q_name = str(row.get("companyName") or "").strip()
-    stock = str(row.get("stockCompanyName") or "").strip()
-    row["stockCompanyName"] = stock or "-"
+    stock_id = str(row.get("stockCompanyId") or "").strip()
+    stock_name = str(row.get("stockCompanyName") or "").strip()
+    row["stockCompanyId"] = stock_id
+    # stock_company_name 库内存公司 id；展示名需 JOIN qd_user_company
+    row["stockCompanyName"] = stock_name or "-"
     if ot == "9":
         # 分包子单：公司名单独展示，不把 stock 冒充客户
         row["companyName"] = q_name or "-"
@@ -2716,11 +2721,13 @@ def list_linked_child_orders(parent_id: int, *, child_order_type: str) -> list[d
             t.totalPrice AS totalPrice, t.order_time AS orderTime, t.addTime,
             t.is_confirm AS isConfirm, t.order_type AS orderType,
             t.currency_type AS currencyType,
-            t.stock_company_name AS stockCompanyName,
+            t.stock_company_name AS stockCompanyId,
+            qs.name AS stockCompanyName,
             u.company_name AS supplierName,
             sm.user_name AS managerName, sm.true_name AS managerTrueName,
             su.user_name AS saleUserName, su.true_name AS saleUserTrueName
         FROM experiment_order t
+        LEFT JOIN qd_user_company qs ON CAST(t.stock_company_name AS CHAR) = CAST(qs.id AS CHAR)
         LEFT JOIN `user` u ON t.supplier_name = u.id
         LEFT JOIN sy_users sm ON t.sale_manager = sm.id
         LEFT JOIN sy_users su ON t.sale_user = su.id
@@ -2738,6 +2745,7 @@ def list_linked_child_orders(parent_id: int, *, child_order_type: str) -> list[d
         r["supplierName"] = r.get("supplierName") or "-"
         if str(child_order_type) == "9":
             r["purchaseTotalPrice"] = r.get("totalPrice")
+            r["stockCompanyId"] = str(r.get("stockCompanyId") or "").strip()
             stock = str(r.get("stockCompanyName") or "").strip()
             r["stockCompanyName"] = stock or "-"
             try:

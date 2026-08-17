@@ -1651,7 +1651,7 @@ async function load() {
     form.saleUserId = asOptValue(obj.saleUserId)
     form.supplierId = asOptValue(obj.supplierId)
     form.stockCompanyId = asOptValue(
-      obj.stockCompanyId || obj.stock_company_name || obj.stockCompanyName
+      obj.stockCompanyId || obj.stock_company_name
     )
     form.customerId = asOptValue(obj.customerId)
     form.customUserId = asOptValue(obj.customUserId)
