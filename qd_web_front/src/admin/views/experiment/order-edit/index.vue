@@ -773,13 +773,13 @@ import {
   getExpOrderDetail,
   updateExpOrderBasic,
   uploadExpOrderFile,
-} from '@/api/experiment'
-import { fetchSelLineList } from '@/api/inventory'
-import { fetchCustomerAccounts, fetchCustomerNamesExp } from '@/api/member'
-import { fetchBillTypeAll, fetchPaytypeAll, fetchTaxAll } from '@/api/order-settings'
-import { fetchSupplierAll, fetchTestUsers, fetchUserList } from '@/api/system'
-import { detailFromByOrderType, useTagsViewStore } from '@/stores/tags-view'
-import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
+} from '@admin/api/experiment'
+import { fetchSelLineList } from '@admin/api/inventory'
+import { fetchCustomerAccounts, fetchCustomerNamesExp } from '@admin/api/member'
+import { fetchBillTypeAll, fetchPaytypeAll, fetchTaxAll } from '@admin/api/order-settings'
+import { fetchSupplierAll, fetchTestUsers, fetchUserList } from '@admin/api/system'
+import { detailFromByOrderType, useTagsViewStore } from '@admin/stores/tags-view'
+import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
 type Opt = { value: string; label: string; nums?: number }
 type ShareRow = { userId: string; value: string }
