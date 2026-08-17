@@ -472,50 +472,112 @@ def _fx_to_parent(amount: Decimal, child_ct: int, parent_ct: int, rate: Decimal)
     return amount
 
 
+def _has_sj_flag(order_id: int) -> bool:
+    n = int(
+        scalar(
+            """
+            SELECT COUNT(*)
+            FROM qd_bill
+            WHERE type = 2 AND exp_of_id = %(oid)s
+              AND IFNULL(is_split, 0) = 1 AND IFNULL(is_sj, 0) = 1
+            """,
+            {"oid": order_id},
+            0,
+        )
+        or 0
+    )
+    return n > 0
+
+
+def _nosplit_money_sum(bills: list[dict[str, Any]]) -> Decimal:
+    return sum((_d(b.get("money")) for b in bills), D0)
+
+
 def _split_type8(order: dict[str, Any]) -> None:
+    """
+    对齐 Java saleSplitMoneyByServiceLineNew type=8：
+
+    - 采购未付清 + 从未分过：基数 = 累计收款 − 预计成本
+    - 采购未付清 + 已分过：基数 = 本次未分收款金额（本笔增量，不能再用累计−成本）
+    - 采购已付清 + 从未分过：基数 = 累计收款 − 实际付款
+    - 采购已付清 + 已分过且 is_sj=1：基数 = 本次未分收款
+    - 采购已付清 + 已分过且 is_sj=0：未分收款 ± (预计−实际) 纠偏
+    """
     oid = int(order["id"])
     if not _type8_gates_ok(oid):
         return
-    parent_ct = int(order.get("currencyType") or 1)
-    rate = _us_rate()
-    pos = _purchase_orders(oid)
-    zcb = D0
-    all_paid = True
-    for po in pos:
-        zcb += _fx_to_parent(_d(po.get("totalPrice")), int(po.get("currencyType") or 1), parent_ct, rate)
-        try:
-            if int(po.get("payStatus") or 0) != 38:
-                all_paid = False
-        except (TypeError, ValueError):
-            all_paid = False
-
-    sk = _all_receive_sum(oid)
+    zcb, sjzcb, all_paid = _purchase_cost_totals(order)
     bills = _nosplit_bills(oid)
     if not bills:
         return
     scale = order.get("userScaleInfo")
+    already_split = _split_bill_count(oid) > 0
+    nosplit_sum = _nosplit_money_sum(bills)
+    sk = _all_receive_sum(oid)
     is_sj = 0
     can = True
 
     if all_paid:
-        sjzcb = D0
-        for po in pos:
-            sjzcb += _all_receive_sum(int(po["id"]))
-        fqjs = sk - sjzcb
-        if fqjs < 0 and not _collections_complete(order):
+        if already_split:
+            if _has_sj_flag(oid):
+                # 已按实际分过：后续每笔只分本笔未分金额
+                if nosplit_sum != 0:
+                    _distribute_percent(
+                        nosplit_sum, scale, order=order, log_name="实验分包订单利润分成回款"
+                    )
+                _mark_split(bills)
+                return
+            # 已分过但尚未按实际纠偏
+            fqjs = nosplit_sum
+            if zcb != sjzcb:
+                # Java: hkMoney.compareTo(sjzcb - zcb) >= 0
+                if nosplit_sum >= (sjzcb - zcb):
+                    fqjs = nosplit_sum + (zcb - sjzcb)
+                    is_sj = 1
+                else:
+                    if not _collections_complete(order):
+                        can = False
+                    elif nosplit_sum != 0:
+                        fqjs = nosplit_sum + (zcb - sjzcb)
+            if can:
+                _distribute_percent(
+                    fqjs, scale, order=order, log_name="实验分包订单利润分成回款"
+                )
+                _mark_split(bills, is_sj=is_sj)
+            return
+
+        # 从未分过 + 采购已付清
+        fpsum = sk - sjzcb
+        if fpsum < 0 and not _collections_complete(order):
             can = False
-        elif fqjs >= 0:
+        elif fpsum >= 0:
             is_sj = 1
         if can:
-            _distribute_percent(fqjs, scale, order=order, log_name="实验分包订单利润分成回款")
+            _distribute_percent(
+                sk - sjzcb, scale, order=order, log_name="实验分包订单利润分成回款"
+            )
             _mark_split(bills, is_sj=is_sj)
-    else:
-        fqjs = sk - zcb
-        if fqjs < 0 and not _collections_complete(order):
-            can = False
-        if can and fqjs != 0:
-            _distribute_percent(fqjs, scale, order=order, log_name="实验分包订单利润分成回款")
-            _mark_split(bills)
+        return
+
+    # 采购未付清
+    if already_split:
+        # 关键：已分过后的后续收款，只分本笔（未分票合计）
+        if nosplit_sum != 0:
+            _distribute_percent(
+                nosplit_sum, scale, order=order, log_name="实验分包订单利润分成回款"
+            )
+        _mark_split(bills)
+        return
+
+    # 从未分过：累计收款 − 预计成本
+    fpsum = sk - zcb
+    if fpsum <= 0 and not _collections_complete(order):
+        can = False
+    if can and (sk - zcb) != 0:
+        _distribute_percent(
+            sk - zcb, scale, order=order, log_name="实验分包订单利润分成回款"
+        )
+        _mark_split(bills)
 
 
 @transaction.atomic
