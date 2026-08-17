@@ -2010,8 +2010,10 @@ def get_order(order_id: int) -> dict[str, Any] | None:
         ):
             sure_recv = True
     row["canInvoice"] = parent_kind and status_ok_bill and is_online == 0 and view_kp
+    # 收款：有付款方式+期数且线下期数未满；与「确认付款」互斥（对齐 Java viewReciveBtn && !sureReciveBtn）
     row["canReceiveBill"] = parent_kind and status_ok_bill and view_recv and not sure_recv
-    row["canConfirmPay"] = parent_kind and sure_recv
+    # 确认付款：存在线上收款且线下期数未满（对齐 Java sureReciveBtn）；弹窗同收款录入
+    row["canConfirmPay"] = parent_kind and status_ok_bill and sure_recv
     row["canConfirmCustomer"] = parent_kind and st == 67
     # 对齐 Java：仅线下单(is_online=0)显示「生成预约单」；线上单收款后自动生成
     row["canGenerateAppointment"] = (
@@ -6780,6 +6782,9 @@ def create_exp_order(
     if not order_pk:
         return False, "订单提交失败，请联系管理员!", None
 
+    # 新单 id 可能撞上历史已删订单残留的线上收款关联，导致误显「确认付款」、隐藏「收款」
+    _clear_stale_online_bills_for_new_order(int(order_pk))
+
     for i, ch in enumerate(children):
         child_no = f"{order_no}-{i + 1}"
         goods_id = _pick(ch, "goods_id", "goodsId", default="")
@@ -6946,6 +6951,25 @@ def _accessory_linked_order_id(row: dict[str, Any]) -> int:
         except (TypeError, ValueError):
             continue
     return 0
+
+
+def _clear_stale_online_bills_for_new_order(order_pk: int) -> None:
+    """新建订单后清理误挂到本 id 的历史线上收款单（删单残留 / id 复用）。"""
+    if not order_pk:
+        return
+    try:
+        execute(
+            "UPDATE exp_online_qd_bill SET exp_of_id = NULL WHERE exp_of_id = %(id)s",
+            {"id": order_pk},
+        )
+    except Exception:
+        try:
+            execute(
+                "DELETE FROM exp_online_qd_bill WHERE exp_of_id = %(id)s",
+                {"id": order_pk},
+            )
+        except Exception:
+            pass
 
 
 def _attach_accessories_to_order(order_pk: int, accessory_ids: list[Any]) -> None:

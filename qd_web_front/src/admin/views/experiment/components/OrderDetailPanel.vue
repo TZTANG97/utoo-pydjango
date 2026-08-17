@@ -1356,16 +1356,16 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="receiveVisible" title="收款" width="480px">
+    <el-dialog v-model="receiveVisible" :title="receiveDialogTitle" width="480px">
       <el-form label-width="100px">
-        <!-- 对齐 Java：线下订单且客户账号不为空，才显示会员余额收款 -->
-        <el-form-item v-if="showMemberBalanceReceive" label="收款方式">
+        <!-- 对齐 Java：线下订单且客户账号不为空，才显示会员余额收款；确认付款无此选项 -->
+        <el-form-item v-if="receiveDialogMode === 'receive' && showMemberBalanceReceive" label="收款方式">
           <el-radio-group v-model="receivePayType">
             <el-radio :value="1">线下收款</el-radio>
             <el-radio :value="2">会员余额收款</el-radio>
           </el-radio-group>
         </el-form-item>
-        <template v-if="showMemberBalanceReceive && receivePayType === 2">
+        <template v-if="receiveDialogMode === 'receive' && showMemberBalanceReceive && receivePayType === 2">
           <el-form-item label="会员手机号">
             <el-input :model-value="memberReceiveMobile" readonly />
           </el-form-item>
@@ -1373,15 +1373,15 @@
             <el-input :model-value="memberReceiveName" readonly />
           </el-form-item>
         </template>
-        <el-form-item label="收款金额" required>
-          <el-input v-model="receiveMoney" placeholder="请输入收款金额" clearable />
+        <el-form-item :label="receiveDialogMode === 'confirm' ? '金额' : '收款金额'" required>
+          <el-input v-model="receiveMoney" placeholder="请输入金额" clearable />
         </el-form-item>
-        <el-form-item label="收款日期">
+        <el-form-item :label="receiveDialogMode === 'confirm' ? '收费时间' : '收款日期'">
           <el-date-picker
             v-model="receiveDate"
-            type="date"
-            value-format="YYYY-MM-DD"
-            placeholder="默认今天"
+            :type="receiveDialogMode === 'confirm' ? 'datetime' : 'date'"
+            :value-format="receiveDialogMode === 'confirm' ? 'YYYY-MM-DD HH:mm:ss' : 'YYYY-MM-DD'"
+            :placeholder="receiveDialogMode === 'confirm' ? 'yyyy-mm-dd HH:mm:ss' : '默认今天'"
             clearable
             style="width: 100%"
           />
@@ -1398,14 +1398,14 @@
               :http-request="onUploadReceiveBillFile"
               accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.xls,.xlsx"
             >
-              <el-button type="primary" link :loading="billUploading">上传</el-button>
+              <el-button type="primary" link :loading="billUploading">上传文件</el-button>
             </el-upload>
           </div>
         </el-form-item>
-        <el-form-item v-if="receivePayType !== 2" label="备注">
+        <el-form-item v-if="receiveDialogMode === 'receive' && receivePayType !== 2" label="备注">
           <el-input v-model="receiveRemark" type="textarea" :rows="2" placeholder="可选" />
         </el-form-item>
-        <p class="receive-hint">
+        <p v-if="receiveDialogMode === 'receive'" class="receive-hint">
           成本已结清时，保存后将按订单分成配置自动分钱到相关账户。
         </p>
       </el-form>
@@ -1796,7 +1796,6 @@ import {
   confirmDoneExpOrder,
   confirmExpOrdered,
   confirmExpOrderCustomer,
-  confirmExpOrderPay,
   costSettleExpOrder,
   fetchExpOrderMoreInfo,
   generateExpOrderAppointment,
@@ -1903,6 +1902,11 @@ const relatedVisible = ref(false)
 const relatedType = ref('')
 const relatedOrderNo = ref('')
 const receiveVisible = ref(false)
+/** receive=收款；confirm=确认付款（对齐 Java surePay 同表单） */
+const receiveDialogMode = ref<'receive' | 'confirm'>('receive')
+const receiveDialogTitle = computed(() =>
+  receiveDialogMode.value === 'confirm' ? '确认付款' : '收款'
+)
 const receiveMoney = ref('')
 const receiveDate = ref('')
 const receiveRemark = ref('')
@@ -3024,12 +3028,23 @@ async function onCostSettle() {
 async function onSaveReceive() {
   const money = Number(receiveMoney.value)
   if (!Number.isFinite(money) || money <= 0) {
-    ElMessage.warning('请输入有效收款金额')
+    ElMessage.warning('请输入有效金额')
+    return
+  }
+  if (receiveDialogMode.value === 'confirm' && !String(receiveDate.value || '').trim()) {
+    ElMessage.warning('请填写收费时间')
     return
   }
   await runAction(async () => {
     const accessoryId = receiveAccessory.value?.id
-    const useBalance = showMemberBalanceReceive.value && receivePayType.value === 2
+    const useBalance =
+      receiveDialogMode.value === 'receive' &&
+      showMemberBalanceReceive.value &&
+      receivePayType.value === 2
+    const logInfo =
+      receiveDialogMode.value === 'confirm'
+        ? '确认付款'
+        : receiveRemark.value.trim() || '录入收款'
     const res = useBalance
       ? await amountPayExpOrder({
           id: props.orderId,
@@ -3043,26 +3058,32 @@ async function onSaveReceive() {
           id: props.orderId,
           money,
           billDate: receiveDate.value || undefined,
-          logInfo: receiveRemark.value.trim() || '录入收款',
+          logInfo,
           ...(accessoryId ? { accessoryId } : {}),
         })
     if (!isAjaxOk(res)) {
-      ElMessage.error(ajaxErrorMessage(res, '收款失败'))
+      ElMessage.error(
+        ajaxErrorMessage(res, receiveDialogMode.value === 'confirm' ? '确认付款失败' : '收款失败')
+      )
       return
     }
-    ElMessage.success(String(res.resMsg || '收款成功'))
+    ElMessage.success(
+      String(res.resMsg || (receiveDialogMode.value === 'confirm' ? '确认付款成功' : '收款成功'))
+    )
     receiveVisible.value = false
     receiveMoney.value = ''
     receiveDate.value = ''
     receiveRemark.value = ''
     receivePayType.value = 1
     receiveAccessory.value = null
+    receiveDialogMode.value = 'receive'
     await load()
     emit('refreshed')
   })
 }
 
 function openReceiveDialog() {
+  receiveDialogMode.value = 'receive'
   receivePayType.value = 1
   receiveMoney.value = ''
   receiveDate.value = ''
@@ -3324,17 +3345,14 @@ async function onSaveInvoice() {
 }
 
 async function onConfirmPay() {
-  await ElMessageBox.confirm('确认将线上未结清差额记为已收款？', '确认付款', { type: 'warning' })
-  await runAction(async () => {
-    const res = await confirmExpOrderPay(props.orderId)
-    if (!isAjaxOk(res)) {
-      ElMessage.error(ajaxErrorMessage(res, '确认失败'))
-      return
-    }
-    ElMessage.success(String(res.resMsg || '已确认付款'))
-    await load()
-    emit('refreshed')
-  })
+  // 对齐 Java surePay：与收款同一表单（金额/收费时间/附件），非「差额一键确认」
+  receiveDialogMode.value = 'confirm'
+  receivePayType.value = 1
+  receiveMoney.value = ''
+  receiveDate.value = ''
+  receiveRemark.value = ''
+  receiveAccessory.value = null
+  receiveVisible.value = true
 }
 
 async function onConfirmOrdered() {
