@@ -8,7 +8,8 @@ v1 覆盖：
 触发：
 - 录入收款 qd_bill(type=2) 且 cost_settle=1 → try_split_on_receive
 - 成本结清 cost_settle_sure → try_split_on_settle
-- type=9 子单审核通过 / 上传付款后 → try_split_type8_parent_from_child（回补父单）
+- type=9 子单审核通过 / 上传付款后 → try_split_type8_parent_from_child
+  （主单未分完则首分；主单已分完且采购全付清则按「预计成本−实际付款」差额补分）
 """
 from __future__ import annotations
 
@@ -577,13 +578,95 @@ def try_split_on_settle(order_id: int) -> bool:
     return False
 
 
+def _split_bill_count(order_id: int) -> int:
+    return int(
+        scalar(
+            """
+            SELECT COUNT(*)
+            FROM qd_bill
+            WHERE type = 2 AND exp_of_id = %(oid)s AND IFNULL(is_split, 0) = 1
+            """,
+            {"oid": order_id},
+            0,
+        )
+        or 0
+    )
+
+
+def _purchase_cost_totals(order: dict[str, Any]) -> tuple[Decimal, Decimal, bool]:
+    """返回 (预计成本 zcb, 实际付款 sjzcb, 是否全部 pay_status=38)。"""
+    oid = int(order["id"])
+    parent_ct = int(order.get("currencyType") or 1)
+    rate = _us_rate()
+    pos = _purchase_orders(oid)
+    zcb = D0
+    sjzcb = D0
+    all_paid = True
+    if not pos:
+        return zcb, sjzcb, False
+    for po in pos:
+        zcb += _fx_to_parent(
+            _d(po.get("totalPrice")), int(po.get("currencyType") or 1), parent_ct, rate
+        )
+        sjzcb += _all_receive_sum(int(po["id"]))
+        try:
+            if int(po.get("payStatus") or 0) != 38:
+                all_paid = False
+        except (TypeError, ValueError):
+            all_paid = False
+    return zcb, sjzcb, all_paid
+
+
+def _adjust_type8_after_purchase_paid(order: dict[str, Any]) -> bool:
+    """
+    对齐 Java QdBillServiceImpl type=9 上传付款后分支：
+
+    前提：主单收款已分完(is_split=1)、收款期数已满、采购子单全部 pay_status=38。
+    动作：若预计成本(子单 totalPrice 合计) ≠ 实际付款(子单 type=2 合计)，
+         按 user_scale_info 把差额 (预计−实际) 记入「实验分包订单利润分成回款」。
+    """
+    oid = int(order["id"])
+    if not _type8_gates_ok(oid):
+        return False
+    if not _collections_complete(order):
+        return False
+    if _split_bill_count(oid) <= 0:
+        return False
+    zcb, sjzcb, all_paid = _purchase_cost_totals(order)
+    if not all_paid:
+        return False
+    if zcb == sjzcb:
+        return False
+    scale = order.get("userScaleInfo")
+    # 实际付多 → 负差额（冲减已分利润）；实际付少 → 正差额（补分）
+    _distribute_percent(
+        zcb - sjzcb,
+        scale,
+        order=order,
+        log_name="实验分包订单利润分成回款",
+    )
+    # 已按实际成本纠偏，标记 is_sj=1，避免后续再按预估纠偏
+    try:
+        execute(
+            """
+            UPDATE qd_bill
+            SET is_sj = 1
+            WHERE type = 2 AND exp_of_id = %(oid)s AND IFNULL(is_split, 0) = 1
+            """,
+            {"oid": oid},
+        )
+    except Exception:
+        pass
+    return True
+
+
 @transaction.atomic
 def try_split_type8_parent_from_child(child_order_id: int) -> bool:
     """
     type=9 子单审核通过 / 上传付款后，回补父单 type=8 分钱。
 
-    对齐 Java QdBillServiceImpl：主单收款分钱要求子行已处理且采购单 status>=30；
-    若收款发生在子单审核前会被跳过，因此须在子单状态就绪后再次触发。
+    1) 主单仍有未分收款 → 走常规 _split_type8（首分或补分未分票）
+    2) 主单已分完且采购全付清 → 走「预计−实际」差额补分（Java type=9 付清分支）
     """
     child = fetch_one(
         """
@@ -611,8 +694,11 @@ def try_split_type8_parent_from_child(child_order_id: int) -> bool:
     except (TypeError, ValueError):
         return False
     try:
-        _split_type8(parent)
-        return True
+        nosplit = _nosplit_bills(parent_id)
+        if nosplit:
+            _split_type8(parent)
+            return True
+        return _adjust_type8_after_purchase_paid(parent)
     except Exception:
         logger.exception(
             "try_split_type8_parent_from_child failed child=%s parent=%s",
