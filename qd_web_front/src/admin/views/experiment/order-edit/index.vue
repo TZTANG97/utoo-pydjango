@@ -437,7 +437,7 @@
           empty-text="暂无产品行"
           @selection-change="onSubLineSelectionChange"
         >
-          <el-table-column type="selection" width="48" :selectable="() => !headerLocked" />
+          <el-table-column type="selection" width="48" />
           <el-table-column prop="childOrderId" label="子订单编号" min-width="140" show-overflow-tooltip />
           <el-table-column prop="goodsName" label="产品名称" min-width="140" show-overflow-tooltip />
           <el-table-column prop="goodsBrandName" label="产品品牌" min-width="100" show-overflow-tooltip />
@@ -479,7 +479,7 @@
           empty-text="暂无产品行"
           @selection-change="onSubLineSelectionChange"
         >
-          <el-table-column type="selection" width="48" :selectable="() => !headerLocked" />
+          <el-table-column type="selection" width="48" />
           <el-table-column prop="childOrderId" label="子订单编号" min-width="150" show-overflow-tooltip />
           <el-table-column prop="goodsName" label="产品名称" min-width="140" show-overflow-tooltip />
           <el-table-column label="产品型号" min-width="120">
@@ -767,13 +767,13 @@ import {
   getExpOrderDetail,
   updateExpOrderBasic,
   uploadExpOrderFile,
-} from '@admin/api/experiment'
-import { fetchSelLineList } from '@admin/api/inventory'
-import { fetchCustomerAccounts, fetchCustomerNamesExp } from '@admin/api/member'
-import { fetchBillTypeAll, fetchPaytypeAll, fetchTaxAll } from '@admin/api/order-settings'
-import { fetchSupplierAll, fetchTestUsers, fetchUserList } from '@admin/api/system'
-import { detailFromByOrderType, useTagsViewStore } from '@admin/stores/tags-view'
-import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
+} from '@/api/experiment'
+import { fetchSelLineList } from '@/api/inventory'
+import { fetchCustomerAccounts, fetchCustomerNamesExp } from '@/api/member'
+import { fetchBillTypeAll, fetchPaytypeAll, fetchTaxAll } from '@/api/order-settings'
+import { fetchSupplierAll, fetchTestUsers, fetchUserList } from '@/api/system'
+import { detailFromByOrderType, useTagsViewStore } from '@/stores/tags-view'
+import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
 
 type Opt = { value: string; label: string; nums?: number }
 type ShareRow = { userId: string; value: string }
@@ -966,9 +966,26 @@ async function applyDefaultSubSelection() {
   table.clearSelection()
   for (const row of lines.value) {
     if (row.linkedToThis !== false) {
-      table.toggleRowSelection(row, true)
+      // 第 3 参 ignoreSelectable：审核锁定抬头时仍须默认勾选已挂接行
+      table.toggleRowSelection(row, true, true)
     }
   }
+}
+
+/** 子单保存取当前表格行（含最新编辑），避免 selection 引用过期导致写回旧值 */
+function resolveSubSaveLines(): LineRow[] {
+  const selectedIds = new Set(
+    selectedSubLines.value
+      .map((r) => (r.id !== '' && r.id != null ? String(r.id) : ''))
+      .filter(Boolean)
+  )
+  if (selectedIds.size) {
+    const fromLines = lines.value.filter((r) => selectedIds.has(String(r.id)))
+    if (fromLines.length) return fromLines
+  }
+  // 审核通过后若勾选被清空，回退到已挂接行
+  const linked = lines.value.filter((r) => r.linkedToThis !== false)
+  return linked.length ? linked : selectedSubLines.value
 }
 
 function goBack() {
@@ -995,6 +1012,7 @@ async function closeEditAndRefreshDetail() {
     query: {
       from,
       ...(orderNo ? { orderNo } : {}),
+      _r: String(Date.now()),
     },
   })
   tagsViewStore.delView(editPath)
@@ -1140,6 +1158,7 @@ function ensureTesterOnRow(row: LineRow, children: Record<string, unknown>[]) {
     if (!bucket.some((u) => String(u.id) === tid)) {
       testerByClass.value[cid] = [patch, ...bucket]
     } else {
+      // 列表里已有但名为空时补姓名
       testerByClass.value[cid] = bucket.map((u) =>
         String(u.id) === tid && name && !testerLabel(u)
           ? { ...u, trueName: name, userName: name }
@@ -1327,23 +1346,11 @@ function refreshShareSummary() {
     })
     .join('，')
   const label = isSubcontractMain.value ? '利润' : '毛利'
-  const costText = isSubcontractMain.value
-    ? ''
-    : parseScalePairs(form.salecbUserScaleInfo)
-        .filter((r) => r.userId)
-        .map((r) => {
-          const u = shareUsers.value.find((x) => String(x.id) === r.userId)
-          return `${shareUserLabel(u || { id: r.userId })} ${r.value}`
-        })
-        .join('，')
-  const profitSummary = profitText
+  shareSummary.value = profitText
     ? `${label}：${profitText}`
     : form.userScaleInfo
       ? `${label}：${form.userScaleInfo}`
       : ''
-  shareSummary.value = [profitSummary, costText ? `成本：${costText}` : '']
-    .filter(Boolean)
-    .join('；')
 }
 
 function openShareDialog() {
@@ -1715,15 +1722,16 @@ async function onSave() {
     }
   }
   if (isSubcontractSub.value) {
-    if (!selectedSubLines.value.length) {
+    const saveRows = resolveSubSaveLines()
+    if (!saveRows.length) {
       ElMessage.warning('请至少选择一个子订单!')
       return
     }
-    if (selectedSubLines.value.some((r) => !String(r.testUserId || '').trim())) {
+    if (saveRows.some((r) => !String(r.testUserId || '').trim())) {
       ElMessage.warning('请选择测试人员')
       return
     }
-    if (selectedSubLines.value.some((r) => !String(r.costPrice || '').trim())) {
+    if (saveRows.some((r) => !String(r.costPrice || '').trim())) {
       ElMessage.warning('请填写成本单价')
       return
     }
@@ -1744,14 +1752,14 @@ async function onSave() {
         return
       }
     }
-    recalcTotal()
   }
   if (isExpSub.value) {
-    if (!selectedSubLines.value.length) {
+    const saveRows = resolveSubSaveLines()
+    if (!saveRows.length) {
       ElMessage.warning('请至少选择一个子订单!')
       return
     }
-    for (const [i, row] of selectedSubLines.value.entries()) {
+    for (const [i, row] of saveRows.entries()) {
       if (!row.testUserId) {
         ElMessage.warning(`第 ${i + 1} 行请选择测试人员`)
         return
@@ -1790,7 +1798,7 @@ async function onSave() {
   saving.value = true
   try {
     const saveLines =
-      isExpSub.value || isSubcontractSub.value ? selectedSubLines.value : lines.value
+      isExpSub.value || isSubcontractSub.value ? resolveSubSaveLines() : lines.value
     const payload: Record<string, unknown> = {
       id: orderId,
       totalPrice: form.totalPrice,

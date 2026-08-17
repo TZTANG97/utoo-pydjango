@@ -2188,25 +2188,30 @@ _CHILD_LINE_JOINS = """
 
 
 def _fetch_children_basic(order_id: int) -> list[dict[str, Any]]:
-    rows = fetch_all(
-        f"""
-        SELECT {_CHILD_LINE_SELECT}
-        FROM experiment_order_child c
-        {_CHILD_LINE_JOINS}
-        WHERE c.order_form_id = %(oid)s AND IFNULL(c.delete_status, 2) <> 1
-        ORDER BY c.id ASC
-        """,
-        {"oid": order_id},
-    )
-    if rows:
-        return rows
-    return fetch_all(
+    """产品行读取：子单优先走采购挂接（对齐 Java getChildsByPurchaseId*）。
+
+    若先按 order_form_id=子单 id 查，可能命中历史错挂行，导致详情与编辑/保存的挂接行不一致，
+    表现为「编辑保存成功但详情仍显示旧测试人员/平台/预计完成时间」。
+    """
+    linked = fetch_all(
         f"""
         SELECT {_CHILD_LINE_SELECT}
         FROM exp_qd_purchase_order_child poc
         JOIN experiment_order_child c ON poc.order_child_id = c.id
         {_CHILD_LINE_JOINS}
         WHERE poc.purchase_order_id = %(oid)s AND IFNULL(c.delete_status, 2) <> 1
+        ORDER BY c.id ASC
+        """,
+        {"oid": order_id},
+    )
+    if linked:
+        return linked
+    return fetch_all(
+        f"""
+        SELECT {_CHILD_LINE_SELECT}
+        FROM experiment_order_child c
+        {_CHILD_LINE_JOINS}
+        WHERE c.order_form_id = %(oid)s AND IFNULL(c.delete_status, 2) <> 1
         ORDER BY c.id ASC
         """,
         {"oid": order_id},
@@ -2214,42 +2219,8 @@ def _fetch_children_basic(order_id: int) -> list[dict[str, Any]]:
 
 
 def _fetch_children_fallback(order_id: int) -> list[dict[str, Any]]:
-    rows = fetch_all(
-        """
-        SELECT
-            c.id, c.order_id AS childOrderId, c.order_status AS orderStatus,
-            c.goods_id AS goodsId, c.goods_brand_id AS goodsBrandId,
-            c.experiment_project_id AS projectId,
-            c.goods_name AS goodsName, c.goods_spec AS goodsSpec,
-            c.goods_brand_name AS goodsBrand, c.goods_nums AS goodsCount,
-            c.experiment_project_name AS projectName,
-            c.experiment_class_name AS className,
-            c.experiment_project_name AS deviceName,
-            c.goods_price AS price,
-            c.reference_price AS referencePrice,
-            c.cost_price AS costPrice,
-            c.expect_finishtime AS expectFinishTime,
-            c.finish_time AS estimateFinish,
-            IFNULL(c.expect_finishtime, c.finish_time) AS finishTime,
-            c.time_type AS timeType,
-            c.mark AS confirmMark,
-            c.is_confirm AS isConfirm, c.op_status AS opStatus,
-            c.is_meeting AS isMeeting, c.meeting_num AS meetingNum,
-            c.line_id AS lineId, c.sample_id AS sampleId,
-            c.test_user_id AS testUserId, u.user_name AS testUserName,
-            u.true_name AS testUserTrueName, c.add_time AS addTime,
-            ln.line_num AS platformName
-        FROM experiment_order_child c
-        LEFT JOIN sy_users u ON CAST(c.test_user_id AS CHAR) = CAST(u.id AS CHAR)
-        LEFT JOIN experiment_line ln ON c.line_id = ln.id
-        WHERE c.order_form_id = %(oid)s AND IFNULL(c.delete_status, 2) <> 1
-        ORDER BY c.id ASC
-        """,
-        {"oid": order_id},
-    )
-    if rows:
-        return rows
-    return fetch_all(
+    """与 _fetch_children_basic 一致：子单优先按采购挂接读取。"""
+    linked = fetch_all(
         """
         SELECT
             c.id, c.order_id AS childOrderId, c.order_status AS orderStatus,
@@ -2279,6 +2250,41 @@ def _fetch_children_fallback(order_id: int) -> list[dict[str, Any]]:
         LEFT JOIN sy_users u ON CAST(c.test_user_id AS CHAR) = CAST(u.id AS CHAR)
         LEFT JOIN experiment_line ln ON c.line_id = ln.id
         WHERE poc.purchase_order_id = %(oid)s AND IFNULL(c.delete_status, 2) <> 1
+        ORDER BY c.id ASC
+        """,
+        {"oid": order_id},
+    )
+    if linked:
+        return linked
+    return fetch_all(
+        """
+        SELECT
+            c.id, c.order_id AS childOrderId, c.order_status AS orderStatus,
+            c.goods_id AS goodsId, c.goods_brand_id AS goodsBrandId,
+            c.experiment_project_id AS projectId,
+            c.goods_name AS goodsName, c.goods_spec AS goodsSpec,
+            c.goods_brand_name AS goodsBrand, c.goods_nums AS goodsCount,
+            c.experiment_project_name AS projectName,
+            c.experiment_class_name AS className,
+            c.experiment_project_name AS deviceName,
+            c.goods_price AS price,
+            c.reference_price AS referencePrice,
+            c.cost_price AS costPrice,
+            c.expect_finishtime AS expectFinishTime,
+            c.finish_time AS estimateFinish,
+            IFNULL(c.expect_finishtime, c.finish_time) AS finishTime,
+            c.time_type AS timeType,
+            c.mark AS confirmMark,
+            c.is_confirm AS isConfirm, c.op_status AS opStatus,
+            c.is_meeting AS isMeeting, c.meeting_num AS meetingNum,
+            c.line_id AS lineId, c.sample_id AS sampleId,
+            c.test_user_id AS testUserId, u.user_name AS testUserName,
+            u.true_name AS testUserTrueName, c.add_time AS addTime,
+            ln.line_num AS platformName
+        FROM experiment_order_child c
+        LEFT JOIN sy_users u ON CAST(c.test_user_id AS CHAR) = CAST(u.id AS CHAR)
+        LEFT JOIN experiment_line ln ON c.line_id = ln.id
+        WHERE c.order_form_id = %(oid)s AND IFNULL(c.delete_status, 2) <> 1
         ORDER BY c.id ASC
         """,
         {"oid": order_id},
@@ -5336,26 +5342,39 @@ def update_order_basic(
                     child_sets.append("cost_price = %(cost)s")
                 except (TypeError, ValueError):
                     pass
-            # 实验子单：可改测试人员 / 实验平台 / 预计完成时间
+            # 实验子单：可改测试人员 / 实验平台 / 预计完成时间（对齐 Java updateExpSubOrder）
             tu = ch.get("testUserId") if "testUserId" in ch else ch.get("test_user_id")
             if tu not in (None,):
                 child_params["tu"] = str(tu).strip()[:64] or None
                 child_sets.append("test_user_id = %(tu)s")
             lid = ch.get("lineId") if "lineId" in ch else ch.get("line_id")
             if lid not in (None,):
-                try:
-                    child_params["lid"] = int(lid) if str(lid).strip().isdigit() else None
+                raw_lid = str(lid).strip()
+                if raw_lid in ("", "null", "undefined"):
+                    child_params["lid"] = None
                     child_sets.append("line_id = %(lid)s")
-                except (TypeError, ValueError):
-                    pass
+                else:
+                    try:
+                        # 兼容 "123" / 123 / "123.0"
+                        child_params["lid"] = int(float(raw_lid))
+                        child_sets.append("line_id = %(lid)s")
+                    except (TypeError, ValueError):
+                        pass
             ft = (
                 ch.get("expectFinishTime")
-                or ch.get("expect_finishtime")
-                or ch.get("finishTime")
-                or ch.get("_finishTime")
+                if "expectFinishTime" in ch
+                else None
             )
+            if ft is None and "expect_finishtime" in ch:
+                ft = ch.get("expect_finishtime")
+            if ft is None:
+                ft = ch.get("finishTime") or ch.get("_finishTime")
             if ft not in (None, ""):
-                child_params["ft"] = str(ft).strip()[:19]
+                # 兼容 ISO：2026-08-14T18:00:00.000Z → 本地展示用的前 19 位
+                ft_s = str(ft).strip().replace("T", " ")
+                if ft_s.endswith("Z"):
+                    ft_s = ft_s[:-1]
+                child_params["ft"] = ft_s[:19]
                 child_sets.append("expect_finishtime = %(ft)s")
             # 主单编辑可选商品/项目字段回写
             for src, col, key in (
@@ -5384,12 +5403,13 @@ def update_order_basic(
                     child_params[key] = str(val)[:200]
                     child_sets.append(f"{col} = %({key})s")
             if child_sets:
-                # 子单产品行挂在主单 order_form_id 上，允许按父单 id 更新
-                execute(
+                # 子单产品行挂在主单 order_form_id 上；同步挂接后按 id 更新
+                affected = execute(
                     f"""
                     UPDATE experiment_order_child
                     SET {', '.join(child_sets)}
                     WHERE id = %(id)s
+                      AND IFNULL(delete_status, 2) <> 1
                       AND (
                         order_form_id = %(oid)s
                         OR order_form_id = %(pid)s
@@ -5402,6 +5422,16 @@ def update_order_basic(
                     """,
                     child_params,
                 )
+                # 个别历史数据 order_form_id / 挂接不一致时，sync 已确认归属则按 id 兜底写入
+                if int(affected or 0) <= 0 and str(ot).strip() in ("9", "10") and cid_i in keep_ids:
+                    execute(
+                        f"""
+                        UPDATE experiment_order_child
+                        SET {', '.join(child_sets)}
+                        WHERE id = %(id)s AND IFNULL(delete_status, 2) <> 1
+                        """,
+                        child_params,
+                    )
         # 主单编辑：软删本次未提交的原产品行（对齐 Java editSaveSaleOrdersExp）
         # 同时查 order_form_id / 采购关联，避免新增行关联方式不一致导致漏删
         if str(ot).strip() in ("6", "8"):
