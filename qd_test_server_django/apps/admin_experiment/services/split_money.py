@@ -8,6 +8,7 @@ v1 覆盖：
 触发：
 - 录入收款 qd_bill(type=2) 且 cost_settle=1 → try_split_on_receive
 - 成本结清 cost_settle_sure → try_split_on_settle
+- type=9 子单审核通过 / 上传付款后 → try_split_type8_parent_from_child（回补父单）
 """
 from __future__ import annotations
 
@@ -574,6 +575,51 @@ def try_split_on_settle(order_id: int) -> bool:
         logger.exception("try_split_on_settle failed order_id=%s", order_id)
         raise
     return False
+
+
+@transaction.atomic
+def try_split_type8_parent_from_child(child_order_id: int) -> bool:
+    """
+    type=9 子单审核通过 / 上传付款后，回补父单 type=8 分钱。
+
+    对齐 Java QdBillServiceImpl：主单收款分钱要求子行已处理且采购单 status>=30；
+    若收款发生在子单审核前会被跳过，因此须在子单状态就绪后再次触发。
+    """
+    child = fetch_one(
+        """
+        SELECT id, order_type AS orderType, parent_id AS parentId
+        FROM experiment_order
+        WHERE id = %(id)s
+        LIMIT 1
+        """,
+        {"id": child_order_id},
+    )
+    if not child or str(child.get("orderType") or "") != "9":
+        return False
+    try:
+        parent_id = int(child.get("parentId") or 0)
+    except (TypeError, ValueError):
+        return False
+    if parent_id <= 0:
+        return False
+    parent = _load_order(parent_id)
+    if not parent or str(parent.get("orderType") or "") != "8":
+        return False
+    try:
+        if int(parent.get("costSettle") or 0) != 1:
+            return False
+    except (TypeError, ValueError):
+        return False
+    try:
+        _split_type8(parent)
+        return True
+    except Exception:
+        logger.exception(
+            "try_split_type8_parent_from_child failed child=%s parent=%s",
+            child_order_id,
+            parent_id,
+        )
+        raise
 
 
 @transaction.atomic

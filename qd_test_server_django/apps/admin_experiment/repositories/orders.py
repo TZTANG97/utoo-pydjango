@@ -3666,6 +3666,16 @@ def audit_order(
         ("审核通过" if pass_ else "审核驳回") + (f"：{remark}" if remark else ""),
         user_id=staff_user_id,
     )
+    if pass_ and ot == "9":
+        # 主单收款可能早于子单审核；审核通过后补触发 type=8 分钱
+        try:
+            from apps.admin_experiment.services.split_money import (
+                try_split_type8_parent_from_child,
+            )
+
+            try_split_type8_parent_from_child(order_id)
+        except Exception:
+            pass
     try:
         from apps.admin_experiment.services.wx_suborder_notify import notify_audit_result
 
@@ -5909,6 +5919,15 @@ def upload_sub_pay_bill(
         {"ps": new_pay, "pt": pay_times, "id": order_id},
     )
     _write_order_log(order_id, f"上传付款信息 {amt}", user_id=staff_user_id)
+    # 对齐 Java：采购单付完后回写父单利润差；若主单尚未首分也在此补分
+    try:
+        from apps.admin_experiment.services.split_money import (
+            try_split_type8_parent_from_child,
+        )
+
+        try_split_type8_parent_from_child(order_id)
+    except Exception:
+        pass
     return True, "上传付款成功"
 
 

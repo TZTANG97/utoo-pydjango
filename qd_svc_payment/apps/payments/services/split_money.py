@@ -8,6 +8,7 @@ v1 覆盖：
 触发：
 - 录入收款 qd_bill(type=2) 且 cost_settle=1 → try_split_on_receive
 - 成本结清 cost_settle_sure → try_split_on_settle
+- type=9 子单审核通过 / 上传付款后 → try_split_type8_parent_from_child（回补父单）
 """
 from __future__ import annotations
 
@@ -577,6 +578,51 @@ def try_split_on_settle(order_id: int) -> bool:
 
 
 @transaction.atomic
+def try_split_type8_parent_from_child(child_order_id: int) -> bool:
+    """
+    type=9 子单审核通过 / 上传付款后，回补父单 type=8 分钱。
+
+    对齐 Java QdBillServiceImpl：主单收款分钱要求子行已处理且采购单 status>=30；
+    若收款发生在子单审核前会被跳过，因此须在子单状态就绪后再次触发。
+    """
+    child = fetch_one(
+        """
+        SELECT id, order_type AS orderType, parent_id AS parentId
+        FROM experiment_order
+        WHERE id = %(id)s
+        LIMIT 1
+        """,
+        {"id": child_order_id},
+    )
+    if not child or str(child.get("orderType") or "") != "9":
+        return False
+    try:
+        parent_id = int(child.get("parentId") or 0)
+    except (TypeError, ValueError):
+        return False
+    if parent_id <= 0:
+        return False
+    parent = _load_order(parent_id)
+    if not parent or str(parent.get("orderType") or "") != "8":
+        return False
+    try:
+        if int(parent.get("costSettle") or 0) != 1:
+            return False
+    except (TypeError, ValueError):
+        return False
+    try:
+        _split_type8(parent)
+        return True
+    except Exception:
+        logger.exception(
+            "try_split_type8_parent_from_child failed child=%s parent=%s",
+            child_order_id,
+            parent_id,
+        )
+        raise
+
+
+@transaction.atomic
 def save_receive_bill(
     *,
     order_id: int,
@@ -584,8 +630,9 @@ def save_receive_bill(
     staff_user_id: str | int = "",
     log_info: str = "录入收款",
     bill_date: str = "",
+    accessory_id: int | str | None = None,
 ) -> tuple[bool, str]:
-    """后台录入收款票据并按需分钱。"""
+    """后台录入收款票据并按需分钱。对齐 Java saveBillAndAccessory(type=2)。"""
     order = _load_order(order_id)
     if not order:
         return False, "订单不存在"
@@ -595,35 +642,179 @@ def save_receive_bill(
     amt = _d(money)
     if amt <= 0:
         return False, "收款金额须大于 0"
+    try:
+        acc_id = int(accessory_id) if accessory_id not in (None, "") else None
+    except (TypeError, ValueError):
+        acc_id = None
+    if acc_id is not None and acc_id <= 0:
+        acc_id = None
     params = {
         "oid": order_id,
         "money": float(amt),
         "log_info": (log_info or "录入收款")[:500],
         "uid": str(staff_user_id or "") or None,
+        "aid": acc_id,
     }
     if bill_date:
-        execute(
-            """
+        sql = """
             INSERT INTO qd_bill
-                (add_time, add_user_id, exp_of_id, money, type, is_split, bill_date, mark)
+                (add_time, add_user_id, exp_of_id, money, type, is_split, bill_date, mark{acc_col})
             VALUES
-                (NOW(), %(uid)s, %(oid)s, %(money)s, 2, 0, %(bdate)s, %(log_info)s)
-            """,
+                (NOW(), %(uid)s, %(oid)s, %(money)s, 2, 0, %(bdate)s, %(log_info)s{acc_val})
+            """
+        execute(
+            sql.format(
+                acc_col=", accessory_id" if acc_id else "",
+                acc_val=", %(aid)s" if acc_id else "",
+            ),
             {**params, "bdate": bill_date},
         )
     else:
-        execute(
-            """
+        sql = """
             INSERT INTO qd_bill
-                (add_time, add_user_id, exp_of_id, money, type, is_split, bill_date, mark)
+                (add_time, add_user_id, exp_of_id, money, type, is_split, bill_date, mark{acc_col})
             VALUES
-                (NOW(), %(uid)s, %(oid)s, %(money)s, 2, 0, NOW(), %(log_info)s)
-            """,
+                (NOW(), %(uid)s, %(oid)s, %(money)s, 2, 0, NOW(), %(log_info)s{acc_val})
+            """
+        execute(
+            sql.format(
+                acc_col=", accessory_id" if acc_id else "",
+                acc_val=", %(aid)s" if acc_id else "",
+            ),
             params,
         )
     try:
         try_split_on_receive(order_id)
     except Exception as exc:
         logger.exception("split after save_receive_bill")
-        return True, f"收款已保存，分钱失败：{exc}"
+        split_msg = f"收款已保存，分钱失败：{exc}"
+    else:
+        split_msg = ""
+    try:
+        from apps.admin_experiment.repositories import orders as order_repo
+
+        order_repo._write_order_log(
+            order_id,
+            f"收款 {float(amt)}" + (f"：{log_info}" if log_info else ""),
+            user_id=staff_user_id,
+        )
+        order_repo.auto_generate_appointment_after_online_pay(
+            order_id=order_id, staff_user_id=staff_user_id
+        )
+        order_repo.try_finish_main_order(order_id=order_id, staff_user_id=staff_user_id)
+    except Exception:
+        logger.exception("post receive hooks failed order_id=%s", order_id)
+    if split_msg:
+        return True, split_msg
     return True, "收款成功"
+
+
+def _payment_pa_num(pay_type: str = "3") -> str:
+    """对齐 Java payInfoLogNumGeranate：ZF/CZ/HK + yyyyMM + 序号。"""
+    from datetime import datetime
+
+    prefix_map = {"1": "CZ", "2": "HK", "3": "ZF", "4": "TX"}
+    prefix = prefix_map.get(str(pay_type), "ZF")
+    orderstr = prefix + datetime.now().strftime("%Y%m")
+    row = fetch_one(
+        """
+        SELECT pa_num FROM pay_info_log
+        WHERE pa_num LIKE %(like)s
+        ORDER BY pa_num DESC
+        LIMIT 1
+        """,
+        {"like": f"{orderstr}%"},
+    )
+    if row and row.get("pa_num"):
+        try:
+            n = int(str(row["pa_num"])[-5:]) + 1
+        except (TypeError, ValueError):
+            n = 1
+    else:
+        n = 1
+    return orderstr + (str(n).zfill(5) if n < 100000 else str(n))
+
+
+@transaction.atomic
+def save_member_balance_receive(
+    *,
+    order_id: int,
+    money: Decimal | float | str,
+    exp_user_id: str | int = "",
+    staff_user_id: str | int = "",
+    bill_date: str = "",
+    accessory_id: int | str | None = None,
+) -> tuple[bool, str]:
+    """
+    对齐 Java bill/amountPay.ajax：线下订单 + 客户账号 → 会员余额收款。
+    扣会员余额、写 pay_info_log(pay_way=6)、再录入收款单。
+    """
+    order = fetch_one(
+        """
+        SELECT
+            id, order_id AS orderId, order_type AS orderType,
+            is_online AS isOnline, custom_user_id AS customUserId
+        FROM experiment_order
+        WHERE id = %(id)s
+        LIMIT 1
+        """,
+        {"id": order_id},
+    )
+    if not order:
+        return False, "订单不存在"
+    ot = str(order.get("orderType") or "")
+    if ot not in ("6", "8", "1", "7"):
+        return False, "当前订单类型不支持录入收款"
+    try:
+        is_online = int(order.get("isOnline") or 0)
+    except (TypeError, ValueError):
+        is_online = 0
+    if is_online != 0:
+        return False, "线上订单不支持会员余额收款"
+    cuid_raw = exp_user_id or order.get("customUserId")
+    try:
+        cuid = int(cuid_raw) if cuid_raw not in (None, "") else 0
+    except (TypeError, ValueError):
+        cuid = 0
+    if not cuid:
+        return False, "订单未绑定客户账号，无法使用会员余额收款"
+    amt = _d(money)
+    if amt <= 0:
+        return False, "收款金额须大于 0"
+
+    from apps.payments.repositories import user_account as ua_repo
+
+    ua_repo.get_or_create(cuid)
+    if ua_repo.deduct_balance(cuid, amt) < 1:
+        return False, "余额不足"
+
+    log_id = execute_insert(
+        """
+        INSERT INTO pay_info_log
+            (addTime, deleteStatus, user_id, money, status, order_id,
+             pay_type, pay_way, pa_num, use_integral, integral_money, payTime)
+        VALUES
+            (NOW(), 0, %(uid)s, %(money)s, 2, %(order_id)s,
+             3, 6, %(pa_num)s, 0, 0, NOW())
+        """,
+        {
+            "uid": cuid,
+            "money": float(amt),
+            "order_id": str(order_id),
+            "pa_num": _payment_pa_num("3"),
+        },
+    )
+    ua_repo.insert_account_log(cuid, -amt, of_id=int(log_id) if log_id else None)
+
+    ok_flag, msg = save_receive_bill(
+        order_id=order_id,
+        money=amt,
+        staff_user_id=staff_user_id,
+        log_info="后端-会员余额收款",
+        bill_date=bill_date,
+        accessory_id=accessory_id,
+    )
+    if not ok_flag:
+        transaction.set_rollback(True)
+        return False, msg or "收款失败"
+    return True, msg if msg and msg != "收款成功" else "支付成功!"
