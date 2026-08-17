@@ -135,8 +135,8 @@
         </el-table-column>
         <el-table-column prop="payStatusLabel" label="付款状态" width="110" align="center">
           <template #default="{ row }">
-            <el-tag :type="payTagType(row.payStatusLabel)" size="small" effect="plain" round>
-              {{ row.payStatusLabel || '-' }}
+            <el-tag :type="payTagType(displayPayStatus(row))" size="small" effect="plain" round>
+              {{ displayPayStatus(row) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -230,6 +230,13 @@ function payTagType(label: unknown): 'success' | 'warning' | 'danger' | 'info' |
   if (/已驳回|拒绝/.test(text)) return 'danger'
   if (/未申请/.test(text)) return 'info'
   return 'primary'
+}
+
+/** 后端空/- 与 Java 一致按未申请展示 */
+function displayPayStatus(row: Record<string, unknown>) {
+  const label = String(row.payStatusLabel || '').trim()
+  if (!label || label === '-' || label === 'null' || label === 'undefined') return '未申请'
+  return label
 }
 
 function rowClassName({ row }: { row: Record<string, unknown> }) {

@@ -732,10 +732,13 @@ def _sub_status_label(v: Any) -> str:
 
 
 def _pay_status_label(v: Any) -> str:
+    # 创建子单时可能未写 pay_status（NULL），与 Java 字典 0=未申请对齐
+    if v is None or v == "":
+        return PAY_STATUS_LABEL[0]
     try:
-        return PAY_STATUS_LABEL.get(int(v), str(v) if v is not None else "-")
+        return PAY_STATUS_LABEL.get(int(v), str(v))
     except (TypeError, ValueError):
-        return str(v or "-")
+        return PAY_STATUS_LABEL[0]
 
 
 def _child_line_status_label(v: Any) -> str:
@@ -5063,7 +5066,7 @@ def update_order_basic(
     except (TypeError, ValueError):
         st = 0
     ot = str(row.get("orderType") or "")
-    # 子单审核通过后只允许改备注/产品行，抬头字段与审核状态保持不变
+    # 子单审核通过后抬头字段只读，但仍回退状态以便再次提交审核
     header_locked = ot in ("9", "10") and st >= 30
     sets = []
     params: dict[str, Any] = {"id": order_id}
@@ -5200,10 +5203,10 @@ def update_order_basic(
         except (TypeError, ValueError):
             pass
     # 对齐 Java：type=6 editSave status==10→5 / 66→67 / >=30→20；
-    # type=9/10 未审核编辑回退到 5；审核通过后不回退，仅保存备注/产品行
+    # type=9/10 非草稿编辑一律回退到 5，便于再次提交审核（抬头字段仍可只读）
     next_st = None
     if ot in ("9", "10"):
-        if st not in (0, 5) and not header_locked:
+        if st not in (0, 5):
             next_st = 5
     elif st == 10:
         next_st = 5
@@ -6116,13 +6119,13 @@ def create_sub_order_from_parent(
             INSERT INTO experiment_order
                 (addTime, deleteStatus, order_id, order_type, order_status, parent_id,
                  totalPrice, sale_manager, sale_user, customer_name, supplier_name,
-                 currency_type, invoiceType, is_confirm, cost_settle, add_user_id)
+                 currency_type, invoiceType, is_confirm, cost_settle, add_user_id, pay_status)
             SELECT
                 NOW(), 0, %(ono)s, %(ot)s, %(st)s, id,
                 %(tp)s,
                 COALESCE(NULLIF(%(sm)s, ''), sale_manager),
                 sale_user, customer_name, supplier_name,
-                %(ct)s, %(inv)s, 0, 0, NULLIF(%(au)s, '')
+                %(ct)s, %(inv)s, 0, 0, NULLIF(%(au)s, ''), 0
             FROM experiment_order WHERE id = %(pid)s
             """,
             {
@@ -6143,13 +6146,13 @@ def create_sub_order_from_parent(
             INSERT INTO experiment_order
                 (addTime, deleteStatus, order_id, order_type, order_status, parent_id,
                  totalPrice, sale_manager, sale_user, customer_name, supplier_name,
-                 currency_type, invoiceType, is_confirm, cost_settle)
+                 currency_type, invoiceType, is_confirm, cost_settle, pay_status)
             SELECT
                 NOW(), 0, %(ono)s, %(ot)s, %(st)s, id,
                 %(tp)s,
                 COALESCE(NULLIF(%(sm)s, ''), sale_manager),
                 sale_user, customer_name, supplier_name,
-                %(ct)s, %(inv)s, 0, 0
+                %(ct)s, %(inv)s, 0, 0, 0
             FROM experiment_order WHERE id = %(pid)s
             """,
             {
@@ -7396,10 +7399,12 @@ _EXPORT_SUB_PAY_STATUS_LABEL = {
 
 
 def _export_sub_pay_status_label(v: Any) -> str:
+    if v is None or v == "":
+        return _EXPORT_SUB_PAY_STATUS_LABEL[0]
     try:
-        return _EXPORT_SUB_PAY_STATUS_LABEL.get(int(v), str(v) if v is not None else "")
+        return _EXPORT_SUB_PAY_STATUS_LABEL.get(int(v), str(v))
     except (TypeError, ValueError):
-        return str(v or "")
+        return _EXPORT_SUB_PAY_STATUS_LABEL[0]
 
 
 def _fmt_export_dt_slash(value: Any, *, date_only: bool = False) -> str:
