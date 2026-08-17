@@ -306,8 +306,9 @@
           </el-col>
         </template>
 
-        <el-col v-if="!isExpSub" :span="12">
-          <el-form-item :label="isSubcontractSub ? '实验分包总价' : '订单总价'" required>
+        <!-- 分包子单总价=勾选行成本合计，不单独录入（对齐创建页仅展示总成本） -->
+        <el-col v-if="!isExpSub && !isSubcontractSub" :span="12">
+          <el-form-item label="订单总价" required>
             <el-input
               v-model="form.totalPrice"
               clearable
@@ -489,7 +490,12 @@
           </el-table-column>
           <el-table-column label="成本单价" width="130">
             <template #default="{ row }">
-              <el-input v-model="row.costPrice" clearable @change="recalcCostTotal" />
+              <el-input
+                v-model="row.costPrice"
+                clearable
+                @input="recalcCostTotal"
+                @change="recalcCostTotal"
+              />
             </template>
           </el-table-column>
         </el-table>
@@ -945,11 +951,19 @@ const totalCostAmount = computed(() => {
     isSubcontractSub.value && selectedSubLines.value.length
       ? selectedSubLines.value
       : lines.value
-  return rows.reduce((s, r) => s + (parseFloat(String(r.costPrice || 0)) || 0), 0).toFixed(2)
+  // 对齐 Java jszjg：成本单价 × 数量
+  return rows
+    .reduce((s, r) => {
+      const price = parseFloat(String(r.costPrice || 0)) || 0
+      const qty = Number(r.goodsNums) || 0
+      return s + price * (qty > 0 ? qty : 0)
+    }, 0)
+    .toFixed(2)
 })
 
 function onSubLineSelectionChange(rows: LineRow[]) {
   selectedSubLines.value = rows
+  if (isSubcontractSub.value) recalcCostTotal()
 }
 
 function lineIdOf(row: LineRow | Record<string, unknown> | undefined): string {
@@ -1118,7 +1132,12 @@ function recalcTotal() {
 }
 
 function recalcCostTotal() {
-  if (totalPriceManual.value && !isSubcontractSub.value) return
+  // 分包子单总价始终等于成本合计，不可手动锁定旧值
+  if (isSubcontractSub.value) {
+    form.totalPrice = totalCostAmount.value
+    return
+  }
+  if (totalPriceManual.value) return
   form.totalPrice = totalCostAmount.value
 }
 
@@ -1732,6 +1751,9 @@ async function load() {
       String(obj.orderType || obj.order_type || '') === '10'
     ) {
       await applyDefaultSubSelection()
+      if (String(obj.orderType || obj.order_type || '') === '9') {
+        recalcCostTotal()
+      }
     }
   } finally {
     loading.value = false
@@ -1797,9 +1819,8 @@ async function onSave() {
       ElMessage.warning('请填写成本单价')
       return
     }
-    if (!totalPriceManual.value) {
-      form.totalPrice = totalCostAmount.value
-    }
+    // 总价=勾选行成本合计（与创建页 payload.totalPrice 一致）
+    form.totalPrice = totalCostAmount.value
   }
   if (isMainOrder.value) {
     if (!lines.value.length) {
@@ -1842,8 +1863,13 @@ async function onSave() {
     ElMessage.warning('请选择供应商')
     return
   }
-  if (!isExpSub.value && !form.totalPrice) {
-    ElMessage.warning(isSubcontractSub.value ? '请填写实验分包总价' : '请填写订单总价')
+  if (isSubcontractSub.value) {
+    if (!form.totalPrice || Number(form.totalPrice) <= 0) {
+      ElMessage.warning('请填写成本单价以计算总成本')
+      return
+    }
+  } else if (!isExpSub.value && !form.totalPrice) {
+    ElMessage.warning('请填写订单总价')
     return
   }
   if (isMainOrder.value && !form.userScaleInfo) {
@@ -1863,6 +1889,16 @@ async function onSave() {
   try {
     const saveLines =
       isExpSub.value || isSubcontractSub.value ? resolveSubSaveLines() : lines.value
+    if (isSubcontractSub.value) {
+      // 与本次实际保存的勾选行对齐，避免 selection/lines 不一致仍写旧总价
+      form.totalPrice = saveLines
+        .reduce((s, r) => {
+          const price = parseFloat(String(r.costPrice || 0)) || 0
+          const qty = Number(r.goodsNums) || 0
+          return s + price * (qty > 0 ? qty : 0)
+        }, 0)
+        .toFixed(2)
+    }
     const totalPriceRaw = String(form.totalPrice || '')
       .replace(/[￥¥$,，\s元]/g, '')
       .trim()

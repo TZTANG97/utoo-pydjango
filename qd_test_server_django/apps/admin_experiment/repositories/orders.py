@@ -5212,9 +5212,19 @@ def update_order_basic(
     elif st >= 30:
         next_st = 20
     if header_locked:
-        # 审核通过子单：抬头（含总价）锁定，仅备注可改
-        sets = [s for s in sets if s.startswith("mark =") or s.startswith("msg =")]
-        parsed_total = None
+        # 审核通过子单：抬头锁定，仅备注可改；
+        # 分包子单(type=9)总价=产品成本合计，产品行可改则总价仍允许回写
+        if str(ot).strip() == "9":
+            sets = [
+                s
+                for s in sets
+                if s.startswith("mark =")
+                or s.startswith("msg =")
+                or s.startswith("`totalPrice` =")
+            ]
+        else:
+            sets = [s for s in sets if s.startswith("mark =") or s.startswith("msg =")]
+            parsed_total = None
     if next_st is not None:
         sets.append("order_status = %(next_st)s")
         params["next_st"] = next_st
@@ -5556,7 +5566,8 @@ def update_order_basic(
                 {"id": did, "oid": order_id},
             )
     # 产品行变更后再次回写总价，避免历史逻辑/触发器把总价冲掉
-    if parsed_total is not None and not header_locked:
+    # 分包子单审核后抬头锁定，但仍需随成本行回写总价
+    if parsed_total is not None and (not header_locked or str(ot).strip() == "9"):
         execute(
             """
             UPDATE experiment_order
