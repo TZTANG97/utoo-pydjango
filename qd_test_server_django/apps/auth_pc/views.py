@@ -16,7 +16,12 @@ from apps.auth_pc.jwt_tokens import create_access_token, create_refresh_token, d
 from apps.auth_pc.services.customer import CustomerUserService
 from apps.auth_pc.services.profile import UserProfileService
 from apps.core.responses import api_fail, api_ok
-from apps.core.svc_proxy import forward_auth, svc_auth_enabled
+from apps.core.svc_proxy import (
+    forward_auth,
+    forward_identity,
+    svc_auth_enabled,
+    svc_identity_enabled,
+)
 from qd_common.password_java import verify_password
 
 logger = logging.getLogger(__name__)
@@ -34,6 +39,9 @@ def _issue_tokens(token_data: dict, user_id: str) -> tuple[str, str]:
 @authentication_classes([])
 @permission_classes([AllowAny])
 def login(request: Request):
+    if svc_identity_enabled():
+        request.META.setdefault("HTTP_X_CHANNEL", "pc")
+        return forward_identity(request, "/api/v1/identity/auth/login")
     if svc_auth_enabled():
         return forward_auth(request, "/api/auth/login")
     data = request.data or {}
@@ -78,6 +86,9 @@ def login(request: Request):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def refresh(request: Request):
+    if svc_identity_enabled():
+        request.META.setdefault("HTTP_X_CHANNEL", "pc")
+        return forward_identity(request, "/api/v1/identity/auth/refresh")
     if svc_auth_enabled():
         return forward_auth(request, "/api/auth/refresh")
     raw = (request.data or {}).get("refresh_token") or ""
@@ -106,6 +117,9 @@ def refresh(request: Request):
 @authentication_classes([ExpJWTAuthentication])
 @permission_classes([AllowAny])
 def me(request: Request):
+    if svc_identity_enabled():
+        request.META.setdefault("HTTP_X_CHANNEL", "pc")
+        return forward_identity(request, "/api/v1/identity/auth/me")
     if svc_auth_enabled():
         return forward_auth(request, "/api/auth/me")
     current = get_current_user_from_request(request)

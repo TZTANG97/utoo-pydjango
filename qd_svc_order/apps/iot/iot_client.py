@@ -31,20 +31,35 @@ def _timeout() -> float:
         return 15.0
 
 
+def _assert_header_ascii(name: str, value: str) -> str:
+    """HTTP 头必须是 ASCII；误把文档占位「<与 IOT 一致>」写进 token 时会在此明确报错。"""
+    v = str(value or "")
+    try:
+        v.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise IotClientError(
+            f"IOT 配置项含中文/非 ASCII（{name}），请检查 .env 是否误填了文档占位符"
+            f"（如「<与 IOT 一致>」），应填写 IOT 侧真实密钥。详情: {exc}"
+        ) from exc
+    return v
+
+
 def _service_auth_headers() -> dict[str, str]:
     token = str(getattr(settings, "IOT_SERVICE_TOKEN", "") or "").strip()
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     if token:
+        token = _assert_header_ascii("IOT_SERVICE_TOKEN", token)
         headers["Authorization"] = f"Bearer {token}"
         headers["X-UTOO-Service-Token"] = token
     return headers
 
 
 def _bearer_headers(access_token: str) -> dict[str, str]:
+    token = _assert_header_ascii("IOT access_token", access_token.strip())
     return {
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "Authorization": f"Bearer {access_token.strip()}",
+        "Authorization": f"Bearer {token}",
     }
 
 
@@ -70,8 +85,11 @@ def _request(
         url = url + ("&" if "?" in url else "?") + urlencode(
             {k: v for k, v in query.items() if v is not None}
         )
-    payload = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+    # ensure_ascii=True：JSON 用 \\uXXXX，避免中间代理/旧客户端对 UTF-8 body 出问题
+    payload = json.dumps(body, ensure_ascii=True).encode("utf-8") if body is not None else None
     hdrs = headers if headers is not None else _service_auth_headers()
+    for hk, hv in list(hdrs.items()):
+        hdrs[hk] = _assert_header_ascii(hk, hv)
     timeout = _timeout()
 
     try:
@@ -95,6 +113,11 @@ def _request(
         pass
     except IotClientError:
         raise
+    except UnicodeEncodeError as exc:
+        logger.exception("IOT httpx header/body encode failed %s %s", method, url)
+        raise IotClientError(
+            f"IOT 请求编码失败（多为 .env 中 IOT_SERVICE_TOKEN 含中文占位符）: {exc}"
+        ) from exc
     except Exception as exc:
         logger.exception("IOT httpx request failed %s %s", method, url)
         raise IotClientError(f"IOT 请求失败: {exc}") from exc

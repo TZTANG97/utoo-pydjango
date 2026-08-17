@@ -11,6 +11,7 @@ from apps.admin_auth.services import menu as menu_service
 from apps.admin_auth.services import welcome as welcome_service
 from apps.admin_core.admin_ajax import admin_ajax_view, ajax_response
 from apps.core.responses import ajax_fail, ajax_ok
+from apps.core.svc_proxy import forward_identity, svc_identity_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,24 @@ def _login_payload(request: Request) -> tuple[str, str]:
 @authentication_classes([])
 @permission_classes([AllowAny])
 def user_login(request: Request):
+    if svc_identity_enabled():
+        request.META.setdefault("HTTP_X_CHANNEL", "admin")
+        upstream = forward_identity(request, "/api/v1/identity/auth/login")
+        if not isinstance(upstream, Response):
+            return upstream
+        body = upstream.data if isinstance(upstream.data, dict) else {}
+        if upstream.status_code >= 500:
+            return Response(ajax_fail(body.get("message") or "身份中台不可用"))
+        if body.get("code") == 0:
+            data = body.get("data") or {}
+            row = staff_repo.find_sy_user_by_login_name(
+                data.get("loginName") or _login_payload(request)[0]
+            )
+            if row:
+                staff_repo.update_login_success(str(row["id"]), _client_ip(request))
+            return Response(ajax_ok(obj=data, res_msg=body.get("message") or "登录成功"))
+        return Response(ajax_fail(body.get("message") or "登录失败"))
+
     login_name, password = _login_payload(request)
     if not login_name or not password:
         return Response(ajax_fail("用户名或密码不能为空"))
@@ -69,6 +88,23 @@ def get_encryption(_request: Request):
 @permission_classes([AllowAny])
 @admin_ajax_view(require_staff=True)
 def main(request: Request, user=None):
+    if svc_identity_enabled():
+        request.META.setdefault("HTTP_X_CHANNEL", "admin")
+        upstream = forward_identity(request, "/api/v1/identity/menus")
+        if isinstance(upstream, Response):
+            body = upstream.data if isinstance(upstream.data, dict) else {}
+            if body.get("code") == 0:
+                data = body.get("data") or {}
+                menus = data.get("menus") if isinstance(data, dict) else []
+                return ajax_response(
+                    True,
+                    res_msg="获取菜单和用户名成功!",
+                    obj={
+                        "menus": menus or [],
+                        "userName": (user or {}).get("true_name") or (user or {}).get("user_name"),
+                    },
+                )
+            return ajax_response(False, res_msg=body.get("message") or "获取菜单失败")
     menus = menu_service.select_menus_top(str(user.get("user_id")))
     return ajax_response(
         True,

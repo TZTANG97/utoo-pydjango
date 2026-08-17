@@ -250,6 +250,23 @@ def forward_auth(request: Request, path: str) -> Response:
     )
 
 
+def svc_identity_url() -> str:
+    return (getattr(settings, "SVC_IDENTITY_URL", "") or "").strip().rstrip("/")
+
+
+def svc_identity_enabled() -> bool:
+    return bool(svc_identity_url())
+
+
+def forward_identity(request: Request, path: str) -> Response | HttpResponse:
+    return forward_request(
+        request,
+        base_url=svc_identity_url(),
+        path=path,
+        service_name="身份中台",
+    )
+
+
 def svc_order_url() -> str:
     return (getattr(settings, "SVC_ORDER_URL", "") or "").strip().rstrip("/")
 
