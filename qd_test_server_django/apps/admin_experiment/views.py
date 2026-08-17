@@ -1683,6 +1683,11 @@ def order_update_basic(request: Request, user=None):
         deleted_child_ids=_parse_id_list(
             data, "deletedChildIds", "deleted_child_ids", "deletedIds", "deleted_ids"
         ),
+        check_child_ids=(
+            _parse_id_list(data, "checkChilds", "check_childs")
+            if any(k in data for k in ("checkChilds", "check_childs"))
+            else None
+        ),
         staff_user_id=_staff_id(user),
     )
     return ok(res_msg=msg) if ok_flag else fail(msg)

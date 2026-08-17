@@ -5048,6 +5048,7 @@ def update_order_basic(
     in_bill_type_id: Any = None,
     children: list[dict[str, Any]] | None = None,
     deleted_child_ids: list[Any] | None = None,
+    check_child_ids: list[Any] | None = None,
     staff_user_id: str | int | None = None,
 ) -> tuple[bool, str]:
     """编辑订单主字段；对齐 Java：编辑后按原状态回退以便再次审核，日志追加不清空。"""
@@ -5278,6 +5279,14 @@ def update_order_basic(
         ot = str(row.get("orderType") or "")
         keep_ids: set[int] = set()
         pending_updates: list[dict[str, Any]] = []
+
+        def _as_child_id(ch: dict[str, Any]) -> int | None:
+            raw = ch.get("id") or ch.get("childId")
+            try:
+                return int(raw)
+            except (TypeError, ValueError):
+                return None
+
         for ch in children:
             if not isinstance(ch, dict):
                 continue
@@ -5304,6 +5313,21 @@ def update_order_basic(
                 continue
             keep_ids.add(cid_i)
             pending_updates.append(ch)
+
+        # 对齐 Java checkChilds：显式勾选列表优先于 children（防止前端回退成全部已挂接行）
+        if check_child_ids is not None:
+            parsed_check: set[int] = set()
+            for x in check_child_ids:
+                try:
+                    parsed_check.add(int(x))
+                except (TypeError, ValueError):
+                    continue
+            keep_ids = parsed_check
+            pending_updates = [
+                ch
+                for ch in pending_updates
+                if _as_child_id(ch) in keep_ids
+            ]
 
         # type9/10：先按勾选同步挂接（对齐 Java checkChilds / updatePurchaseOrder）
         parent_pk = row.get("parentPkId") or row.get("parentId")

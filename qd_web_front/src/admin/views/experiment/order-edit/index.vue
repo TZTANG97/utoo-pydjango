@@ -931,6 +931,31 @@ function onSubLineSelectionChange(rows: LineRow[]) {
   selectedSubLines.value = rows
 }
 
+function lineIdOf(row: LineRow | Record<string, unknown> | undefined): string {
+  if (!row) return ''
+  const id = (row as LineRow).id
+  return id !== '' && id != null ? String(id) : ''
+}
+
+/** 保存时以表格当前勾选为准（对齐 Java checkChilds），禁止回退到全部已挂接行 */
+function selectedSubIdsFromTable(): string[] {
+  const table = subLineTableRef.value as { getSelectionRows?: () => LineRow[] } | undefined
+  const fromTable = (table?.getSelectionRows?.() || []).map((r) => lineIdOf(r)).filter(Boolean)
+  const fromState = selectedSubLines.value.map((r) => lineIdOf(r)).filter(Boolean)
+  if (fromTable.length && fromState.length) {
+    const stateSet = new Set(fromState)
+    const both = fromTable.filter((id) => stateSet.has(id))
+    if (both.length) return [...new Set(both)]
+  }
+  if (fromTable.length) return [...new Set(fromTable)]
+  return [...new Set(fromState)]
+}
+
+function resolveSubSaveLines(): LineRow[] {
+  const selectedIds = new Set(selectedSubIdsFromTable())
+  return lines.value.filter((r) => selectedIds.has(lineIdOf(r)))
+}
+
 function mapChildToLine(ch: Record<string, unknown>): LineRow {
   const spec = String(ch.goodsSpec || '')
   return {
@@ -983,22 +1008,6 @@ async function applyDefaultSubSelection() {
       table.toggleRowSelection(row, true, true)
     }
   }
-}
-
-/** 子单保存取当前表格行（含最新编辑），避免 selection 引用过期导致写回旧值 */
-function resolveSubSaveLines(): LineRow[] {
-  const selectedIds = new Set(
-    selectedSubLines.value
-      .map((r) => (r.id !== '' && r.id != null ? String(r.id) : ''))
-      .filter(Boolean)
-  )
-  if (selectedIds.size) {
-    const fromLines = lines.value.filter((r) => selectedIds.has(String(r.id)))
-    if (fromLines.length) return fromLines
-  }
-  // 审核通过后若勾选被清空，回退到已挂接行
-  const linked = lines.value.filter((r) => r.linkedToThis !== false)
-  return linked.length ? linked : selectedSubLines.value
 }
 
 function goBack() {
@@ -1858,6 +1867,8 @@ async function onSave() {
         lineId: row.lineId,
         expectFinishTime: row.expectFinishTime,
       })),
+      // 对齐 Java checkChilds：子单取消勾选以该列表为准，避免 children 被回退成全部行
+      checkChilds: saveLines.map((row) => lineIdOf(row)).filter(Boolean),
       deletedChildIds: [...removedLineIds.value],
     }
     if (isMainOrder.value) {
