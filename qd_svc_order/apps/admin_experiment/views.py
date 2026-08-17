@@ -1667,6 +1667,9 @@ def order_update_basic(request: Request, user=None):
             for k in ("warehouseUser", "warehouse_user", "stockUser", "stock_user")
         )
         else None,
+        test_manager=_explicit_id_or_clear(
+            data, ("testManagerId", "test_manager", "testManager")
+        ),
         stock_company_id=(
             data.get("stockCompanyId")
             or data.get("stock_company_id")

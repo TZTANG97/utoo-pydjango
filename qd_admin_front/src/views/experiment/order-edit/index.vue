@@ -106,6 +106,25 @@
             </el-select>
           </el-form-item>
         </el-col>
+        <el-col v-if="isSubcontractSub" :span="12">
+          <el-form-item label="实验室测试主管" required>
+            <el-select
+              v-model="form.testManagerId"
+              filterable
+              clearable
+              placeholder="请选择"
+              style="width: 100%"
+              :disabled="headerLocked"
+            >
+              <el-option
+                v-for="o in testManagerOpts"
+                :key="String(o.value)"
+                :label="o.label"
+                :value="o.value"
+              />
+            </el-select>
+          </el-form-item>
+        </el-col>
         <el-col v-if="!isSubcontractSub" :span="12">
           <el-form-item label="销售人员" required>
             <el-select
@@ -854,6 +873,7 @@ const form = reactive({
   outBillTypeId: '',
   inBillTypeId: '',
   saleManagerId: '',
+  testManagerId: '',
   saleUserId: '',
   supplierId: '',
   stockCompanyId: '',
@@ -881,6 +901,7 @@ const customerOpts = ref<Opt[]>([])
 const accountOpts = ref<Opt[]>([])
 const classOpts = ref<Opt[]>([])
 const managerOpts = ref<Opt[]>([])
+const testManagerOpts = ref<Opt[]>([])
 const saleUserOpts = ref<Opt[]>([])
 const payWayOpts = ref<Opt[]>([])
 const outBillOpts = ref<Opt[]>([])
@@ -1492,6 +1513,12 @@ async function loadOptions() {
     /* ignore */
   }
   try {
+    const testMgr = await fetchUserList({ start: 0, length: 500, type: 3, draw: 1 }, silent)
+    testManagerOpts.value = mapUserRows(Array.isArray(testMgr.data) ? testMgr.data : [])
+  } catch {
+    /* ignore */
+  }
+  try {
     const sale = await fetchUserList({ start: 0, length: 500, type: -1, draw: 1 }, silent)
     const rows = Array.isArray(sale.data) ? sale.data : []
     saleUserOpts.value = mapUserRows(rows)
@@ -1601,6 +1628,7 @@ async function load() {
     form.outBillTypeId = asOptValue(obj.outBillTypeId)
     form.inBillTypeId = asOptValue(obj.inBillTypeId)
     form.saleManagerId = asOptValue(obj.saleManagerId)
+    form.testManagerId = asOptValue(obj.testManagerId)
     form.saleUserId = asOptValue(obj.saleUserId)
     form.supplierId = asOptValue(obj.supplierId)
     form.stockCompanyId = asOptValue(
@@ -1629,6 +1657,11 @@ async function load() {
     ensureOpt(customerOpts, form.customerId, displayLabel(obj.customerName || obj.companyName))
     ensureOpt(classOpts, form.classId, displayLabel(obj.testClassName || obj.className))
     ensureOpt(managerOpts, form.saleManagerId, displayLabel(obj.saleManager || obj.saleManagerTrueName || obj.saleManagerName))
+    ensureOpt(
+      testManagerOpts,
+      form.testManagerId,
+      displayLabel(obj.testManager || obj.testManagerTrueName || obj.testManagerName)
+    )
     ensureOpt(saleUserOpts, form.saleUserId, displayLabel(obj.saleUser || obj.saleUserTrueName || obj.saleUserName))
     ensureOpt(
       saleUserOpts,
@@ -1715,6 +1748,10 @@ async function onSave() {
     }
     if (!form.saleManagerId) {
       ElMessage.warning(isExpSub.value ? '请选择实验室主管' : '请选择销售主管')
+      return
+    }
+    if (isSubcontractSub.value && !form.testManagerId) {
+      ElMessage.warning('请选择实验室测试主管')
       return
     }
     if (!isSubcontractSub.value && !form.saleUserId) {
@@ -1844,6 +1881,9 @@ async function onSave() {
       saleUserId: form.saleUserId,
       sale_user: form.saleUserId,
       sale_manager: form.saleManagerId,
+      testManagerId: form.testManagerId,
+      testManager: form.testManagerId,
+      test_manager: form.testManagerId,
       // 清空时显式传空串，避免后端把 null 当成「不改字段」
       customerId: form.customerId || '',
       customUserId: form.customUserId || '',

@@ -5044,6 +5044,7 @@ def update_order_basic(
     user_scale_info: Any = None,
     salecb_user_scale_info: Any = None,
     warehouse_user: Any = None,
+    test_manager: Any = None,
     stock_company_id: Any = None,
     in_bill_type_id: Any = None,
     children: list[dict[str, Any]] | None = None,
@@ -5182,6 +5183,10 @@ def update_order_basic(
     if warehouse_user not in (None, ""):
         params["warehouse_user"] = str(warehouse_user).strip()[:64]
         sets.append("warehouse_user = %(warehouse_user)s")
+    # type=9 分包子单：实验室测试主管（审核权限落在 test_manager）
+    if test_manager not in (None, ""):
+        params["test_manager"] = str(test_manager).strip()[:64]
+        sets.append("test_manager = %(test_manager)s")
     if stock_company_id not in (None, ""):
         try:
             params["stock_company_id"] = int(stock_company_id)
