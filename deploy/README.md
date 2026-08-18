@@ -96,6 +96,7 @@ sudo REPO=/opt/utoo-blue bash /opt/utoo-blue/deploy/identity-first-install.sh.ex
 4. 探活：`curl -fsS http://127.0.0.1:18081/health` 与 `curl -fsS http://127.0.0.1:19081/health`
 5. 两槽网关 `.env` 加上 `SVC_IDENTITY_URL=http://127.0.0.1:19081`，再点 `deploy_gateway_dev`（或重启当前网关）。
 6. 测管理端 / PC / 小程序密码登录。短信与微信一键仍走网关。
+7. 青岛大平台：先确认公网 `POST https://uat.utoodev.laide.tech/api/v1/identity/auth/login`（`X-Channel: mall_qd`，空账号）命中中台（body `code=400`，不是 404），再把青岛 gateway `IDENTITY_MID_SERVICE_URL` 设为同一 VIP 并重启。`JWT_SECRET` 必须等于中台 `MALL_JWT_SECRET`。组织写（部门/角色/用户/菜单）和改密也走该 VIP。
 
 回滚登录：清空 `SVC_IDENTITY_URL` 并重启当前网关。中台切槽：`sudo /usr/local/sbin/utoo-switch-service.sh identity 18081`。
 

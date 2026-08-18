@@ -261,7 +261,7 @@ python -m pytest tests/ -q
 ## 与前端联调
 
 1. 启动本服务 `:18083`
-2. 启动 `qd_test_front_v3`（`VITE_API_TARGET=http://127.0.0.1:18083`）
+2. 启动 `qd_web_front`（`VITE_API_TARGET=http://127.0.0.1:18083`）
 3. 浏览器打开 http://127.0.0.1:9530
 
 测试账号以 UAT/业务库为准（勿把密码写进 README）。
@@ -272,8 +272,6 @@ python -m pytest tests/ -q
 
 | 文档 | 路径 |
 |------|------|
-| 开发启动 | `E:\utoo\docs\开发启动.md` |
-| 进度总览 | `E:\utoo\docs\进度总览.md` |
+| 现网架构 | `E:\utoo\docs\现网架构说明.md` |
 | API 对照 | `E:\utoo\docs\API对照表.md` |
-| 微服务约定 | `E:\utoo\docs\微服务拆分与仓库约定.md` |
 | 代码组织 | `E:\utoo\docs\代码组织约定.md` |

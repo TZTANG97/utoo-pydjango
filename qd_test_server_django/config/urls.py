@@ -393,11 +393,24 @@ def _lab_sale_perf_local_patterns():
     ]
 
 
+def _identity_mid_patterns():
+    """青岛 IDENTITY_MID_SERVICE_URL 与订单共用公网 VIP；仅白名单路径转发中台。"""
+    from apps.core.identity_forward import proxy_identity_request
+
+    return [
+        re_path(
+            r"^api/v1/identity/(?P<subpath>.+)$",
+            proxy_identity_request,
+        ),
+    ]
+
+
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("", core_views.root),
     path("health", core_views.health),
     path("health/", core_views.health),
+    *_identity_mid_patterns(),
     path("api/", include("apps.core.urls")),
     path("api/auth/", include("apps.auth_pc.urls")),
     # 仅精确挂登录，避免 path(api/admin/) 吞掉运营广告等 Platform 路由

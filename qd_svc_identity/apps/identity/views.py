@@ -122,10 +122,14 @@ def auth_me(request: Request):
     return Response(api_ok(me_user))
 
 
-@api_view(["GET"])
+@api_view(["GET", "POST"])
 @authentication_classes([IdentityJWTAuthentication])
 @permission_classes([AllowAny])
 def menus(request: Request):
+    if request.method == "POST":
+        from apps.identity.views_org import MenuCreateView
+
+        return MenuCreateView.as_view()(request._request)
     try:
         ctx = channel_from_request(request)
     except ChannelError as exc:
