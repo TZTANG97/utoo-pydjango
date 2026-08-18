@@ -3163,7 +3163,7 @@ def list_order_bills(order_id: int) -> list[dict[str, Any]]:
         FROM qd_bill b
         LEFT JOIN sy_users u ON CAST(b.add_user_id AS CHAR) = CAST(u.id AS CHAR)
         WHERE b.exp_of_id = %(oid)s
-        ORDER BY IFNULL(b.bill_date, b.add_time) ASC, b.id ASC
+        ORDER BY b.add_time ASC, b.id ASC
         """,
         {"oid": order_id},
     )
@@ -3217,7 +3217,7 @@ def list_online_receive_bills(order_id: int) -> list[dict[str, Any]]:
                 b.mark AS mark, b.qd_bill_id AS qdBillId
             FROM exp_online_qd_bill b
             WHERE b.exp_of_id = %(oid)s AND b.type = 2
-            ORDER BY IFNULL(b.bill_date, b.add_time) ASC, b.id ASC
+            ORDER BY b.add_time ASC, b.id ASC
             """,
             {"oid": order_id},
         )
@@ -3242,7 +3242,10 @@ def list_online_receive_bills(order_id: int) -> list[dict[str, Any]]:
 
 
 def attach_expect_pay_actuals(row: dict[str, Any], bills: list[dict[str, Any]]) -> None:
-    """把预计收款槽位与实际收款/开票按序号对齐，便于详情分行展示时间。"""
+    """把预计收款槽位与实际收款/开票按录入顺序对齐（对齐 Java ORDER BY add_time）。
+
+    不可按 bill_date 排序：补录日期可能早于首笔开票日，会把后收的款顶到前面。
+    """
     expect = list(row.get("expectPayList") or [])
     recv = [b for b in bills if int(b.get("type") or 0) == 2]
     inv = [b for b in bills if int(b.get("type") or 0) == 1]
