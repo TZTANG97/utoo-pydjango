@@ -2,7 +2,7 @@
 # Runner tag：utoo-windows（须为本项目单独注册，否则会 stuck）
 #
 # 每个环境：
-# - stage deploy：6 个独立手动发布（order / payment / admin_asset / admin_platform / gateway / frontend）
+# - stage deploy：7 个独立手动发布（order / identity / payment / admin_asset / admin_platform / gateway / frontend）
 # - stage deploy_all：1 个一键全发（写在单发后面，单独一列；needs:[] 不挡单发）
 #
 # Runner 必须 shell=powershell（LocalSystem + bash = mkdir not found，发版必挂）。
@@ -39,7 +39,7 @@ variables:
 .utoo_run_all: &utoo_run_all
   - cmd.exe /c "$CI_PROJECT_DIR\\deploy\\utoo-windows\\ci-entry-all.cmd"
 
-# --- dev：先 6 个单发，再一键全发 ---
+# --- dev：先 7 个单发，再一键全发 ---
 
 deploy_order_dev:
   extends: .utoo_windows_runner
@@ -52,6 +52,21 @@ deploy_order_dev:
     UTOO_DEPLOY_TARGET: dev
     UTOO_DEPLOY_PHASE: service
     UTOO_DEPLOY_SERVICE: order
+  when: manual
+  allow_failure: false
+  script: *utoo_run_deploy
+
+deploy_identity_dev:
+  extends: .utoo_windows_runner
+  stage: deploy
+  only:
+    - dev
+  except:
+    - merge_requests
+  variables:
+    UTOO_DEPLOY_TARGET: dev
+    UTOO_DEPLOY_PHASE: service
+    UTOO_DEPLOY_SERVICE: identity
   when: manual
   allow_failure: false
   script: *utoo_run_deploy
@@ -147,7 +162,7 @@ deploy_all_dev:
   timeout: 2h
   script: *utoo_run_all
 
-# --- prod：先 6 个单发，再一键全发 ---
+# --- prod：先 7 个单发，再一键全发 ---
 
 deploy_order_prod:
   extends: .utoo_windows_runner
@@ -160,6 +175,21 @@ deploy_order_prod:
     UTOO_DEPLOY_TARGET: prod
     UTOO_DEPLOY_PHASE: service
     UTOO_DEPLOY_SERVICE: order
+  when: manual
+  allow_failure: false
+  script: *utoo_run_deploy
+
+deploy_identity_prod:
+  extends: .utoo_windows_runner
+  stage: deploy
+  only:
+    - prod
+  except:
+    - merge_requests
+  variables:
+    UTOO_DEPLOY_TARGET: prod
+    UTOO_DEPLOY_PHASE: service
+    UTOO_DEPLOY_SERVICE: identity
   when: manual
   allow_failure: false
   script: *utoo_run_deploy

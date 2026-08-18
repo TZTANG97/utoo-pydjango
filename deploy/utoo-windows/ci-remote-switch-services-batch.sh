@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Write all four service upstream confs then nginx -t && reload once.
-# Placeholders: __NGINX_CONF_DIR__ __ORDER_PORT__ __PAYMENT_PORT__ __ASSET_PORT__ __PLATFORM_PORT__
+# Write all service upstream confs then nginx -t && reload once.
+# Placeholders: __NGINX_CONF_DIR__ __ORDER_PORT__ __IDENTITY_PORT__ __PAYMENT_PORT__ __ASSET_PORT__ __PLATFORM_PORT__
 set -euo pipefail
 
 NGINX_CONF_DIR="__NGINX_CONF_DIR__"
 ORDER_PORT="__ORDER_PORT__"
+IDENTITY_PORT="__IDENTITY_PORT__"
 PAYMENT_PORT="__PAYMENT_PORT__"
 ASSET_PORT="__ASSET_PORT__"
 PLATFORM_PORT="__PLATFORM_PORT__"
@@ -23,11 +24,12 @@ fi
 
 mkdir -p "$NGINX_CONF_DIR"
 printf 'server 127.0.0.1:%s;\n' "$ORDER_PORT" >"${NGINX_CONF_DIR}/utoo_upstream_order.conf"
+printf 'server 127.0.0.1:%s;\n' "$IDENTITY_PORT" >"${NGINX_CONF_DIR}/utoo_upstream_identity.conf"
 printf 'server 127.0.0.1:%s;\n' "$PAYMENT_PORT" >"${NGINX_CONF_DIR}/utoo_upstream_payment.conf"
 printf 'server 127.0.0.1:%s;\n' "$ASSET_PORT" >"${NGINX_CONF_DIR}/utoo_upstream_admin_asset.conf"
 printf 'server 127.0.0.1:%s;\n' "$PLATFORM_PORT" >"${NGINX_CONF_DIR}/utoo_upstream_admin_platform.conf"
 
-echo "utoo batch switch: order=${ORDER_PORT} payment=${PAYMENT_PORT} admin_asset=${ASSET_PORT} admin_platform=${PLATFORM_PORT}"
+echo "utoo batch switch: order=${ORDER_PORT} identity=${IDENTITY_PORT} payment=${PAYMENT_PORT} admin_asset=${ASSET_PORT} admin_platform=${PLATFORM_PORT}"
 
 "$NGINX_BIN" -t
 if "$NGINX_BIN" -s reload 2>/dev/null; then

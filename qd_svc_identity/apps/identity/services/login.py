@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import jwt
 from django.conf import settings
+from django.utils import timezone as dj_tz
 
 from apps.identity.channel import ChannelContext
 from apps.identity.jwt_tokens import create_access_token, create_refresh_token
@@ -112,14 +113,41 @@ def build_menu_tree(user_id: str, ctx: ChannelContext) -> list[dict[str, Any]]:
     return tree
 
 
+def _resolve_user_type(row: dict[str, Any]) -> int:
+    """对齐 Java VueController：0 admin, 3 内部公司。"""
+    if row.get("account_type") == 1:
+        return 3
+    return 0
+
+
+def _lock_message(row: dict[str, Any]) -> str | None:
+    max_fail = int(getattr(settings, "LOGIN_MAX_FAILURES", 5))
+    lock_min = int(getattr(settings, "LOGIN_LOCK_MINUTES", 30))
+    error_count = int(row.get("error_count") or 0)
+    if error_count < max_fail:
+        return None
+    error_time = row.get("error_time")
+    if not error_time:
+        return f"密码错误次数过多，账号已锁定，请 {lock_min} 分钟后再试"
+    if isinstance(error_time, datetime) and dj_tz.is_naive(error_time):
+        error_time = dj_tz.make_aware(error_time, dj_tz.get_current_timezone())
+    if dj_tz.now() - error_time < timedelta(minutes=lock_min):
+        return f"密码错误次数过多，账号已锁定，请 {lock_min} 分钟后再试"
+    return None
+
+
 def _issue_mall_token(user_row: dict[str, Any], ctx: ChannelContext, permissions: dict) -> str:
     user_id = str(user_row["id"])
-    scope = scope_repo.build_data_scope(user_id, user_row.get("type") or user_row.get("account_type"), ctx.platform or "1")
-    now = datetime.utcnow()
+    scope = scope_repo.build_data_scope(
+        user_id, user_row.get("type") or user_row.get("account_type"), ctx.platform or "1"
+    )
+    now = datetime.now(timezone.utc)
     ttl = int(getattr(settings, "MALL_JWT_TTL_SECONDS", settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60))
     payload = {
         "sub": user_id,
+        "user_id": user_id,
         "user_name": user_row.get("user_name") or "",
+        "true_name": user_row.get("true_name") or "",
         "dept_id": user_row.get("dept_id"),
         "type": user_row.get("type") or user_row.get("account_type"),
         "scope": scope,
@@ -128,8 +156,8 @@ def _issue_mall_token(user_row: dict[str, Any], ctx: ChannelContext, permissions
         "channel": ctx.channel,
         "platform": ctx.platform,
         "account_kind": "sy_user",
-        "iat": now,
-        "exp": now + timedelta(seconds=ttl),
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(seconds=ttl)).timestamp()),
         "iss": settings.MALL_JWT_ISSUER,
     }
     secret = settings.MALL_JWT_SECRET
@@ -138,7 +166,7 @@ def _issue_mall_token(user_row: dict[str, Any], ctx: ChannelContext, permissions
 
 
 def authenticate_staff(
-    login_name: str, password: str, ctx: ChannelContext
+    login_name: str, password: str, ctx: ChannelContext, *, client_ip: str = ""
 ) -> tuple[dict[str, Any] | None, str]:
     if ctx.account_kind != "sy_user" or not ctx.platform:
         return None, "当前渠道不是员工登录"
@@ -147,10 +175,16 @@ def authenticate_staff(
         return None, "登录失败,请确认是否有此平台登录权限!"
     if int(row.get("user_status") or 0) == 0:
         return None, "用户被限制登录，请联系管理员"
+    locked = _lock_message(row)
+    if locked:
+        return None, locked
     if not _validate_staff_password(password, row.get("user_password") or ""):
+        next_count = int(row.get("error_count") or 0) + 1
+        staff_repo.record_login_failure(str(row["id"]), next_count)
         return None, "用户名或密码错误，请重新登录"
 
     user_id = str(row["id"])
+    staff_repo.update_login_success(user_id, client_ip)
     permissions = scope_repo.build_permissions(user_id, ctx.platform)
     scope = scope_repo.build_data_scope(
         user_id, str(row.get("type") or row.get("account_type") or ""), ctx.platform
@@ -186,6 +220,7 @@ def authenticate_staff(
         "true_name": row.get("true_name") or "",
         "user_type": "0",
         "dept_id": str(row.get("dept_id") or ""),
+        "dept_name": staff_repo.find_dept_name(row.get("dept_id")),
         "account_kind": "sy_user",
         "channel": ctx.channel,
         "platform": ctx.platform,
@@ -200,17 +235,20 @@ def authenticate_staff(
             "platform": ctx.platform,
         }
     )
-    return {
+    payload = {
         "token": access,
         "refreshToken": refresh,
         "userName": row.get("true_name") or row.get("user_name") or "",
         "loginName": row.get("user_name") or "",
-        "userType": 0,
+        "userType": _resolve_user_type(row),
         "channel": ctx.channel,
         "platform": ctx.platform,
         "accountKind": "sy_user",
         "roleIds": permissions["role_ids"],
-    }, ""
+    }
+    if row.get("type"):
+        payload["uRoleName"] = str(row.get("type"))
+    return payload, ""
 
 
 def authenticate_customer(
@@ -236,11 +274,12 @@ def authenticate_customer(
     return payload, ""
 
 
-def login(login_name: str, password: str, ctx: ChannelContext) -> tuple[dict[str, Any] | None, str]:
+def login(
+    login_name: str, password: str, ctx: ChannelContext, *, client_ip: str = ""
+) -> tuple[dict[str, Any] | None, str]:
     if ctx.account_kind == "exp_user":
         return authenticate_customer(login_name, password, ctx)
-    return authenticate_staff(login_name, password, ctx)
-
+    return authenticate_staff(login_name, password, ctx, client_ip=client_ip)
 
 def refresh_customer(refresh_token: str) -> tuple[dict[str, Any] | None, str]:
     from apps.identity.jwt_tokens import decode_token

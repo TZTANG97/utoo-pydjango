@@ -29,6 +29,11 @@ def _login_name(data: dict) -> str:
     ).strip()
 
 
+def _client_ip(request: Request) -> str:
+    forwarded = (request.META.get("HTTP_X_FORWARDED_FOR") or "").split(",")[0].strip()
+    return forwarded or request.META.get("REMOTE_ADDR") or ""
+
+
 @api_view(["POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
@@ -48,7 +53,7 @@ def auth_login(request: Request):
         return Response(api_fail(400, "当前仅支持客户登录 loginType=1"))
 
     try:
-        payload, err = login_svc.login(name, password, ctx)
+        payload, err = login_svc.login(name, password, ctx, client_ip=_client_ip(request))
     except DatabaseError:
         return Response(api_fail(503, "数据库不可用，请检查 DB 配置与连接"))
     if err:

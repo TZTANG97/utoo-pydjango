@@ -1,5 +1,5 @@
 ﻿# GitLab CI: one-click full deploy (optimized). ASCII-only for WinPS 5.1.
-# Backend: one libs_services (4 services synced + parallel remote pip/restart) -> gateway
+# Backend: one libs_services (5 services synced + parallel remote pip/restart) -> gateway
 # Frontend: build + static sync via ci-run-frontend.ps1 (reliable under LocalSystem runner)
 $ErrorActionPreference = 'Stop'
 try {

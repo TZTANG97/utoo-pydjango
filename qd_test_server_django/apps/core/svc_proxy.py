@@ -267,6 +267,23 @@ def forward_identity(request: Request, path: str) -> Response | HttpResponse:
     )
 
 
+def identity_password_login(login_name: str, password: str, *, channel: str) -> dict:
+    """网关适配层：用账号密码直调中台（小程序 query 登录等无法原样转发 body 时）。"""
+    import httpx
+
+    url = f"{svc_identity_url()}/api/v1/identity/auth/login"
+    upstream = httpx.post(
+        url,
+        json={"loginName": login_name, "password": password},
+        headers={"X-Channel": channel, "Content-Type": "application/json"},
+        timeout=15,
+    )
+    try:
+        return {"http_status": upstream.status_code, "body": upstream.json()}
+    except ValueError:
+        return {"http_status": upstream.status_code, "body": {"code": 502, "message": "身份中台返回非 JSON"}}
+
+
 def svc_order_url() -> str:
     return (getattr(settings, "SVC_ORDER_URL", "") or "").strip().rstrip("/")
 

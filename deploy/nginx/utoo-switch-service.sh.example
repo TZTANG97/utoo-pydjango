@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Utoo 单服务红绿切流。用法：
 #   sudo utoo-switch-service.sh order 18182
-# 服务：order | payment | admin_asset | admin_platform
+# 服务：order | identity | payment | admin_asset | admin_platform
 
 set -euo pipefail
 
@@ -12,11 +12,12 @@ NGINX_BIN="${UTOO_NGINX_BIN:-}"
 
 case "$SERVICE" in
   order) expected_ports='18082|18182'; conf_name='utoo_upstream_order.conf' ;;
+  identity) expected_ports='18081|18181'; conf_name='utoo_upstream_identity.conf' ;;
   payment) expected_ports='18084|18184'; conf_name='utoo_upstream_payment.conf' ;;
   admin_asset) expected_ports='18090|18190'; conf_name='utoo_upstream_admin_asset.conf' ;;
   admin_platform) expected_ports='18091|18191'; conf_name='utoo_upstream_admin_platform.conf' ;;
   *)
-    echo "usage: $0 <order|payment|admin_asset|admin_platform> <port>" >&2
+    echo "usage: $0 <order|identity|payment|admin_asset|admin_platform> <port>" >&2
     exit 1
     ;;
 esac

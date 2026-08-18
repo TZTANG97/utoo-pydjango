@@ -58,12 +58,19 @@ class CustomerUserService:
     def build_login_payload(
         user: ExpUser, token: str, refresh_token: str, *, avatar: str | None = None
     ) -> dict:
+        photo = avatar or CustomerUserService.default_avatar()
         return {
             "token": token,
             "refresh_token": refresh_token,
             "nickName": CustomerUserService.display_name(user),
             "phone": user.mobile or "",
-            "avatar": avatar or CustomerUserService.default_avatar(),
+            "avatar": photo,
+            "photo": photo,
+            "userId": user.id,
+            "userType": user.userType or 1,
+            "mobile": user.mobile or "",
+            "wx_nickname": user.wx_nickname or user.userName or "",
+            "uType": 0,
             "accountKind": "exp_user",
         }
 

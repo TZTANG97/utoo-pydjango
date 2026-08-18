@@ -126,13 +126,13 @@ if ($validPhases -notcontains $DeployPhase) {
 $DeployService = (Get-CiEnv 'UTOO_DEPLOY_SERVICE')
 if ([string]::IsNullOrWhiteSpace($DeployService)) { $DeployService = 'all' }
 $DeployService = $DeployService.Trim().ToLowerInvariant()
-$validServices = @('order', 'payment', 'admin_asset', 'admin_platform', 'gateway', 'frontend', 'all')
+$validServices = @('order', 'identity', 'payment', 'admin_asset', 'admin_platform', 'gateway', 'frontend', 'all')
 if ($validServices -notcontains $DeployService) {
 	Write-Error ("Invalid UTOO_DEPLOY_SERVICE={0}. Use: {1}" -f $DeployService, ($validServices -join ', '))
 	exit 1
 }
-if ($DeployPhase -eq 'service' -and $DeployService -notin @('order', 'payment', 'admin_asset', 'admin_platform', 'gateway')) {
-	Write-Error 'UTOO_DEPLOY_PHASE=service requires UTOO_DEPLOY_SERVICE=order|payment|admin_asset|admin_platform|gateway'
+if ($DeployPhase -eq 'service' -and $DeployService -notin @('order', 'identity', 'payment', 'admin_asset', 'admin_platform', 'gateway')) {
+	Write-Error 'UTOO_DEPLOY_PHASE=service requires UTOO_DEPLOY_SERVICE=order|identity|payment|admin_asset|admin_platform|gateway'
 	exit 1
 }
 if ($DeployPhase -eq 'static' -and $DeployService -notin @('frontend', 'all')) {
@@ -452,6 +452,7 @@ try {
 			$GwPort = 18183
 			$UpstreamUnits = @(
 				@{ Dir = 'qd_svc_order'; Service = 'qd-order-green'; Port = 18182 },
+				@{ Dir = 'qd_svc_identity'; Service = 'qd-identity-green'; Port = 18181 },
 				@{ Dir = 'qd_svc_payment'; Service = 'qd-payment-green'; Port = 18184 },
 				@{ Dir = 'qd_svc_admin_asset'; Service = 'qd-admin-asset-green'; Port = 18190 },
 				@{ Dir = 'qd_svc_admin_platform'; Service = 'qd-admin-platform-green'; Port = 18191 }
@@ -463,6 +464,7 @@ try {
 			$GwPort = 18083
 			$UpstreamUnits = @(
 				@{ Dir = 'qd_svc_order'; Service = 'qd-order-blue'; Port = 18082 },
+				@{ Dir = 'qd_svc_identity'; Service = 'qd-identity-blue'; Port = 18081 },
 				@{ Dir = 'qd_svc_payment'; Service = 'qd-payment-blue'; Port = 18084 },
 				@{ Dir = 'qd_svc_admin_asset'; Service = 'qd-admin-asset-blue'; Port = 18090 },
 				@{ Dir = 'qd_svc_admin_platform'; Service = 'qd-admin-platform-blue'; Port = 18091 }
@@ -479,6 +481,10 @@ try {
 			'order' = @{
 				Dir = 'qd_svc_order'; UnitBase = 'qd-order'; BluePort = 18082; GreenPort = 18182
 				UpstreamFile = 'utoo_upstream_order.conf'
+			}
+			'identity' = @{
+				Dir = 'qd_svc_identity'; UnitBase = 'qd-identity'; BluePort = 18081; GreenPort = 18181
+				UpstreamFile = 'utoo_upstream_identity.conf'
 			}
 			'payment' = @{
 				Dir = 'qd_svc_payment'; UnitBase = 'qd-payment'; BluePort = 18084; GreenPort = 18184
@@ -642,6 +648,7 @@ try {
 		Invoke-RemoteBashScript -LocalScriptPath (Join-Path $PSScriptRoot 'ci-remote-switch-services-batch.sh') -Replacements @{
 			'__NGINX_CONF_DIR__' = $ServiceUpstreamConfDir
 			'__ORDER_PORT__' = $portByDir['qd_svc_order']
+			'__IDENTITY_PORT__' = $portByDir['qd_svc_identity']
 			'__PAYMENT_PORT__' = $portByDir['qd_svc_payment']
 			'__ASSET_PORT__' = $portByDir['qd_svc_admin_asset']
 			'__PLATFORM_PORT__' = $portByDir['qd_svc_admin_platform']

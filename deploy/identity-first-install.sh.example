@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# UTOO 身份中台首次上线（在目标 Linux 上执行一次，再点 GitLab deploy_identity_*）。
+# 用法：
+#   REPO=/opt/utoo-blue   # 或本机 scp 过来的仓库路径
+#   sudo -E bash deploy/identity-first-install.sh.example
+set -euo pipefail
+
+REPO="${REPO:-}"
+if [[ -z "$REPO" ]]; then
+  echo "set REPO to the utoo-pydjango tree that contains deploy/" >&2
+  exit 1
+fi
+
+NGINX_CONF="${NGINX_CONF:-/usr/local/nginx/conf}"
+NGINX_BIN="${UTOO_NGINX_BIN:-}"
+if [[ -z "$NGINX_BIN" ]]; then
+  if [[ -x /usr/local/nginx/sbin/nginx ]]; then
+    NGINX_BIN=/usr/local/nginx/sbin/nginx
+  elif command -v nginx >/dev/null 2>&1; then
+    NGINX_BIN=$(command -v nginx)
+  else
+    echo "nginx binary not found; set UTOO_NGINX_BIN" >&2
+    exit 1
+  fi
+fi
+
+echo "[identity] stop deprecated auth on :18081 if present"
+systemctl disable --now qd-auth qd-auth-blue qd-auth-green 2>/dev/null || true
+
+echo "[identity] install systemd units"
+cp "$REPO/deploy/systemd/qd-identity-blue.service.example" /etc/systemd/system/qd-identity-blue.service
+cp "$REPO/deploy/systemd/qd-identity-green.service.example" /etc/systemd/system/qd-identity-green.service
+systemctl daemon-reload
+systemctl enable qd-identity-blue qd-identity-green
+
+echo "[identity] install nginx upstream + switch script"
+cp "$REPO/deploy/nginx/utoo_upstream_identity.conf.example" "$NGINX_CONF/utoo_upstream_identity.conf"
+cp "$REPO/deploy/nginx/utoo-internal-upstreams.conf.example" "$NGINX_CONF/utoo-internal-upstreams.conf"
+cp "$REPO/deploy/nginx/utoo-switch-service.sh.example" /usr/local/sbin/utoo-switch-service.sh
+chmod 755 /usr/local/sbin/utoo-switch-service.sh
+
+echo "[identity] write slot .env (CI will not overwrite)"
+install_identity_env() {
+  local dir="$1"
+  local port="$2"
+  mkdir -p "$dir"
+  if [[ -f "$dir/.env" ]]; then
+    echo "keep existing $dir/.env"
+    return 0
+  fi
+  cat >"$dir/.env" <<EOF
+APP_ENV=production
+SERVER_HOST=127.0.0.1
+SERVER_PORT_HTTP=${port}
+DEBUG_RELOAD=false
+JWT_ISSUER=qd_svc_identity
+MALL_JWT_ISSUER=qd-mall-identity
+EOF
+  chown deploy:deploy "$dir/.env" 2>/dev/null || true
+  echo "wrote $dir/.env port=${port}"
+}
+install_identity_env /opt/utoo-blue/qd_svc_identity 18081
+install_identity_env /opt/utoo-green/qd_svc_identity 18181
+
+echo "[identity] nginx -t && reload (http{} must already include utoo-internal-upstreams.conf)"
+"$NGINX_BIN" -t
+if "$NGINX_BIN" -s reload 2>/dev/null; then
+  echo "nginx reloaded"
+elif [[ -f /usr/local/nginx/conf/nginx.conf ]]; then
+  "$NGINX_BIN" -c /usr/local/nginx/conf/nginx.conf -s reload
+  echo "nginx reloaded (-c conf)"
+else
+  echo "nginx reload failed" >&2
+  exit 1
+fi
+
+echo "[identity] first-install done. Next:"
+echo "  1) GitLab: deploy_identity_dev  (do not set SVC_IDENTITY_URL yet)"
+echo "  2) curl -fsS http://127.0.0.1:18081/health && curl -fsS http://127.0.0.1:19081/health"
+echo "  3) add SVC_IDENTITY_URL=http://127.0.0.1:19081 to both gateway .env, then deploy_gateway or restart"
+echo "  4) do NOT set SVC_AUTH_URL; do not start qd_svc_auth"

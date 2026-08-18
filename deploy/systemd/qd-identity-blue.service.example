@@ -1,0 +1,24 @@
+# 复制到服务器：
+#   sudo cp qd-identity-blue.service.example /etc/systemd/system/qd-identity-blue.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now qd-identity-blue
+#
+# 蓝槽：/opt/utoo-blue ，端口 18081（原 qd_svc_auth 已废弃，端口回收给身份中台）
+# ExecStart 必须单行（CentOS 7 / 旧 systemd 不认反斜杠续行）
+
+[Unit]
+Description=Utoo Identity Mid-platform (blue)
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/utoo-blue/qd_svc_identity
+Environment=DJANGO_SETTINGS_MODULE=config.settings
+ExecStart=/opt/utoo-blue/qd_svc_identity/.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:18081 --workers 2 --timeout 120 --access-logfile - --error-logfile -
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,5 +1,6 @@
 # 绿槽网关 :18183
-# SVC_* 指向 Nginx 稳定内部端口 19082/84/90/91；勿设 SVC_AUTH_URL
+# SVC_* 指向 Nginx 稳定内部端口 19082/84/90/91/81；勿设 SVC_AUTH_URL
+# 登录切流：SVC_IDENTITY_URL=http://127.0.0.1:19081
 
 [Unit]
 Description=Utoo Django API Gateway (green)

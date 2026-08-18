@@ -187,8 +187,8 @@ sudo chmod 755 /usr/local/sbin/utoo-switch-service.sh
 ```bash
 sudo "$NGINX_BIN" -t
 sudo "$NGINX_BIN" -s reload
-ss -lntp | grep -E '19082|19084|19090|19091'
-for p in 19082 19084 19090 19091; do
+ss -lntp | grep -E '19081|19082|19084|19090|19091'
+for p in 19081 19082 19084 19090 19091; do
   curl -fsS "http://127.0.0.1:${p}/health" && echo " service :${p} OK"
 done
 ```
@@ -236,9 +236,9 @@ sudo /usr/local/sbin/utoo-switch-service.sh order 18082
 - [ ] `systemctl is-active qd-*-blue` 全 active  
 - [ ] 蓝端口 180xx 监听；绿若已启则 181xx 监听  
 - [ ] `cat /usr/local/nginx/conf/utoo_upstream_server.conf` 指向期望网关  
-- [ ] :19082 / :19084 / :19090 / :19091 均监听，且各自 `/health` 正常
+- [ ] :19081 / :19082 / :19084 / :19090 / :19091 均监听，且各自 `/health` 正常
 - [ ] `utoo-switch-service.sh order 18182` 可只切订单，再可回滚 :18082
 - [ ] `/var/www/utoo-web/index.html` 存在  
 - [ ] 旧无后缀 `qd-order` 等已 disable  
 
-之后日常发版走 GitLab `utoo-windows` Pipeline 的 6 个独立发布按钮。
+之后日常发版走 GitLab `utoo-windows` Pipeline 的 7 个独立发布按钮。身份中台首次上线见 [`README.md`](README.md)#身份中台首次上线登录切流。
