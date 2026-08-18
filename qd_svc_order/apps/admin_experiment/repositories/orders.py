@@ -1319,6 +1319,32 @@ def grab_order(*, order_id: int, user_id: str) -> tuple[bool, str]:
     return True, "抢单成功！"
 
 
+def _resolve_stock_company_id(raw: Any) -> str:
+    """
+    stock_company_name 库内存 qd_user_company.id（与 Java 一致）。
+    兼容前端误传公司名称：能解析则落 id，否则原样返回。
+    """
+    s = str(raw or "").strip()
+    if not s:
+        return ""
+    if s.isdigit():
+        return s
+    row = fetch_one(
+        """
+        SELECT id
+        FROM qd_user_company
+        WHERE name = %(name)s
+          AND IFNULL(delete_status, 0) = 0
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        {"name": s},
+    )
+    if row and row.get("id") is not None:
+        return str(row["id"])
+    return s
+
+
 def _is_child_order_type(order_type: Any) -> bool:
     return str(order_type or "") in ("9", "10")
 
@@ -1352,7 +1378,16 @@ def get_order(order_id: int) -> dict[str, Any] | None:
             t.order_status AS orderStatus, t.totalPrice AS totalPrice,
             t.order_time AS orderTime, t.is_confirm AS isConfirm,
             t.stock_company_name AS stockCompanyId,
-            qs.name AS stockCompanyName, t.mark, t.msg AS msg,
+            COALESCE(
+                qs.name,
+                qs_by_name.name,
+                CASE
+                    WHEN CAST(IFNULL(t.stock_company_name, '') AS CHAR) REGEXP '^[0-9]+$'
+                    THEN NULL
+                    ELSE NULLIF(t.stock_company_name, '')
+                END
+            ) AS stockCompanyName,
+            t.mark, t.msg AS msg,
             t.invoiceType AS invoiceType, t.currency_type AS currencyType,
             t.collection_time AS collectionTime, t.parent_id AS parentId,
             t.purchase_type AS purchaseType, t.delivery_time AS deliveryTime,
@@ -1409,6 +1444,8 @@ def get_order(order_id: int) -> dict[str, Any] | None:
         LEFT JOIN experiment_order p ON t.parent_id = p.id
         LEFT JOIN qd_user_company q ON CAST(t.customer_name AS CHAR) = CAST(q.id AS CHAR)
         LEFT JOIN qd_user_company qs ON CAST(t.stock_company_name AS CHAR) = CAST(qs.id AS CHAR)
+        LEFT JOIN qd_user_company qs_by_name
+            ON qs.id IS NULL AND t.stock_company_name = qs_by_name.name
         LEFT JOIN `user` u ON t.supplier_name = u.id
         LEFT JOIN exp_user cu ON CAST(t.custom_user_id AS CHAR) = CAST(cu.id AS CHAR)
         LEFT JOIN `user` cu2 ON CAST(t.custom_user_id AS CHAR) = CAST(cu2.id AS CHAR)
@@ -2725,12 +2762,22 @@ def list_linked_child_orders(parent_id: int, *, child_order_type: str) -> list[d
             t.is_confirm AS isConfirm, t.order_type AS orderType,
             t.currency_type AS currencyType,
             t.stock_company_name AS stockCompanyId,
-            qs.name AS stockCompanyName,
+            COALESCE(
+                qs.name,
+                qs_by_name.name,
+                CASE
+                    WHEN CAST(IFNULL(t.stock_company_name, '') AS CHAR) REGEXP '^[0-9]+$'
+                    THEN NULL
+                    ELSE NULLIF(t.stock_company_name, '')
+                END
+            ) AS stockCompanyName,
             u.company_name AS supplierName,
             sm.user_name AS managerName, sm.true_name AS managerTrueName,
             su.user_name AS saleUserName, su.true_name AS saleUserTrueName
         FROM experiment_order t
         LEFT JOIN qd_user_company qs ON CAST(t.stock_company_name AS CHAR) = CAST(qs.id AS CHAR)
+        LEFT JOIN qd_user_company qs_by_name
+            ON qs.id IS NULL AND t.stock_company_name = qs_by_name.name
         LEFT JOIN `user` u ON t.supplier_name = u.id
         LEFT JOIN sy_users sm ON t.sale_manager = sm.id
         LEFT JOIN sy_users su ON t.sale_user = su.id
@@ -5212,11 +5259,13 @@ def update_order_basic(
         params["test_manager"] = str(test_manager).strip()[:64]
         sets.append("test_manager = %(test_manager)s")
     if stock_company_id not in (None, ""):
-        try:
-            params["stock_company_id"] = int(stock_company_id)
+        resolved = _resolve_stock_company_id(stock_company_id)
+        if resolved.isdigit():
+            params["stock_company_id"] = int(resolved)
             sets.append("stock_company_name = %(stock_company_id)s")
-        except (TypeError, ValueError):
-            pass
+        elif resolved:
+            params["stock_company_id"] = resolved[:100]
+            sets.append("stock_company_name = %(stock_company_id)s")
     if in_bill_type_id not in (None, ""):
         try:
             params["in_bill_type_id"] = int(in_bill_type_id)
@@ -6125,9 +6174,13 @@ def create_sub_order_from_parent(
 
     sale_manager = str(form.get("saleManager") or form.get("sale_manager") or "").strip()
     test_manager = str(form.get("testManager") or form.get("test_manager") or "").strip()
-    stock_company = str(
-        form.get("stockCompanyName") or form.get("stock_company_name") or ""
-    ).strip()
+    stock_company = _resolve_stock_company_id(
+        form.get("stockCompanyId")
+        or form.get("stock_company_id")
+        or form.get("stockCompanyName")
+        or form.get("stock_company_name")
+        or ""
+    )
     try:
         invoice_type = int(form.get("invoiceType") if form.get("invoiceType") is not None else 2)
     except (TypeError, ValueError):

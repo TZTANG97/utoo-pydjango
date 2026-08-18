@@ -101,19 +101,17 @@
               <el-form-item label="实验分包公司" required>
                 <div class="inline-ops">
                   <el-select
-                    v-model="form.stockCompanyName"
+                    v-model="form.stockCompanyId"
                     filterable
                     clearable
-                    allow-create
-                    default-first-option
-                    placeholder="请选择或输入"
+                    placeholder="请选择实验分包公司"
                     style="flex: 1"
                   >
                     <el-option
                       v-for="c in companyOptions"
-                      :key="String(c.id || c.name)"
+                      :key="String(c.id)"
                       :label="String(c.name || c.companyName || '')"
-                      :value="String(c.name || c.companyName || '')"
+                      :value="String(c.id)"
                     />
                   </el-select>
                   <el-button type="primary" link @click="reloadCompanies">刷新</el-button>
@@ -492,17 +490,17 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { createExpSubOrder, getExpOrderDetail, uploadExpOrderFile } from '@/api/experiment'
-import { fetchCustomerAccounts, fetchCustomerNamesExp, fetchEnterpriseList } from '@/api/member'
-import { fetchSelLineList } from '@/api/inventory'
+import { createExpSubOrder, getExpOrderDetail, uploadExpOrderFile } from '@admin/api/experiment'
+import { fetchCustomerAccounts, fetchCustomerNamesExp, fetchEnterpriseList } from '@admin/api/member'
+import { fetchSelLineList } from '@admin/api/inventory'
 import {
   fetchBillTypeAll,
   fetchPaytypeAll,
   fetchTaxAll,
   formatTaxDisplay,
-} from '@/api/order-settings'
-import { fetchSupplierAll, fetchTestUsers, fetchUserList } from '@/api/system'
-import { ajaxErrorMessage, isAjaxOk } from '@/utils/request'
+} from '@admin/api/order-settings'
+import { fetchSupplierAll, fetchTestUsers, fetchUserList } from '@admin/api/system'
+import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
 const route = useRoute()
 const router = useRouter()
@@ -517,7 +515,7 @@ const selected = ref<Record<string, unknown>[]>([])
 const managerOptions = ref<Record<string, unknown>[]>([])
 const testManagerOptions = ref<Record<string, unknown>[]>([])
 const staffOptions = ref<Record<string, unknown>[]>([])
-/** 实验/分包子单测试人员：按 classId 缓存 queryTestUsers 结果 */
+/** 实验子单测试人员：按 classId 缓存 queryTestUsers 结果 */
 const testerByClass = ref<Record<string, Record<string, unknown>[]>>({})
 const testerDefault = ref<Record<string, unknown>[]>([])
 const companyOptions = ref<Record<string, unknown>[]>([])
@@ -536,7 +534,7 @@ const form = reactive({
   saleUser: '',
   stockUser: '',
   testManager: '',
-  stockCompanyName: '',
+  stockCompanyId: '',
   customerName: '',
   supplierName: '',
   customUserId: '',
@@ -615,8 +613,8 @@ function ensureAccountOption(id: string, label?: string) {
   ]
 }
 
+/** 对齐 queryTestUsers：按测试分类过滤（含管理员/测试人员/测试主管+分类绑定） */
 function testerOptionsForRow(row: Record<string, unknown>) {
-  // 分包/实验子单：均按实验分类 queryTestUsers（含角色+分类绑定权限）
   const cid = String(row.classId || parent.value?.classId || '')
   if (cid && testerByClass.value[cid]?.length) return testerByClass.value[cid]
   return testerDefault.value
@@ -754,7 +752,7 @@ async function loadOptions() {
     taxOptions.value = taxRes.data as Record<string, unknown>[]
   }
   await reloadCompanies()
-  // 分包/实验创建页：测试人员按产品行 classId 拉权限名单（对齐 queryTestUsers）
+  // 分包/实验创建子单：测试人员均走 queryTestUsers（按分类权限），勿用全员 type=-1
   if (isSubcontract.value || isExperiment.value) {
     const classIds = children.value
       .map((c) => String(c.classId || parent.value?.classId || ''))
@@ -886,7 +884,7 @@ async function load() {
 function validateSubcontract(): string | null {
   if (!form.saleManager) return '请选择销售主管'
   if (!form.testManager) return '请选择实验室测试主管'
-  if (!form.stockCompanyName.trim()) return '请选择实验分包公司'
+  if (!form.stockCompanyId.trim()) return '请选择实验分包公司'
   if (!form.orderTime) return '请填写下单时间'
   if (!form.deliveryTime) return '请填写预计完成时间'
   if (!form.payWay) return '请选择付款方式'
@@ -951,7 +949,8 @@ async function onCreate() {
     if (isSubcontract.value) {
       payload.saleManager = form.saleManager
       payload.testManager = form.testManager
-      payload.stockCompanyName = form.stockCompanyName.trim()
+      payload.stockCompanyId = form.stockCompanyId.trim()
+      payload.stockCompanyName = form.stockCompanyId.trim()
       // Java invoiceType：1=开票，2=不开票；0 会导致「否」仍允许上传开票信息。
       payload.invoiceType = form.invoiceOn ? 1 : 2
       payload.inBillTypeId = form.invoiceOn ? form.inBillTypeId : ''

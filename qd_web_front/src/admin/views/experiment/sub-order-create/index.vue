@@ -101,19 +101,17 @@
               <el-form-item label="实验分包公司" required>
                 <div class="inline-ops">
                   <el-select
-                    v-model="form.stockCompanyName"
+                    v-model="form.stockCompanyId"
                     filterable
                     clearable
-                    allow-create
-                    default-first-option
-                    placeholder="请选择或输入"
+                    placeholder="请选择实验分包公司"
                     style="flex: 1"
                   >
                     <el-option
                       v-for="c in companyOptions"
-                      :key="String(c.id || c.name)"
+                      :key="String(c.id)"
                       :label="String(c.name || c.companyName || '')"
-                      :value="String(c.name || c.companyName || '')"
+                      :value="String(c.id)"
                     />
                   </el-select>
                   <el-button type="primary" link @click="reloadCompanies">刷新</el-button>
@@ -536,7 +534,7 @@ const form = reactive({
   saleUser: '',
   stockUser: '',
   testManager: '',
-  stockCompanyName: '',
+  stockCompanyId: '',
   customerName: '',
   supplierName: '',
   customUserId: '',
@@ -886,7 +884,7 @@ async function load() {
 function validateSubcontract(): string | null {
   if (!form.saleManager) return '请选择销售主管'
   if (!form.testManager) return '请选择实验室测试主管'
-  if (!form.stockCompanyName.trim()) return '请选择实验分包公司'
+  if (!form.stockCompanyId.trim()) return '请选择实验分包公司'
   if (!form.orderTime) return '请填写下单时间'
   if (!form.deliveryTime) return '请填写预计完成时间'
   if (!form.payWay) return '请选择付款方式'
@@ -951,7 +949,8 @@ async function onCreate() {
     if (isSubcontract.value) {
       payload.saleManager = form.saleManager
       payload.testManager = form.testManager
-      payload.stockCompanyName = form.stockCompanyName.trim()
+      payload.stockCompanyId = form.stockCompanyId.trim()
+      payload.stockCompanyName = form.stockCompanyId.trim()
       // Java invoiceType：1=开票，2=不开票；0 会导致「否」仍允许上传开票信息。
       payload.invoiceType = form.invoiceOn ? 1 : 2
       payload.inBillTypeId = form.invoiceOn ? form.inBillTypeId : ''
