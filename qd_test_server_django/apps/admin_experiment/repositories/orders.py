@@ -2009,7 +2009,8 @@ def get_order(order_id: int) -> dict[str, Any] | None:
             and len(recv_bills) < len(slots)
         ):
             sure_recv = True
-    row["canInvoice"] = parent_kind and status_ok_bill and is_online == 0 and view_kp
+    # Java viewKpBtn 不区分线上/线下；线上单 invoiceType=1 同样要能开票才能完成
+    row["canInvoice"] = parent_kind and status_ok_bill and view_kp
     # 收款：有付款方式+期数且线下期数未满；与「确认付款」互斥（对齐 Java viewReciveBtn && !sureReciveBtn）
     row["canReceiveBill"] = parent_kind and status_ok_bill and view_recv and not sure_recv
     # 确认付款：存在线上收款且线下期数未满（对齐 Java sureReciveBtn）；弹窗同收款录入
@@ -4947,16 +4948,15 @@ def try_finish_main_order(
     if slots and recv_cnt != len(slots):
         return
 
-    # 线下需开票时：开票金额≥总价 或 开票次数≥槽位
+    # 需开票时：开票金额≥总价，否则开票次数须≥收款槽位（对齐 Java，不区分线上/线下）
     try:
-        is_online = int(row.get("isOnline") or 0)
         inv_type = int(row.get("invoiceType") or 0)
         total_p = float(row.get("totalPrice") or 0)
         inv_amt = float(row.get("invoiceAmount") or 0)
         cost_settle = int(row.get("costSettle") or 0)
     except (TypeError, ValueError):
-        is_online, inv_type, total_p, inv_amt, cost_settle = 0, 0, 0.0, 0.0, 0
-    if is_online == 0 and inv_type == 1:
+        inv_type, total_p, inv_amt, cost_settle = 0, 0.0, 0.0, 0
+    if inv_type == 1:
         if inv_amt < total_p:
             inv_cnt = int(
                 scalar(
@@ -4966,7 +4966,8 @@ def try_finish_main_order(
                 )
                 or 0
             )
-            if not slots or inv_cnt < len(slots):
+            # Java：仅当 collection_time 非空时才用开票张数卡住完成
+            if slots and inv_cnt < len(slots):
                 return
 
     # 关联采购/实验子单须存在且全部已完成（Java：空列表则未完成）
