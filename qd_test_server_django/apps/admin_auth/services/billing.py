@@ -306,6 +306,20 @@ def agree_invoice(
                 )
             except Exception:
                 pass
+            # 对齐 Java uploadInvoice → saveBillAndAccessory：开票落库后判定主单是否完成
+            try:
+                from apps.admin_experiment.repositories import orders as order_repo
+
+                order_repo._write_order_log(
+                    oid,
+                    f"开票 {float(amt)}：同意开票申请",
+                    user_id=staff_log_uid,
+                )
+                order_repo.try_finish_main_order(
+                    order_id=oid, staff_user_id=staff_log_uid
+                )
+            except Exception:
+                logger.exception("try_finish after agree_invoice order=%s", oid)
 
         execute(
             "UPDATE invoice_apply_log SET status = 4 WHERE id = %(id)s",
