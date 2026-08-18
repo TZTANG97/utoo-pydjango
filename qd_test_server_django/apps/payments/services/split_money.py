@@ -256,7 +256,7 @@ def _mark_split(bills: list[dict[str, Any]], is_sj: int | None = None) -> None:
             )
 
 
-def _has_log(order_id: int, kw: str) -> bool:
+def _has_log(order_id: int, kw: str, *, order_no: str = "") -> bool:
     n = int(
         scalar(
             """
@@ -264,10 +264,16 @@ def _has_log(order_id: int, kw: str) -> bool:
             FROM account_log
             WHERE order_id = %(oid)s
               AND IFNULL(deleteStatus, 0) = 0
+              AND IFNULL(log_status, 1) = 1
+              AND acc_type = 13
               AND IFNULL(log_amount, 0) > 0
               AND IFNULL(log_name, '') LIKE %(kw)s
+              AND (
+                    %(cz)s = ''
+                    OR IFNULL(cz_num, '') IN ('', %(cz)s)
+              )
             """,
-            {"oid": order_id, "kw": f"%{kw}%"},
+            {"oid": order_id, "kw": f"%{kw}%", "cz": (order_no or "").strip()},
             0,
         )
         or 0
@@ -275,7 +281,7 @@ def _has_log(order_id: int, kw: str) -> bool:
     return n > 0
 
 
-def _sum_log(order_id: int, kw: str) -> Decimal:
+def _sum_log(order_id: int, kw: str, *, order_no: str = "") -> Decimal:
     return _d(
         scalar(
             """
@@ -283,10 +289,16 @@ def _sum_log(order_id: int, kw: str) -> Decimal:
             FROM account_log
             WHERE order_id = %(oid)s
               AND IFNULL(deleteStatus, 0) = 0
+              AND IFNULL(log_status, 1) = 1
+              AND acc_type = 13
               AND IFNULL(log_amount, 0) > 0
               AND IFNULL(log_name, '') LIKE %(kw)s
+              AND (
+                    %(cz)s = ''
+                    OR IFNULL(cz_num, '') IN ('', %(cz)s)
+              )
             """,
-            {"oid": order_id, "kw": f"%{kw}%"},
+            {"oid": order_id, "kw": f"%{kw}%", "cz": (order_no or "").strip()},
             0,
         )
     )
@@ -413,14 +425,15 @@ def _split_type6(order: dict[str, Any], *, settle_mode: bool) -> None:
 
     pairs = _parse_pairs(salecb)
     cbfcje = sum((a for _, a in pairs), D0)
+    ono = str(order.get("orderId") or "")
 
-    if not settle_mode and _has_log(oid, "实验毛利分成"):
+    if not settle_mode and _has_log(oid, "实验毛利分成", order_no=ono):
         _distribute_percent(sk, scale, order=order, log_name="实验毛利分成回款")
         _mark_split(bills)
         return
 
-    if not settle_mode and _has_log(oid, "实验成本"):
-        yfcb = _sum_log(oid, "实验成本")
+    if not settle_mode and _has_log(oid, "实验成本", order_no=ono):
+        yfcb = _sum_log(oid, "实验成本", order_no=ono)
         sycbfc = cbfcje - yfcb
         if sk > sycbfc:
             _distribute_cost_weighted(salecb, order=order, weight_base=sycbfc)

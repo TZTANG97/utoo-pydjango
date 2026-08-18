@@ -30,7 +30,7 @@ def insert_receive_bill(
     # 对齐 Java saveBillAndAccessory：type=2 且成本已结清时触发分钱
     if int(bill_type or 2) == 2:
         try:
-            from apps.payments.services.split_money import try_split_on_receive
+            from apps.admin_experiment.services.split_money import try_split_on_receive
 
             try_split_on_receive(int(order_id))
         except Exception:
