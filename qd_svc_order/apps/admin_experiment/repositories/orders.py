@@ -2009,8 +2009,8 @@ def get_order(order_id: int) -> dict[str, Any] | None:
             and len(recv_bills) < len(slots)
         ):
             sure_recv = True
-    # Java viewKpBtn 不区分线上/线下；线上单 invoiceType=1 同样要能开票才能完成
-    row["canInvoice"] = parent_kind and status_ok_bill and view_kp
+    # 线上单仅用户端申请开票；管理端「开票」只给线下单（is_online=0）
+    row["canInvoice"] = parent_kind and status_ok_bill and is_online == 0 and view_kp
     # 收款：有付款方式+期数且线下期数未满；与「确认付款」互斥（对齐 Java viewReciveBtn && !sureReciveBtn）
     row["canReceiveBill"] = parent_kind and status_ok_bill and view_recv and not sure_recv
     # 确认付款：存在线上收款且线下期数未满（对齐 Java sureReciveBtn）；弹窗同收款录入
