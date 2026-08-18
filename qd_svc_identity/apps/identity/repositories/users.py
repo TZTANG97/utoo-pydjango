@@ -1,6 +1,6 @@
 from django.db.models import Q
 
-from apps.identity.models import SystemUser, UserRole
+from apps.identity.models import Role, SystemUser, UserRole
 
 
 def get_by_id(user_id):
@@ -31,12 +31,20 @@ def save_user(user, *, update_fields=None):
     return user
 
 
-def list_role_ids(user_id):
-    return list(UserRole.objects.filter(user_id=user_id).values_list("role_id", flat=True))
+def list_role_ids(user_id, *, role_type=None):
+    rows = UserRole.objects.filter(user_id=user_id)
+    if role_type is not None:
+        platform_role_ids = Role.objects.filter(type=role_type).values("id")
+        rows = rows.filter(role_id__in=platform_role_ids)
+    return list(rows.values_list("role_id", flat=True))
 
 
-def delete_user_roles(user_id):
-    UserRole.objects.filter(user_id=user_id).delete()
+def delete_user_roles(user_id, *, role_type=None):
+    rows = UserRole.objects.filter(user_id=user_id)
+    if role_type is not None:
+        platform_role_ids = Role.objects.filter(type=role_type).values("id")
+        rows = rows.filter(role_id__in=platform_role_ids)
+    rows.delete()
 
 
 def bulk_create_user_roles(rows):

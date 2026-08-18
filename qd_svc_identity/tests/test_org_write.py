@@ -2,6 +2,7 @@ from django.urls import resolve
 from rest_framework.exceptions import PermissionDenied
 
 from apps.identity.services.org import require_legacy_permission
+from apps.identity.views_org import _tree
 
 
 def test_org_urls_registered():
@@ -49,3 +50,27 @@ def test_legacy_url_denied_for_non_admin():
     except PermissionDenied:
         return
     raise AssertionError("expected PermissionDenied")
+
+
+def test_menu_tree_skips_placeholder_root_and_keeps_real_tops():
+    rows = [
+        {"id": "0", "menu_super_id": "0", "menu_name": "系统菜单"},
+        {"id": "sales", "menu_super_id": "0", "menu_name": "销售管理"},
+        {"id": "order", "menu_super_id": "sales", "menu_name": "订单列表"},
+        {"id": "orphan", "menu_super_id": "factory-only", "menu_name": "工厂子菜单"},
+    ]
+    tree = _tree(rows, "menu_super_id")
+    names = [node["menu_name"] for node in tree]
+    assert names == ["销售管理", "工厂子菜单"]
+    assert [child["menu_name"] for child in tree[0]["children"]] == ["订单列表"]
+    assert tree[1]["children"] == []
+
+
+def test_dept_tree_treats_zero_parent_as_root():
+    rows = [
+        {"id": "root-a", "super_id": "0", "dept_name": "总部"},
+        {"id": "child-a", "super_id": "root-a", "dept_name": "销售部"},
+    ]
+    tree = _tree(rows, "super_id")
+    assert [node["dept_name"] for node in tree] == ["总部"]
+    assert [child["dept_name"] for child in tree[0]["children"]] == ["销售部"]

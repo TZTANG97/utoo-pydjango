@@ -1,6 +1,6 @@
 # Order-domain middle-platform pilot: open gateway + qd_svc_order in two terminals.
 # Prerequisite: gateway .env (or .env.local) has SVC_ORDER_URL=http://127.0.0.1:18082
-# Docs: docs/中台订单域试点.md
+# Docs: E:\utoo\docs\现网架构说明.md
 # Usage from repo root:  .\scripts\start-order-pilot.ps1
 
 $ErrorActionPreference = "Stop"
@@ -14,7 +14,7 @@ $jobs = @(
 
 Write-Host "Order pilot: opening gateway + order only." -ForegroundColor Cyan
 Write-Host "Ensure SVC_ORDER_URL=http://127.0.0.1:18082 in qd_test_server_django/.env" -ForegroundColor Yellow
-Write-Host "Checklist: docs/中台订单域试点.md section 5" -ForegroundColor DarkGray
+Write-Host "Checklist: E:\utoo\docs\现网架构说明.md" -ForegroundColor DarkGray
 Write-Host ""
 
 foreach ($j in $jobs) {

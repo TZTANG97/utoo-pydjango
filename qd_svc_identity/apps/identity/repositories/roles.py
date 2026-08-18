@@ -37,8 +37,12 @@ def delete_role(role):
     role.delete()
 
 
-def list_menu_ids(role_id):
-    return list(RoleMenu.objects.filter(role_id=role_id).values_list("menu_id", flat=True))
+def list_menu_ids(role_id, *, pt_type=None):
+    rows = RoleMenu.objects.filter(role_id=role_id).exclude(menu_id__in=["", "0"])
+    if pt_type:
+        platform_menu_ids = Menu.objects.filter(pt_type__contains=pt_type).values("id")
+        rows = rows.filter(menu_id__in=platform_menu_ids)
+    return list(rows.values_list("menu_id", flat=True))
 
 
 def list_action_ids(role_id):
@@ -68,7 +72,7 @@ def bulk_create_role_actions(rows):
 def find_existing_menu_ids(menu_ids, *, pt_type: str | None = None):
     if not menu_ids:
         return set()
-    rows = Menu.objects.filter(id__in=menu_ids)
+    rows = Menu.objects.filter(id__in=menu_ids).exclude(id__in=["", "0"])
     if pt_type:
         rows = rows.filter(pt_type__contains=pt_type)
     return set(rows.values_list("id", flat=True))

@@ -41,6 +41,8 @@ def _build_child_menus_utoo(all_menus: list[dict[str, Any]], super_id: str) -> l
         if str(row.get("menu_super_id") or "") != super_id:
             continue
         menu_id = str(row.get("id") or "")
+        if not menu_id or menu_id in {"0", super_id}:
+            continue
         children.append(
             {
                 "id": menu_id,
@@ -49,27 +51,6 @@ def _build_child_menus_utoo(all_menus: list[dict[str, Any]], super_id: str) -> l
                 "icon": row.get("menu_icon") or "",
                 "superId": row.get("menu_super_id") or "",
                 "childrenMenus": _build_child_menus_utoo(all_menus, menu_id),
-            }
-        )
-    return children
-
-
-def _build_child_menus_mall(all_menus: list[dict[str, Any]], super_id: str) -> list[dict[str, Any]]:
-    children: list[dict[str, Any]] = []
-    for row in all_menus:
-        if str(row.get("menu_super_id") or "") != (super_id or ""):
-            continue
-        menu_id = str(row.get("id") or "")
-        children.append(
-            {
-                "id": menu_id,
-                "menu_super_id": row.get("menu_super_id"),
-                "menu_name": row.get("menu_name") or "",
-                "menu_url": row.get("menu_url"),
-                "menu_icon": row.get("menu_icon"),
-                "menu_target": row.get("menu_target"),
-                "menu_rel": row.get("menu_rel"),
-                "children": _build_child_menus_mall(all_menus, menu_id),
             }
         )
     return children
@@ -87,19 +68,10 @@ def build_menu_tree(user_id: str, ctx: ChannelContext) -> list[dict[str, Any]]:
         if not menu_proj.menu_matches_platform(row.get("pt_type"), ctx.platform):
             continue
         menu_id = str(row.get("id") or "")
+        if not menu_id or menu_id == "0":
+            continue
         if ctx.channel == "mall_qd":
-            tree.append(
-                {
-                    "id": menu_id,
-                    "menu_super_id": row.get("menu_super_id"),
-                    "menu_name": row.get("menu_name") or "",
-                    "menu_url": row.get("menu_url"),
-                    "menu_icon": row.get("menu_icon"),
-                    "menu_target": row.get("menu_target"),
-                    "menu_rel": row.get("menu_rel"),
-                    "children": _build_child_menus_mall(all_menus, menu_id),
-                }
-            )
+            tree.append(menu_proj.serialize_java_top_menu(row, all_menus))
         else:
             tree.append(
                 {

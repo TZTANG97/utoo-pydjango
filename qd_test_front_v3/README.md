@@ -28,5 +28,4 @@ npm run dev
 
 ## 文档
 
-- `E:\utoo\qd_test_server\docs\Vue3技术栈.md`
-- `E:\utoo\qd_test_server\docs\重构计划.md`
+- `E:\utoo\docs\现网架构说明.md`

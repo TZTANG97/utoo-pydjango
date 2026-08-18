@@ -24,6 +24,7 @@ from apps.identity.repositories import menus as menus_repo
 from apps.identity.repositories import roles as roles_repo
 from apps.identity.repositories import scope as scope_repo
 from apps.identity.repositories import users as users_repo
+from apps.identity.services.menus import normalize_menu_write, serialize_sy_menu_map
 
 LEGACY_HEX_DIGITS = "A1B3C5D7E9F0G2H4"
 USER_WRITE_FIELDS = {
@@ -134,6 +135,14 @@ def optional_int(data, name):
         raise ValidationError({name: "必须是整数"}) from error
 
 
+def is_placeholder_id(value):
+    return str(value or "") in {"", "0"}
+
+
+def user_matches_platform(user, pt_type: str) -> bool:
+    return pt_type in (user.pt_type or "")
+
+
 def id_list(value, name):
     if value is None:
         return []
@@ -207,15 +216,17 @@ def serialize_department(dept):
     }
 
 
-def get_user(user_id):
+def get_user(user_id, *, pt_type=None):
     user = users_repo.get_by_id(user_id)
     if not user:
+        raise NotFound("用户不存在")
+    if pt_type and not user_matches_platform(user, pt_type):
         raise NotFound("用户不存在")
     return user
 
 
-def user_role_ids(user_id):
-    return users_repo.list_role_ids(user_id)
+def user_role_ids(user_id, *, role_type=None):
+    return users_repo.list_role_ids(user_id, role_type=role_type)
 
 
 def list_admin_users(*, keyword="", include_disabled=False, pt_type="1"):
@@ -241,11 +252,11 @@ def _assert_roles_exist(role_ids, role_type: int):
 
 def replace_user_roles(user_id, role_ids, *, role_type: int):
     _assert_roles_exist(role_ids, role_type)
-    users_repo.delete_user_roles(user_id)
+    users_repo.delete_user_roles(user_id, role_type=role_type)
     users_repo.bulk_create_user_roles(
         [UserRole(id=new_id(), user_id=user_id, role_id=role_id) for role_id in role_ids]
     )
-    return user_role_ids(user_id)
+    return user_role_ids(user_id, role_type=role_type)
 
 
 def create_user(raw_data, *, pt_type: str, role_type: int):
@@ -277,10 +288,10 @@ def create_user(raw_data, *, pt_type: str, role_type: int):
     return serialize_user(user, role_ids=assigned)
 
 
-def update_user(user_id, raw_data):
+def update_user(user_id, raw_data, *, pt_type=None, role_type=None):
     data = as_payload(raw_data)
     reject_unknown_fields(data, USER_WRITE_FIELDS)
-    user = get_user(user_id)
+    user = get_user(user_id, pt_type=pt_type)
     if "user_name" in data:
         user_name = required_text(data, "user_name", max_length=64)
         _assert_unique_username(user_name, exclude_id=user_id)
@@ -303,27 +314,27 @@ def update_user(user_id, raw_data):
             raise ValidationError({"user_status": "只能是 0 或 1"})
         user.user_status = status_value
     users_repo.save_user(user)
-    return serialize_user(user, role_ids=user_role_ids(user.id))
+    return serialize_user(user, role_ids=user_role_ids(user.id, role_type=role_type))
 
 
-def set_user_status(user_id, user_status, *, actor_id):
+def set_user_status(user_id, user_status, *, actor_id, pt_type=None, role_type=None):
     if user_id == actor_id and user_status == 0:
         raise ValidationError({"detail": "不能停用当前登录账号"})
     if user_status not in (0, 1):
         raise ValidationError({"user_status": "只能是 0 或 1"})
-    user = get_user(user_id)
+    user = get_user(user_id, pt_type=pt_type)
     user.user_status = user_status
     users_repo.save_user(user, update_fields=["user_status"])
-    return serialize_user(user, role_ids=user_role_ids(user.id))
+    return serialize_user(user, role_ids=user_role_ids(user.id, role_type=role_type))
 
 
-def reset_user_password(user_id, raw_data):
+def reset_user_password(user_id, raw_data, *, pt_type=None):
     data = as_payload(raw_data)
     reject_unknown_fields(data, {"password"})
     password = data.get("password")
     if not isinstance(password, str) or not password:
         raise ValidationError({"password": "为必填字符串"})
-    user = get_user(user_id)
+    user = get_user(user_id, pt_type=pt_type)
     user.user_password = legacy_md5(password)
     user.error_count = 0
     users_repo.save_user(user, update_fields=["user_password", "error_count"])
@@ -349,7 +360,7 @@ def change_my_password(user_id, raw_data):
 
 
 def get_data_scope(user_id, *, pt_type: str):
-    user = get_user(user_id)
+    user = get_user(user_id, pt_type=pt_type)
     return scope_repo.build_data_scope(user.id, user.type, pt_type)
 
 
@@ -364,8 +375,8 @@ def list_roles(*, keyword="", role_type: int = 1):
     return roles_repo.list_platform(keyword=keyword, role_type=role_type)
 
 
-def role_menu_ids(role_id):
-    return roles_repo.list_menu_ids(role_id)
+def role_menu_ids(role_id, *, pt_type=None):
+    return roles_repo.list_menu_ids(role_id, pt_type=pt_type)
 
 
 def role_action_ids(role_id):
@@ -414,7 +425,9 @@ def update_role(role_id, raw_data, *, role_type: int):
         role.role_desc = optional_text(data, "role_desc", max_length=255)
     role.type = role_type
     roles_repo.save_role(role)
-    return serialize_role(role, menu_ids=role_menu_ids(role.id), action_ids=role_action_ids(role.id))
+    return serialize_role(
+        role, menu_ids=role_menu_ids(role.id, pt_type=str(role_type)), action_ids=role_action_ids(role.id)
+    )
 
 
 def delete_role(role_id, *, role_type: int):
@@ -429,6 +442,7 @@ def delete_role(role_id, *, role_type: int):
 
 def replace_role_menus(role_id, menu_ids, *, role_type: int, pt_type: str):
     get_role(role_id, role_type=role_type)
+    menu_ids = [menu_id for menu_id in menu_ids if not is_placeholder_id(menu_id)]
     if menu_ids:
         found = roles_repo.find_existing_menu_ids(menu_ids, pt_type=pt_type)
         missing = sorted(set(menu_ids) - found)
@@ -438,7 +452,7 @@ def replace_role_menus(role_id, menu_ids, *, role_type: int, pt_type: str):
     roles_repo.bulk_create_role_menus(
         [RoleMenu(id=new_id(), role_id=role_id, menu_id=menu_id) for menu_id in menu_ids]
     )
-    return role_menu_ids(role_id)
+    return role_menu_ids(role_id, pt_type=pt_type)
 
 
 def replace_role_actions(role_id, action_ids, *, role_type: int):
@@ -456,39 +470,28 @@ def replace_role_actions(role_id, action_ids, *, role_type: int):
 
 
 def serialize_menu(menu):
-    return {
-        "id": menu.id,
-        "menu_super_id": menu.menu_super_id,
-        "menu_status": menu.menu_status,
-        "menu_sort": menu.menu_sort,
-        "menu_name": menu.menu_name,
-        "menu_icon": menu.menu_icon,
-        "menu_url": menu.menu_url,
-        "menu_target": menu.menu_target,
-        "menu_rel": menu.menu_rel,
-        "pt_type": menu.pt_type,
-    }
+    return serialize_sy_menu_map(menu)
 
 
-def list_all_menu_rows(*, pt_type: str):
-    return menus_repo.list_all_rows(pt_type=pt_type)
+def list_all_menu_rows():
+    return [serialize_sy_menu_map(row) for row in menus_repo.list_all_rows()]
 
 
-def get_menu(menu_id, *, pt_type: str):
-    menu = menus_repo.get_platform_by_id(menu_id, pt_type)
+def get_menu(menu_id, *, pt_type: str | None = None):
+    menu = menus_repo.get_platform_by_id(menu_id, pt_type) if pt_type else menus_repo.get_by_id(menu_id)
     if not menu:
         raise NotFound("菜单不存在")
     return menu
 
 
 def create_menu(raw_data, *, pt_type: str):
-    data = as_payload(raw_data)
+    data = normalize_menu_write(as_payload(raw_data))
     reject_unknown_fields(data, MENU_WRITE_FIELDS)
     menu_name = required_text(data, "menu_name", max_length=255)
     menu_super_id = optional_text(data, "menu_super_id", max_length=64)
-    if menu_super_id:
-        get_menu(menu_super_id, pt_type=pt_type)
-    if menus_repo.menu_name_exists(menu_name, menu_super_id, pt_type=pt_type):
+    if menu_super_id and not is_placeholder_id(menu_super_id):
+        get_menu(menu_super_id)
+    if menus_repo.menu_name_exists(menu_name, menu_super_id):
         raise ValidationError({"menu_name": "同级菜单名称已存在"})
     menu = Menu(
         id=new_id(),
@@ -510,20 +513,20 @@ def create_menu(raw_data, *, pt_type: str):
 
 
 def update_menu(menu_id, raw_data, *, pt_type: str):
-    data = as_payload(raw_data)
+    data = normalize_menu_write(as_payload(raw_data))
     reject_unknown_fields(data, MENU_WRITE_FIELDS)
-    menu = get_menu(menu_id, pt_type=pt_type)
+    menu = get_menu(menu_id)
     menu_super_id = menu.menu_super_id
     if "menu_super_id" in data:
         menu_super_id = optional_text(data, "menu_super_id", max_length=64)
         if menu_super_id == menu_id:
             raise ValidationError({"menu_super_id": "不能把菜单设为自己的上级"})
-        if menu_super_id:
-            get_menu(menu_super_id, pt_type=pt_type)
+        if menu_super_id and not is_placeholder_id(menu_super_id):
+            get_menu(menu_super_id)
         menu.menu_super_id = menu_super_id
     if "menu_name" in data:
         menu_name = required_text(data, "menu_name", max_length=255)
-        if menus_repo.menu_name_exists(menu_name, menu_super_id, exclude_id=menu_id, pt_type=pt_type):
+        if menus_repo.menu_name_exists(menu_name, menu_super_id, exclude_id=menu_id):
             raise ValidationError({"menu_name": "同级菜单名称已存在"})
         menu.menu_name = menu_name
     if "menu_status" in data:
@@ -549,7 +552,7 @@ def update_menu(menu_id, raw_data, *, pt_type: str):
 
 
 def delete_menu(menu_id, *, pt_type: str):
-    menu = get_menu(menu_id, pt_type=pt_type)
+    menu = get_menu(menu_id)
     if menus_repo.has_children(menu_id):
         raise ValidationError({"detail": "菜单下属还有子菜单，无法删除"})
     with transaction.atomic():
@@ -627,8 +630,7 @@ def delete_department(dept_id):
 
 
 def get_user_access(user_id, *, pt_type: str):
-    get_user(user_id)
-    user = users_repo.get_by_id(user_id)
+    user = get_user(user_id, pt_type=pt_type)
     return {
         "pt_type": user.pt_type,
         "company_ids": list(access_repo.list_company_ids(user_id, pt_type)),
@@ -640,7 +642,7 @@ def get_user_access(user_id, *, pt_type: str):
 def replace_user_access(user_id, payload, *, pt_type: str):
     data = as_payload(payload)
     reject_unknown_fields(data, {"company_ids", "order_type_ids", "saleuser_ids", "pt_type"})
-    user = get_user(user_id)
+    user = get_user(user_id, pt_type=pt_type)
     company_ids = mixed_id_list(data.get("company_ids"), "company_ids")
     order_type_ids = mixed_id_list(data.get("order_type_ids"), "order_type_ids")
     saleuser_ids = mixed_id_list(data.get("saleuser_ids"), "saleuser_ids")

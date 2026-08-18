@@ -10,21 +10,37 @@ from apps.identity.services import org as org_svc
 
 
 def _tree(rows, parent_key):
+    """把扁平行编成树。sy_menu 存在 id=0 且 super_id=0 的占位根，不能当真实父节点。"""
+    items = [row for row in rows if str(row.get("id") or "") not in {"", "0"}]
+    ids = {row["id"] for row in items}
     children_by_parent = {}
-    ids = {row["id"] for row in rows}
-    for row in rows:
-        children_by_parent.setdefault(row[parent_key] or "", []).append(row)
+    for row in items:
+        parent = row.get(parent_key) or ""
+        if parent == row["id"]:
+            continue
+        children_by_parent.setdefault(parent, []).append(row)
 
-    def build(parent_id):
+    def build(parent_id, seen):
         nodes = []
         for row in children_by_parent.get(parent_id or "", []):
+            node_id = row["id"]
+            if node_id in seen:
+                continue
             node = dict(row)
-            node["children"] = build(row["id"])
+            node["children"] = build(node_id, seen | {node_id})
             nodes.append(node)
         return nodes
 
-    roots = [row for row in rows if not row[parent_key] or row[parent_key] not in ids]
-    return [dict(row, children=build(row["id"])) for row in roots]
+    roots = []
+    seen_roots = set()
+    for row in items:
+        parent = row.get(parent_key) or ""
+        if parent == row["id"] or parent in {"", "0"} or parent not in ids:
+            if row["id"] in seen_roots:
+                continue
+            seen_roots.add(row["id"])
+            roots.append(dict(row, children=build(row["id"], {row["id"]})))
+    return roots
 
 
 class OrgJwtView(APIView):
@@ -95,7 +111,7 @@ class RoleDetailView(OrgJwtView):
             {
                 "data": org_svc.serialize_role(
                     role,
-                    menu_ids=org_svc.role_menu_ids(role.id),
+                    menu_ids=org_svc.role_menu_ids(role.id, pt_type=self.platform),
                     action_ids=org_svc.role_action_ids(role.id),
                 )
             }
@@ -164,20 +180,22 @@ class UserListView(OrgJwtView):
 
 class UserDetailView(OrgJwtView):
     def get(self, _request, user_id):
-        user = org_svc.get_user(user_id)
-        return Response({"data": org_svc.serialize_user(user, role_ids=org_svc.user_role_ids(user.id))})
+        user = org_svc.get_user(user_id, pt_type=self.platform)
+        return Response({"data": org_svc.serialize_user(user, role_ids=org_svc.user_role_ids(user.id, role_type=self.role_type))})
 
     def patch(self, request, user_id):
         org_svc.require_write_enabled()
         org_svc.require_legacy_permission(self.claims, "/sys/user/update.do")
-        return Response({"data": org_svc.update_user(user_id, request.data)})
+        return Response(
+            {"data": org_svc.update_user(user_id, request.data, pt_type=self.platform, role_type=self.role_type)}
+        )
 
 
 class UserRoleView(OrgJwtView):
     def put(self, request, user_id):
         org_svc.require_write_enabled()
         org_svc.require_legacy_permission(self.claims, "/sys/user/updateRole.do")
-        org_svc.get_user(user_id)
+        org_svc.get_user(user_id, pt_type=self.platform)
         role_ids = org_svc.id_list(request.data.get("role_ids") if isinstance(request.data, dict) else None, "role_ids")
         return Response(
             {"data": {"role_ids": org_svc.replace_user_roles(user_id, role_ids, role_type=self.role_type)}}
@@ -202,7 +220,7 @@ class UserPasswordView(OrgJwtView):
     def post(self, request, user_id):
         org_svc.require_write_enabled()
         org_svc.require_legacy_permission(self.claims, "/sys/user/update.do")
-        return Response({"data": org_svc.reset_user_password(user_id, request.data)})
+        return Response({"data": org_svc.reset_user_password(user_id, request.data, pt_type=self.platform)})
 
 
 class UserAccessView(OrgJwtView):
@@ -224,12 +242,12 @@ class UserStatusView(OrgJwtView):
             user_status = int(payload.get("user_status"))
         except (TypeError, ValueError):
             raise ValidationError({"user_status": "必须是 0 或 1"})
-        return Response({"data": org_svc.set_user_status(user_id, user_status, actor_id=self.actor_id())})
+        return Response({"data": org_svc.set_user_status(user_id, user_status, actor_id=self.actor_id(), pt_type=self.platform, role_type=self.role_type)})
 
 
 class MenuAdminTreeView(OrgJwtView):
     def get(self, _request):
-        return Response({"data": _tree(org_svc.list_all_menu_rows(pt_type=self.platform), "menu_super_id")})
+        return Response({"data": org_svc.list_all_menu_rows()})
 
 
 class MenuCreateView(OrgJwtView):
@@ -244,7 +262,7 @@ class MenuCreateView(OrgJwtView):
 
 class MenuDetailView(OrgJwtView):
     def get(self, _request, menu_id):
-        return Response({"data": org_svc.serialize_menu(org_svc.get_menu(menu_id, pt_type=self.platform))})
+        return Response({"data": org_svc.serialize_menu(org_svc.get_menu(menu_id))})
 
     def patch(self, request, menu_id):
         org_svc.require_write_enabled()

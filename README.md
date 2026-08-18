@@ -199,13 +199,13 @@ python run.py
 # 或一键开 6 个终端（网关 + identity + order + payment + asset + platform）
 .\scripts\start-ms-dev.ps1
 
-# 对内中台：仅订单试点（网关 + order，见 docs/中台订单域试点.md）
+# 对内中台：仅订单试点（网关 + order）
 .\scripts\start-order-pilot.ps1
 ```
 
 > `qd_svc_auth` 已从仓库删除。`qd_svc_wx` / `qd_svc_entry` / `qd_svc_invoice` 已废弃。  
 > 发版切流：[`deploy/README.md`](deploy/README.md)#身份中台首次上线登录切流。  
-> 中台推进：[`docs/中台后续流程与复杂度.md`](docs/中台后续流程与复杂度.md)。
+> 现网说明：`E:\utoo\docs\现网架构说明.md`。
 
 ### 4.3 开启微服务转发
 
@@ -400,17 +400,8 @@ npm run build    # 产出 dist/
 |------|------|
 | `qd_web_front/README.md` | 统一前端说明 |
 | `qd_test_server_django/README.md` | 网关细节 |
-| **`deploy/README.md`** | **GitLab CI/CD 发版（identity/order/payment/asset/platform + 网关 + 前端）** |
-| **`docs/README.md`** | **文档索引（含对内中台系列）** |
-| `qd_svc_identity/README.md` | 身份中台（密码登录） |
-| `docs/服务合并说明.md` | 旧 auth 已删除；wx→payment |
-| `docs/中台后续流程与复杂度.md` | 后续推进顺序与改代码复杂度 |
-| `docs/中台能力清单.md` | 能力 → 服务 → 端 |
-| `docs/中台身份与菜单约定.md` | 登录 / JWT / 菜单 / X-Channel |
-| `docs/中台网关下沉与转发.md` | SVC_* 转发与网关 twin |
-| `docs/中台订单域试点.md` | 订单域统一 API + 联调清单 |
-| `docs/中台域收口方法.md` | 支付→资产→平台收口 |
-| `docs/中台数据与发版治理.md` | 表写归属与发版兼容 |
-| 工作区 `docs/开发启动.md` | 一键启动（若与 `E:\utoo` 一并检出） |
-| `docs/API对照表.md` | C 端接口对照 |
-| `docs/微服务拆分与仓库约定.md` | MS-0~MS-4 约定 |
+| **`deploy/README.md`** | **GitLab CI/CD 发版** |
+| **`E:\utoo\docs\现网架构说明.md`** | **现网架构 / 端口 / 身份切流（唯一入口）** |
+| `qd_svc_identity/README.md` | 身份中台 |
+| `docs/小程序对接Django.md` | 小程序对接 |
+| `E:\utoo\docs\API对照表.md` | C 端接口对照 |

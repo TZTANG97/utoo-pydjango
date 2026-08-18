@@ -1,10 +1,10 @@
 from apps.identity.models import Menu, RoleMenu
 
 
-def list_all_rows(*, pt_type: str):
+def list_all_rows():
+    """菜单管理对齐 Java queryMenus：全表 sy_menu，不按 pt_type 裁。"""
     return list(
-        Menu.objects.filter(pt_type__contains=pt_type)
-        .order_by("menu_sort", "id")
+        Menu.objects.order_by("menu_sort", "id")
         .values(
             "id",
             "menu_super_id",
@@ -15,20 +15,30 @@ def list_all_rows(*, pt_type: str):
             "menu_url",
             "menu_target",
             "menu_rel",
+            "menu_open",
+            "menu_external",
+            "menu_fresh",
             "pt_type",
         )
     )
 
 
+def get_by_id(menu_id):
+    if str(menu_id or "") in {"", "0"}:
+        return None
+    return Menu.objects.filter(id=menu_id).first()
+
+
 def get_platform_by_id(menu_id, pt_type: str):
+    if str(menu_id or "") in {"", "0"}:
+        return None
     return Menu.objects.filter(id=menu_id, pt_type__contains=pt_type).first()
 
 
-def menu_name_exists(menu_name, menu_super_id, *, exclude_id=None, pt_type: str):
+def menu_name_exists(menu_name, menu_super_id, *, exclude_id=None):
     rows = Menu.objects.filter(
         menu_name=menu_name,
         menu_super_id=menu_super_id or None,
-        pt_type__contains=pt_type,
     )
     if exclude_id:
         rows = rows.exclude(id=exclude_id)
