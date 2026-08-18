@@ -2,7 +2,7 @@
 
 青岛检测平台 **Django API 网关**（DRF + Celery）。
 
-C 端业务接口的主入口：鉴权、兼容路由、域逻辑（单体模式）或转发到 `qd_svc_*`（微服务模式）。
+C 端业务接口的主入口：鉴权、兼容路由；密码登录转发 `qd_svc_identity`（配 `SVC_IDENTITY_URL`），其余域逻辑在单体模式于本进程、微服务模式转发 `qd_svc_*`。
 
 | 项 | 值 |
 |----|-----|
@@ -21,7 +21,7 @@ C 端业务接口的主入口：鉴权、兼容路由、域逻辑（单体模式
 | `qd_test_server` | Java 旧服务（只读对照） |
 | `qd_test_server_py` | FastAPI 参考实现（**冻结**） |
 | **本仓库** | Django **网关 / BFF** |
-| `qd_svc_*` | 微服务（auth/order/payment/…，可选） |
+| `qd_svc_*` | 微服务（identity/order/payment/…，可选） |
 | `qd_libs_common` | 公共 Python 包（`qd_common`） |
 | `qd_test_front_v3` | Vue3 主前端 |
 
@@ -113,7 +113,9 @@ python run.py
 微服务上游示例（`.env` 中取消注释）：
 
 ```env
-# 勿设 SVC_AUTH_URL — C 端认证在本网关 auth_pc（qd_svc_auth 已废弃）
+# 勿设 SVC_AUTH_URL（旧 qd_svc_auth 已从仓库删除）
+# 本机身份中台；生产：http://127.0.0.1:19081
+# SVC_IDENTITY_URL=http://127.0.0.1:18110
 # SVC_ORDER_URL=http://127.0.0.1:18082
 # SVC_PAYMENT_URL=http://127.0.0.1:18084
 # SVC_WX_URL=http://127.0.0.1:18084
@@ -124,8 +126,8 @@ python run.py
 # SVC_ENTRY_URL=http://127.0.0.1:18091
 ```
 
-后台拆分：`qd_svc_admin_asset`、`qd_svc_order`、`qd_svc_admin_platform`、`qd_svc_payment`（含 `/api/wx/*`）。  
-`admin_auth` + C 端 `auth_pc` 留在本网关。`qd_svc_auth` / `qd_svc_wx` / `qd_svc_entry` / `qd_svc_invoice` 已废弃。
+后台拆分：`qd_svc_identity`、`qd_svc_admin_asset`、`qd_svc_order`、`qd_svc_admin_platform`、`qd_svc_payment`（含 `/api/wx/*`）。  
+密码登录配 `SVC_IDENTITY_URL` 走身份中台；空则回退本网关 `admin_auth` / `auth_pc`。`qd_svc_wx` / `qd_svc_entry` / `qd_svc_invoice` 已废弃。
 
 ### 勿提交
 
@@ -137,7 +139,7 @@ python run.py
 
 ### 单体（默认，日常开发）
 
-不配置 `SVC_*_URL`。登录、订单、资产、支付、发票、入驻、微信等均在本进程处理。
+不配置 `SVC_*_URL`。登录、订单、资产、支付、发票、入驻、微信等均在本进程处理。生产切流后密码登录应开 `SVC_IDENTITY_URL`。
 
 ### 微服务
 
@@ -153,7 +155,7 @@ python run.py
 config/                 # settings、urls、celery、MySQL 5.6 legacy 后端
 apps/
   core/                 # 健康检查、统一响应、转发、中间件
-  auth_pc/              # 登录 / JWT / 用户
+  auth_pc/              # 登录适配（转发身份中台 / 本地回滚）
   pc_compat/            # /api/pc/*.ajax 薄层
   orders/               # 订单、子订单、样品、复测等
   payments/             # 资产、充值、余额/微信支付

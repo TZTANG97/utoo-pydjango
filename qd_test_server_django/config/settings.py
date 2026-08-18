@@ -258,8 +258,7 @@ CORS_HTTPS = env("CORS_HTTPS", default="")
 SMS_ACCESS_KEY_ID = env("SMS_ACCESS_KEY_ID", default="")
 SMS_ACCESS_KEY_SECRET = env("SMS_ACCESS_KEY_SECRET", default="")
 
-# 微服务上游（MS-1+）。C 端认证已并回网关 auth_pc，请保持 SVC_AUTH_URL 为空。
-# 若仍配置，会转发到已废弃的 qd_svc_auth（仅兼容旧环境）。
+# 勿设 SVC_AUTH_URL（qd_svc_auth 已从仓库删除）。密码登录用 SVC_IDENTITY_URL。
 SVC_AUTH_URL = env("SVC_AUTH_URL", default="")
 # 身份中台 qd_svc_identity；配置后员工登录/菜单与会员 login/me/refresh 可转发
 SVC_IDENTITY_URL = env("SVC_IDENTITY_URL", default="")

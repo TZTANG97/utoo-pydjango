@@ -56,7 +56,7 @@
 
 若 Pipeline 显示 **stuck**：没有 tag=`utoo-windows` 的 Runner，先注册 Runner，不是 stages 少了。
 
-不发：`qd_svc_auth` / `qd_svc_wx` / `qd_svc_entry` / `qd_svc_invoice`（已废弃，端口 18081 给身份中台）。`qd_worker` 未进流水线。
+不发：`qd_svc_wx` / `qd_svc_entry` / `qd_svc_invoice`（已废弃）。旧 `qd_svc_auth` **已从仓库删除**，登录发 **`deploy_identity_*`**（端口 18081）。`qd_worker` 未进流水线。
 
 ## 网关 SVC_*（每槽各自 `.env`）
 

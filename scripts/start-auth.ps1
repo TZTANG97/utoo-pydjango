@@ -1,5 +1,5 @@
-# Start auth — DEPRECATED
-# C-end auth is in-process on the gateway (apps/auth_pc). Do not start qd_svc_auth.
-Write-Host "qd_svc_auth is deprecated. C-end auth runs on the gateway (clear SVC_AUTH_URL)." -ForegroundColor Yellow
-Write-Host "Use: .\scripts\start-gateway.ps1" -ForegroundColor Cyan
+# qd_svc_auth has been removed. Password login is qd_svc_identity.
+Write-Host "qd_svc_auth was removed. Do not set SVC_AUTH_URL." -ForegroundColor Yellow
+Write-Host "Password login: .\scripts\start-identity.ps1  (local :18110)" -ForegroundColor Cyan
+Write-Host "Production: SVC_IDENTITY_URL=http://127.0.0.1:19081 + deploy_identity_*" -ForegroundColor Cyan
 exit 0

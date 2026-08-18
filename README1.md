@@ -32,7 +32,7 @@ git checkout dev
 | 支付 / 微信 | `qd_svc_payment` | 支付申请、充值兑换、扫码/预约等 `/api/wx` |
 | 数字化 / 库存 / 资金 | `qd_svc_admin_asset` | 统计与绩效、仓库实验室、资金台账（UTOO 数字化读为 **P1**） |
 | 会员 / 运营 / 服务平台 / 系统 / 订单设置 | `qd_svc_admin_platform` | 会员与运营配置、服务申请、权限菜单、税率票据等 + 入驻/发票 |
-| 登录与壳 | 网关 | 后台登录、C 端认证、菜单壳；业务不堆在网关 |
+| 登录与壳 | `qd_svc_identity` + 网关 | 密码登录/菜单走中台；短信与微信一键仍在网关 |
 
 
 ---
@@ -44,19 +44,20 @@ git checkout dev
 | **`qd_web_front`** | **9530** | Vue3 **统一前端**（C 端 `#/...` + 管理后台 `#/admin/...`） |
 | ~~`qd_test_front_v3`~~ | — | **已废弃** → 并入 `qd_web_front/src/client` |
 | ~~`qd_admin_front`~~ | — | **已废弃** → 并入 `qd_web_front/src/admin` |
-| `qd_test_server_django` | **18083** | API **网关 / BFF**（含 `admin_auth` + **C 端认证 `auth_pc`**） |
+| `qd_test_server_django` | **18083** | API **网关 / BFF**（登录转发身份中台；短信/微信一键仍在网关） |
+| `qd_svc_identity` | **18110** | **身份中台**（员工/会员密码登录、菜单）；生产蓝绿 **18081/18181**，稳定口 **19081** |
 | `qd_svc_order` | 18082 | 订单 + 后台实验管理 |
 | `qd_svc_payment` | **18084** | 支付 / 资产 + **微信 `/api/wx/*`**（原 wx 已并入） |
 | `qd_svc_admin_asset` | **18090** | 后台：数字化 / 库存 / 资金 |
 | `qd_svc_admin_platform` | **18091** | 后台：会员/运营/系统/服务/设置 + C 端入驻/发票 |
-| ~~`qd_svc_auth`~~ | ~~18081~~ | **已废弃** → C 端认证并回网关 |
+| ~~`qd_svc_auth`~~ | ~~18081~~ | **已删除** → 密码登录走 `qd_svc_identity`（端口给身份中台蓝槽） |
 | ~~`qd_svc_wx`~~ | ~~18087~~ | **已废弃** → 并入 `qd_svc_payment` |
 | `qd_svc_invoice` | ~~18085~~ | **已废弃** → 并入 `qd_svc_admin_platform` |
 | `qd_svc_entry` | ~~18086~~ | **已废弃** → 并入 `qd_svc_admin_platform` |
 | `qd_libs_common` | — | 公共包 `qd_common`（响应体、序列化等） |
 | `qd_worker` | — | Celery Worker（异步任务） |
 | `config/` | — | 共用数据库模板 `shared-database.env.example` |
-| `scripts/` | — | `start-ms-dev.ps1`（网关+4 svc）、`start-order-pilot.ps1` 及 `start-gateway` / `order` / `payment` / `admin-asset` / `admin-platform` |
+| `scripts/` | — | `start-ms-dev.ps1`（网关+身份中台+4 svc）、`start-identity.ps1`、`start-order-pilot.ps1` |
 
 对照仓库（不在本 monorepo 内）：
 
@@ -92,11 +93,13 @@ graph LR
 graph TB
   Browser[Browser 9530] --> Vite[qd_web_front]
   Vite --> GW[Gateway 18083]
+  GW --> Identity[qd_svc_identity 18110]
   GW --> Order[qd_svc_order 18082]
   GW --> Pay[qd_svc_payment 18084]
   GW --> Asset[qd_svc_admin_asset 18090]
   GW --> Platform[qd_svc_admin_platform 18091]
-  Order --> DB[MySQL qd_pt_new]
+  Identity --> DB[MySQL qd_pt_new]
+  Order --> DB
   Pay --> DB
   Asset --> DB
   Platform --> DB
@@ -106,8 +109,9 @@ graph TB
   Worker --> DB
 ```
 
-C 端认证在网关内（勿启 `qd_svc_auth`）。`/api/wx/*` 由 `qd_svc_payment` 提供（`SVC_WX_URL` 与 `SVC_PAYMENT_URL` 同指 **18084**）。  
-入驻/发票：`SVC_ENTRY_URL` / `SVC_INVOICE_URL` → **18091**。勿再启已废弃的 `qd_svc_auth` / `qd_svc_wx` / `qd_svc_entry` / `qd_svc_invoice`。
+密码登录走身份中台（配 `SVC_IDENTITY_URL`；本机 **18110**，生产 Nginx **19081**）。勿设 `SVC_AUTH_URL`，目录 `qd_svc_auth` 已删除。  
+`/api/wx/*` 由 `qd_svc_payment` 提供（`SVC_WX_URL` 与 `SVC_PAYMENT_URL` 同指 **18084**）。  
+入驻/发票：`SVC_ENTRY_URL` / `SVC_INVOICE_URL` → **18091**。勿再启已废弃的 `qd_svc_wx` / `qd_svc_entry` / `qd_svc_invoice`。
 
 ### 2.3 配置与依赖关系
 
@@ -192,7 +196,7 @@ E:\utoo\scripts\start-front-v3.ps1    # 仅前端
 ### 4.2 启动单个微服务
 
 ```powershell
-cd qd_svc_order   # 或 payment / admin_asset / admin_platform（勿再启 auth / wx）
+cd qd_svc_identity   # 或 order / payment / admin_asset / admin_platform（勿再启 wx）
 python -m venv .venv
 .\.venv\Scripts\activate
 pip install -r requirements.txt
@@ -206,19 +210,21 @@ python run.py
 
 ```powershell
 .\scripts\start-gateway.ps1
+.\scripts\start-identity.ps1         # 身份中台 :18110
 .\scripts\start-order.ps1
 .\scripts\start-payment.ps1          # 含原 /api/wx/*
 .\scripts\start-admin-asset.ps1
 .\scripts\start-admin-platform.ps1
 
-# 或一键开 5 个终端（网关 + order + payment + asset + platform）
+# 或一键开 6 个终端（网关 + identity + order + payment + asset + platform）
 .\scripts\start-ms-dev.ps1
 
 # 对内中台：仅订单试点（网关 + order，见 docs/中台订单域试点.md）
 .\scripts\start-order-pilot.ps1
 ```
 
-> `qd_svc_auth` / `qd_svc_wx` / `qd_svc_entry` / `qd_svc_invoice` 已废弃。  
+> `qd_svc_auth` 已从仓库删除。`qd_svc_wx` / `qd_svc_entry` / `qd_svc_invoice` 已废弃。  
+> 发版切流：[`deploy/README.md`](deploy/README.md)#身份中台首次上线登录切流。  
 > 中台推进：[`docs/中台后续流程与复杂度.md`](docs/中台后续流程与复杂度.md)。
 
 ### 4.3 开启微服务转发
@@ -226,7 +232,9 @@ python run.py
 在 **网关** `.env` 中填写（模板见 `qd_test_server_django/.env.example`）：
 
 ```env
-# 勿设 SVC_AUTH_URL — C 端认证在网关
+# 勿设 SVC_AUTH_URL
+# 本机身份中台；生产经 Nginx：http://127.0.0.1:19081
+SVC_IDENTITY_URL=http://127.0.0.1:18110
 SVC_ORDER_URL=http://127.0.0.1:18082
 SVC_PAYMENT_URL=http://127.0.0.1:18084
 SVC_WX_URL=http://127.0.0.1:18084
@@ -240,7 +248,8 @@ SVC_ENTRY_URL=http://127.0.0.1:18091
 
 - 已配置的 `SVC_*`：该域请求由网关 **HTTP 转发**到对应服务；上游未启动则接口 **503**（不再静默走本地 twin）。
 - 未配置的 `SVC_*`：仍走网关本地 `apps.*`（单体兜底）。
-- **始终留在网关**：后台登录与 Vue 壳（`admin_auth`、`/api/vue/*`、`/api/admin/userLogin.ajax` 等）——不是漏配。
+- **密码登录**：配了 `SVC_IDENTITY_URL` 则转发 `qd_svc_identity`；空则回退网关本地（回滚）。短信/微信一键仍在网关。
+- 网关仍保留 `admin_auth` / `auth_pc` 适配层（路径兼容与回滚），不是漏配。
 - 修改 `.env` 后需**重启网关**进程；可用 `.\scripts\start-ms-dev.ps1` 拉齐进程。
 - 支付异步队列可选再启 `qd_worker`，非菜单硬依赖。
 
@@ -264,7 +273,8 @@ SVC_ENTRY_URL=http://127.0.0.1:18091
 | `REDIS_*` | 网关 / payment | 支付锁、队列 |
 | `CORS_HTTPS` | 网关 `.env` | 微信支付回调公网根（**勿带 `/api`**） |
 | `PAY_DEBUG_ENABLED` | 网关 `.env` | 支付调试开关 |
-| `SVC_*_URL` | 网关 `.env` | 微服务上游（可选） |
+| `SVC_IDENTITY_URL` | 网关 `.env` | 身份中台；本机 `:18110`，生产 `:19081` |
+| `SVC_*_URL` | 网关 `.env` | 其它微服务上游（可选） |
 
 ### 5.3 勿提交
 
@@ -372,7 +382,7 @@ qd_test_server_django/
   config/          # settings、urls、celery、MySQL 5.6 legacy
   apps/
     core/          # 健康检查、转发、中间件
-    auth_pc/       # 登录 JWT
+    auth_pc/       # 登录适配（配 SVC_IDENTITY_URL 则转发中台）
     pc_compat/     # /api/pc/*.ajax
     orders/ payments/ invoices/ entry/ wx/
   tasks/           # Celery
@@ -410,11 +420,12 @@ npm run build    # 产出 dist/
 |------|------|
 | `qd_web_front/README.md` | 统一前端说明（原 `qd_admin_front` / `qd_test_front_v3` 已并入） |
 | `qd_test_server_django/README.md` | 网关细节 |
-| **`deploy/README.md`** | **GitLab CI/CD 发版（网关 + svc + 前端）** |
+| **`deploy/README.md`** | **GitLab CI/CD 发版（identity/order/payment/asset/platform + 网关 + 前端）** |
 | **`docs/README.md`** | **文档索引** |
 | **`docs/愉兔与青岛商城中台抽离流程.md`** | **中台优先：共有能力收本仓；商城暂不重构（M1～M3）** |
 | **`docs/中台共有能力抽离清单.md`** | **商城对照 ↔ svc / 路径 / P0～P2** |
-| `docs/服务合并说明.md` | auth→网关、wx→payment |
+| `qd_svc_identity/README.md` | 身份中台（密码登录） |
+| `docs/服务合并说明.md` | 旧 auth 已删除；wx→payment |
 | `docs/中台后续流程与复杂度.md` | 对内中台推进顺序与复杂度 |
 | `docs/中台能力清单.md` | 能力 → 服务 → 端 |
 | `docs/中台身份与菜单约定.md` | 登录 / JWT / 菜单 / X-Channel |
