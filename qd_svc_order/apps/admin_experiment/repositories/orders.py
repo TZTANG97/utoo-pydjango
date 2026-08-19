@@ -4929,19 +4929,28 @@ def auto_generate_appointment_after_online_pay(
     except (TypeError, ValueError):
         return
     if is_yyd != 0:
-        return
+        # 历史故障：曾先置 is_yyd 再上传，失败后无 type=6 附件；允许补生成一次
+        try:
+            from apps.orders.repositories import accessory as accessory_repo
+
+            if accessory_repo.get_yyd_attachment(order_id):
+                return
+        except Exception:
+            return
     try:
         addr_id = int(row.get("testAddressId") or 0)
     except (TypeError, ValueError):
         addr_id = 0
-    try:
-        execute(
-            "UPDATE experiment_order SET is_yyd = 1 WHERE id = %(id)s",
-            {"id": order_id},
-        )
-    except Exception:
-        return
+    # 先生成 PDF；成功后再置 is_yyd（失败不占坑，便于下次收款重试）
     pdf_ok, pdf_msg = _build_appointment_pdf(order_id=order_id, test_address_id=addr_id)
+    if pdf_ok:
+        try:
+            execute(
+                "UPDATE experiment_order SET is_yyd = 1 WHERE id = %(id)s",
+                {"id": order_id},
+            )
+        except Exception:
+            pdf_ok, pdf_msg = False, "预约单已上传，但更新 is_yyd 失败"
     _write_order_log(
         order_id,
         "收款完成，自动生成预约单" + ("" if pdf_ok else f"（PDF:{pdf_msg}）"),

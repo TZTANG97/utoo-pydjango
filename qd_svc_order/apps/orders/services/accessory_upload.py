@@ -121,7 +121,7 @@ def save_order_attachment(
         local_path.write_bytes(data)
     except OSError as exc:
         logger.exception("save_order_attachment write failed: %s", exc)
-        return False, "订单资料上传失败,请重试!", {}
+        return False, f"订单资料本地落盘失败: {exc}", {}
 
     try:
         config = get_config_row()
@@ -178,4 +178,4 @@ def save_order_attachment(
         }
     except Exception as exc:
         logger.exception("save_order_attachment failed: %s", exc)
-        return False, "订单资料上传失败,请重试!", {}
+        return False, f"订单资料上传失败,请重试! ({exc})", {}

@@ -86,6 +86,7 @@ def insert_accessory(
     exp_of_id: int | None = None,
     child_of_id: int | None = None,
 ) -> int:
+    # height/size/width 在库中为 NOT NULL（无默认值）；对齐 Java 实体默认 0
     params = {
         "t": add_time,
         "name": name,
@@ -101,10 +102,11 @@ def insert_accessory(
             return execute_insert(
                 """
                 INSERT INTO accessory
-                    (addTime, deleteStatus, name, path, ext, info, type, exp_of_id, child_of_id)
+                    (addTime, deleteStatus, name, path, ext, info, type,
+                     exp_of_id, child_of_id, size, width, height)
                 VALUES
                     (%(t)s, 0, %(name)s, %(path)s, %(ext)s, %(info)s, %(acc_type)s,
-                     %(exp_of_id)s, %(child_of_id)s)
+                     %(exp_of_id)s, %(child_of_id)s, 0, 0, 0)
                 """,
                 params,
             )
@@ -115,9 +117,11 @@ def insert_accessory(
             return execute_insert(
                 """
                 INSERT INTO accessory
-                    (addTime, deleteStatus, name, path, ext, info, type, child_of_id)
+                    (addTime, deleteStatus, name, path, ext, info, type,
+                     child_of_id, size, width, height)
                 VALUES
-                    (%(t)s, 0, %(name)s, %(path)s, %(ext)s, %(info)s, %(acc_type)s, %(child_of_id)s)
+                    (%(t)s, 0, %(name)s, %(path)s, %(ext)s, %(info)s, %(acc_type)s,
+                     %(child_of_id)s, 0, 0, 0)
                 """,
                 params,
             )
@@ -127,18 +131,20 @@ def insert_accessory(
         return execute_insert(
             """
             INSERT INTO accessory
-                (addTime, deleteStatus, name, path, ext, info, type, exp_of_id)
+                (addTime, deleteStatus, name, path, ext, info, type,
+                 exp_of_id, size, width, height)
             VALUES
-                (%(t)s, 0, %(name)s, %(path)s, %(ext)s, %(info)s, %(acc_type)s, %(exp_of_id)s)
+                (%(t)s, 0, %(name)s, %(path)s, %(ext)s, %(info)s, %(acc_type)s,
+                 %(exp_of_id)s, 0, 0, 0)
             """,
             params,
         )
     return execute_insert(
         """
         INSERT INTO accessory
-            (addTime, deleteStatus, name, path, ext, info, type)
+            (addTime, deleteStatus, name, path, ext, info, type, size, width, height)
         VALUES
-            (%(t)s, 0, %(name)s, %(path)s, %(ext)s, %(info)s, %(acc_type)s)
+            (%(t)s, 0, %(name)s, %(path)s, %(ext)s, %(info)s, %(acc_type)s, 0, 0, 0)
         """,
         params,
     )
