@@ -10,11 +10,25 @@ def _page_clause(offset: int, limit: int) -> str:
     return " LIMIT %(limit)s OFFSET %(offset)s "
 
 
+def _invoice_order_join() -> str:
+    """批量开票按订单号展开成多行（对齐 Java 按 of_id 展示）。"""
+    return """
+        LEFT JOIN experiment_order e
+          ON IFNULL(t.order_ids, '') <> ''
+         AND FIND_IN_SET(CAST(e.id AS CHAR), REPLACE(t.order_ids, ' ', ''))
+    """
+
+
 def count_invoice_applies(*, status: str = "", start_time: str = "", end_time: str = "") -> int:
     extra, params = _invoice_filters(status, start_time, end_time)
     return int(
         scalar(
-            f"SELECT COUNT(1) FROM invoice_apply_log t WHERE t.deleteStatus = 0 {extra}",
+            f"""
+            SELECT COUNT(1)
+            FROM invoice_apply_log t
+            {_invoice_order_join()}
+            WHERE t.deleteStatus = 0 {extra}
+            """,
             params,
             0,
         )
@@ -31,13 +45,15 @@ def list_invoice_applies(
         f"""
         SELECT
             t.id, t.addTime, t.user_id, t.invoice_title, t.invoice_money,
-            t.type, t.status, t.order_ids, t.is_pay, t.notes, t.email,
+            t.type, t.status, t.order_ids, t.moneys, t.is_pay, t.notes, t.email,
             t.invoice_type, t.credit_code, t.invoice_num,
+            e.id AS of_id, e.order_id AS order_id,
             u.userName, u.mobile
         FROM invoice_apply_log t
         LEFT JOIN exp_user u ON t.user_id = u.id
+        {_invoice_order_join()}
         WHERE t.deleteStatus = 0 {extra}
-        ORDER BY t.addTime DESC
+        ORDER BY t.addTime DESC, t.id DESC, e.id ASC
         {_page_clause(offset, limit)}
         """,
         params,
@@ -45,10 +61,15 @@ def list_invoice_applies(
     out = []
     for row in rows:
         item = to_jsonable(row)
-        order_ids = str(item.get("order_ids") or "").strip()
-        item["order_id"] = ""
-        if order_ids:
-            first = order_ids.split(",")[0].strip()
+        oids = [x.strip() for x in str(item.get("order_ids") or "").split(",") if x.strip()]
+        moneys = [x.strip() for x in str(item.get("moneys") or "").split(",") if x.strip()]
+        of_id = str(item.get("of_id") or "").strip()
+        if of_id and of_id in oids:
+            idx = oids.index(of_id)
+            if idx < len(moneys):
+                item["invoice_money"] = moneys[idx]
+        elif not item.get("order_id") and oids:
+            first = oids[0]
             if first.isdigit():
                 eo = fetch_one(
                     "SELECT order_id FROM experiment_order WHERE id = %(id)s LIMIT 1",
@@ -367,6 +388,106 @@ def get_payment_application(apply_id: int) -> dict[str, Any] | None:
         {"id": apply_id},
     )
     return to_jsonable(row) if row else None
+
+
+def get_payment_application_detail(apply_id: int) -> dict[str, Any] | None:
+    """对齐 Java applyDetail.html：关联订单号、订单资料、操作记录。"""
+    from django.conf import settings
+
+    row = get_payment_application(apply_id)
+    if not row:
+        return None
+    base = (getattr(settings, "IMAGE_WEB_SERVER", "") or "").rstrip("/")
+    order_ids = [x.strip() for x in str(row.get("orderId") or row.get("order_id") or "").split(",") if x.strip()]
+    of_list: list[dict[str, Any]] = []
+    files: list[dict[str, Any]] = []
+    for oid in order_ids:
+        of_row = None
+        if oid.isdigit():
+            of_row = fetch_one(
+                "SELECT id, order_id FROM experiment_order WHERE id = %(oid)s LIMIT 1",
+                {"oid": int(oid)},
+            )
+        if not of_row:
+            of_row = fetch_one(
+                "SELECT id, order_id FROM experiment_order WHERE order_id = %(ono)s LIMIT 1",
+                {"ono": oid},
+            )
+        if of_row:
+            of_list.append(to_jsonable(of_row))
+            pk = of_row.get("id")
+        else:
+            continue
+        if pk is None:
+            continue
+        acc_rows = fetch_all(
+            """
+            SELECT id, path, name, info, ext FROM accessory
+            WHERE IFNULL(deleteStatus, 0) = 0
+              AND CAST(exp_of_id AS CHAR) = CAST(%(oid)s AS CHAR)
+              AND IFNULL(type, 0) = 7
+            ORDER BY id ASC
+            """,
+            {"oid": int(pk)},
+        )
+        for r in acc_rows or []:
+            item = to_jsonable(r)
+            path = str(item.get("path") or "").rstrip("/")
+            name = str(item.get("name") or "")
+            if path.startswith("http"):
+                item["url"] = f"{path}/{name}" if name else path
+            elif base and path and name:
+                item["url"] = f"{base}/{path.strip('/')}/{name}"
+            else:
+                item["url"] = f"{path}/{name}" if path and name else (path or name or "")
+            item["displayName"] = str(item.get("info") or name or item["url"] or "-")
+            files.append(item)
+    if str(row.get("orderType") or "") == "1":
+        try:
+            pa_files = fetch_all(
+                """
+                SELECT id, path, name, info, ext FROM accessory
+                WHERE IFNULL(deleteStatus, 0) = 0 AND pa_id = %(pid)s
+                ORDER BY id ASC
+                """,
+                {"pid": apply_id},
+            )
+        except Exception:
+            pa_files = []
+        for r in pa_files or []:
+            item = to_jsonable(r)
+            path = str(item.get("path") or "").rstrip("/")
+            name = str(item.get("name") or "")
+            if path.startswith("http"):
+                item["url"] = f"{path}/{name}" if name else path
+            elif base and path and name:
+                item["url"] = f"{base}/{path.strip('/')}/{name}"
+            else:
+                item["url"] = f"{path}/{name}" if path and name else (path or name or "")
+            item["displayName"] = str(item.get("info") or name or item["url"] or "-")
+            files.append(item)
+    try:
+        logs = fetch_all(
+            """
+            SELECT
+                l.id, l.addTime, l.content, l.user_id AS userId,
+                IFNULL(su.true_name, IFNULL(su.user_name, IFNULL(eu.trueName, IFNULL(eu.userName, '')))) AS addusername
+            FROM payment_application_log l
+            LEFT JOIN sy_users su ON CAST(su.id AS CHAR) = CAST(l.user_id AS CHAR)
+            LEFT JOIN exp_user eu ON CAST(eu.id AS CHAR) = CAST(l.user_id AS CHAR)
+            WHERE IFNULL(l.deleteStatus, 0) = 0 AND l.payment_application_id = %(pid)s
+            ORDER BY l.addTime ASC, l.id ASC
+            """,
+            {"pid": apply_id},
+        )
+    except Exception:
+        logs = []
+    return {
+        "obj": row,
+        "ofList": of_list,
+        "files": files,
+        "logs": [to_jsonable(l) for l in (logs or [])],
+    }
 
 
 def count_retest_applications(*, status: str = "", start_time: str = "", end_time: str = "") -> int:

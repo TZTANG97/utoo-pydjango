@@ -228,7 +228,7 @@ def agree_invoice(
 
     order_ids = [x.strip() for x in str(row.get("order_ids") or "").split(",") if x.strip()]
     moneys = [x.strip() for x in str(row.get("moneys") or "").split(",") if x.strip()]
-    bill_items: list[tuple[int, Decimal, str]] = []
+    bill_items: list[tuple[int, Decimal, str, int | None]] = []
 
     if items:
         for it in items:
@@ -243,7 +243,9 @@ def agree_invoice(
                 amt = Decimal("0")
             if amt <= 0:
                 return False, "请填写有效开票金额"
-            bill_items.append((int(oid), amt, str(it.get("mark") or mark or "")[:500]))
+            acc_raw = it.get("accessoryId") or it.get("accessory_id")
+            acc_id = int(acc_raw) if str(acc_raw or "").isdigit() else None
+            bill_items.append((int(oid), amt, str(it.get("mark") or mark or "")[:500], acc_id))
     else:
         if not order_ids:
             return False, "申请未关联订单"
@@ -265,7 +267,7 @@ def agree_invoice(
                 amt = Decimal(str(row.get("invoice_money") or 0))
             if amt <= 0:
                 return False, "开票金额无效"
-            bill_items.append((int(oid), amt, (mark or "")[:500]))
+            bill_items.append((int(oid), amt, (mark or "")[:500], None))
 
     if not bill_items:
         return False, "没有可开票的订单"
@@ -274,7 +276,7 @@ def agree_invoice(
     staff_log_uid = str(staff_user_id or "").strip() or (str(staff) if staff else "0")
 
     try:
-        for oid, amt, mk in bill_items:
+        for oid, amt, mk, acc_id in bill_items:
             eo = fetch_one(
                 """
                 SELECT id, order_id, is_online, custom_user_id, customer_name
@@ -284,20 +286,46 @@ def agree_invoice(
             )
             if not eo:
                 return False, f"订单不存在: {oid}"
-            bill_id = execute_insert(
-                """
-                INSERT INTO qd_bill
-                    (add_time, add_user_id, exp_of_id, money, type, is_split, bill_date, mark)
-                VALUES
-                    (NOW(), %(uid)s, %(oid)s, %(money)s, 1, 0, NOW(), %(mark)s)
-                """,
-                {
-                    "uid": str(staff) if staff is not None else staff_log_uid,
-                    "oid": oid,
-                    "money": float(amt),
-                    "mark": mk or "同意开票申请",
-                },
-            )
+            bill_params = {
+                "uid": str(staff) if staff is not None else staff_log_uid,
+                "oid": oid,
+                "money": float(amt),
+                "mark": mk or "同意开票申请",
+            }
+            bill_id = None
+            if acc_id:
+                try:
+                    with transaction.atomic():
+                        bill_id = execute_insert(
+                            """
+                            INSERT INTO qd_bill
+                                (add_time, add_user_id, exp_of_id, money, type, is_split,
+                                 bill_date, mark, accessory_id)
+                            VALUES
+                                (NOW(), %(uid)s, %(oid)s, %(money)s, 1, 0, NOW(), %(mark)s, %(acc)s)
+                            """,
+                            {**bill_params, "acc": acc_id},
+                        )
+                except Exception:
+                    bill_id = None
+            if not bill_id:
+                bill_id = execute_insert(
+                    """
+                    INSERT INTO qd_bill
+                        (add_time, add_user_id, exp_of_id, money, type, is_split, bill_date, mark)
+                    VALUES
+                        (NOW(), %(uid)s, %(oid)s, %(money)s, 1, 0, NOW(), %(mark)s)
+                    """,
+                    bill_params,
+                )
+            if acc_id:
+                try:
+                    execute(
+                        "UPDATE accessory SET exp_of_id = %(oid)s WHERE id = %(acc)s",
+                        {"oid": oid, "acc": acc_id},
+                    )
+                except Exception:
+                    pass
             _write_invoice_member_log(order=eo, bill_id=int(bill_id), money=amt)
             try:
                 execute(

@@ -67,8 +67,141 @@ def list_manages(
     return rows, total
 
 
+def _parent_clause(parent_id: int | None) -> tuple[str, dict[str, Any]]:
+    if parent_id:
+        return "AND IFNULL(t.parent_id, 0) = %(pid)s", {"pid": int(parent_id)}
+    return "AND IFNULL(t.parent_id, 0) = 0", {}
+
+
+def manage_name_exists(
+    *, name: str, type_: int, parent_id: int | None, exclude_id: int | None = None
+) -> bool:
+    """同级分类名称不可重复（对齐 Java addClassName.ajax）。"""
+    extra, params = _parent_clause(parent_id)
+    params.update({"name": name, "type": type_})
+    where = f"WHERE {_nd('t')} AND t.type = %(type)s AND t.name = %(name)s {extra}"
+    if exclude_id:
+        where += " AND t.id <> %(xid)s"
+        params["xid"] = int(exclude_id)
+    return int(scalar(f"SELECT COUNT(*) FROM experiment_manage t {where}", params) or 0) > 0
+
+
+def manage_sequence_exists(
+    *, sequence: int, type_: int, parent_id: int | None, exclude_id: int | None = None
+) -> bool:
+    """同级排序序号不可重复（对齐 Java ynexist / upynexist）。"""
+    extra, params = _parent_clause(parent_id)
+    params.update({"seq": int(sequence), "type": type_})
+    where = f"WHERE {_nd('t')} AND t.type = %(type)s AND t.sequence = %(seq)s {extra}"
+    if exclude_id:
+        where += " AND t.id <> %(xid)s"
+        params["xid"] = int(exclude_id)
+    return int(scalar(f"SELECT COUNT(*) FROM experiment_manage t {where}", params) or 0) > 0
+
+
+def list_manage_album(row_id: int, *, exclude_ids: set[int] | None = None) -> list[dict[str, Any]]:
+    rows = fetch_all(
+        """
+        SELECT id, path, name FROM accessory
+        WHERE IFNULL(deleteStatus, 0) = 0
+          AND CAST(exp_of_id AS CHAR) = CAST(%(id)s AS CHAR)
+        ORDER BY id ASC
+        """,
+        {"id": row_id},
+    )
+    skip = exclude_ids or set()
+    out: list[dict[str, Any]] = []
+    for r in rows or []:
+        try:
+            if int(r.get("id") or 0) in skip:
+                continue
+        except (TypeError, ValueError):
+            pass
+        out.append(dict(r))
+    return out
+
+
+def list_manage_test_users(row_id: int) -> list[dict[str, Any]]:
+    """三级编辑只读：sy_user_expmanage 关联测试账号（对齐 Java suemList）。"""
+    try:
+        rows = fetch_all(
+            """
+            SELECT
+                sue.id, sue.user_id AS userId, sue.addTime,
+                IFNULL(u.true_name, IFNULL(u.user_name, '')) AS userName,
+                u.user_name AS loginName
+            FROM sy_user_expmanage sue
+            LEFT JOIN sy_users u ON CAST(u.id AS CHAR) = CAST(sue.user_id AS CHAR)
+            WHERE CAST(sue.exp_manage_id AS CHAR) = CAST(%(id)s AS CHAR)
+              AND IFNULL(sue.deleteStatus, 0) = 0
+            ORDER BY sue.id ASC
+            """,
+            {"id": row_id},
+        )
+        return [dict(r) for r in (rows or [])]
+    except Exception:
+        return []
+
+
+def list_manage_logs(row_id: int) -> list[dict[str, Any]]:
+    """三级编辑操作记录（对齐 Java experiment_manage_log）。"""
+    try:
+        rows = fetch_all(
+            """
+            SELECT
+                l.id, l.addTime, l.content,
+                IFNULL(su.true_name, IFNULL(su.user_name, '')) AS addusername
+            FROM experiment_manage_log l
+            LEFT JOIN sy_users su ON CAST(su.id AS CHAR) = CAST(l.user_id AS CHAR)
+            WHERE CAST(l.em_id AS CHAR) = CAST(%(id)s AS CHAR)
+              AND IFNULL(l.deleteStatus, 0) = 0
+            ORDER BY l.id DESC
+            LIMIT 200
+            """,
+            {"id": row_id},
+        )
+        return [dict(r) for r in (rows or [])]
+    except Exception:
+        return []
+
+
+def write_manage_log(*, row_id: int, user_id: str, content: str) -> None:
+    if not row_id or not content:
+        return
+    try:
+        execute_insert(
+            """
+            INSERT INTO experiment_manage_log
+                (addTime, deleteStatus, em_id, user_id, content)
+            VALUES (NOW(), 0, %(em)s, %(uid)s, %(ct)s)
+            """,
+            {"em": int(row_id), "uid": str(user_id or "")[:64], "ct": content[:500]},
+        )
+    except Exception:
+        pass
+
+
+def bind_manage_album(row_id: int, image_ids: list[int]) -> None:
+    ids = [int(x) for x in image_ids if x]
+    if not ids:
+        return
+    placeholders = ",".join(str(i) for i in ids)
+    try:
+        execute(
+            f"""
+            UPDATE accessory
+            SET exp_of_id = %(em)s
+            WHERE id IN ({placeholders})
+              AND (exp_of_id IS NULL OR exp_of_id = 0 OR CAST(exp_of_id AS CHAR) = CAST(%(em)s AS CHAR))
+            """,
+            {"em": int(row_id)},
+        )
+    except Exception:
+        pass
+
+
 def get_manage(row_id: int) -> dict[str, Any] | None:
-    return fetch_one(
+    row = fetch_one(
         """
         SELECT
             t.id, t.addTime, t.name, t.sequence, t.type, t.parent_id AS parentId,
@@ -78,20 +211,42 @@ def get_manage(row_id: int) -> dict[str, Any] | None:
             t.app_project_details AS appProjectDetails,
             t.manage_main_photo_id AS photoId,
             t.app_manage_main_photo_id AS appPhotoId,
+            acc.path AS photoPath, acc.name AS photoName,
+            appacc.path AS appPhotoPath, appacc.name AS appPhotoName,
             pt.name AS ptName,
             p.name AS parentName, p1.name AS firstName, p1.id AS firstId
         FROM experiment_manage t
         LEFT JOIN experiment_manage p ON t.parent_id = p.id
         LEFT JOIN experiment_manage p1 ON p.parent_id = p1.id
         LEFT JOIN pt_type pt ON t.pt_type = pt.id
+        LEFT JOIN accessory acc ON t.manage_main_photo_id = acc.id
+        LEFT JOIN accessory appacc ON t.app_manage_main_photo_id = appacc.id
         WHERE t.id = %(id)s
         LIMIT 1
         """,
         {"id": row_id},
     )
+    if not row:
+        return None
+    exclude: set[int] = set()
+    for key in ("photoId", "appPhotoId"):
+        try:
+            if row.get(key):
+                exclude.add(int(row[key]))
+        except (TypeError, ValueError):
+            pass
+    row["albumPhotos"] = list_manage_album(row_id, exclude_ids=exclude)
+    row["testUsers"] = list_manage_test_users(row_id)
+    row["logs"] = list_manage_logs(row_id)
+    return row
 
 
 def save_manage(data: dict[str, Any], *, row_id: int | None = None) -> int:
+    payload = {
+        **data,
+        "photo_id": data.get("photo_id") or None,
+        "app_photo_id": data.get("app_photo_id") or None,
+    }
     if row_id:
         execute(
             """
@@ -100,10 +255,13 @@ def save_manage(data: dict[str, Any], *, row_id: int | None = None) -> int:
                 pt_type=%(pt_type)s, enname=%(enname)s, special_type=%(special_type)s,
                 syuser_id=%(syuser_id)s, head_user_id=%(head_user_id)s,
                 intro=%(intro)s, project_details=%(project_details)s,
-                app_project_details=%(app_project_details)s
+                app_project_details=%(app_project_details)s,
+                manage_main_photo_id=%(photo_id)s,
+                app_manage_main_photo_id=%(app_photo_id)s,
+                addTime=IFNULL(addTime, NOW())
             WHERE id=%(id)s
             """,
-            {**data, "id": row_id},
+            {**payload, "id": row_id},
         )
         return row_id
     return execute_insert(
@@ -111,13 +269,15 @@ def save_manage(data: dict[str, Any], *, row_id: int | None = None) -> int:
         INSERT INTO experiment_manage
             (addTime, deleteStatus, name, sequence, type, parent_id, pt_type,
              enname, special_type, syuser_id, head_user_id, intro,
-             project_details, app_project_details)
+             project_details, app_project_details,
+             manage_main_photo_id, app_manage_main_photo_id)
         VALUES
             (NOW(), 0, %(name)s, %(sequence)s, %(type)s, %(parent_id)s, %(pt_type)s,
              %(enname)s, %(special_type)s, %(syuser_id)s, %(head_user_id)s, %(intro)s,
-             %(project_details)s, %(app_project_details)s)
+             %(project_details)s, %(app_project_details)s,
+             %(photo_id)s, %(app_photo_id)s)
         """,
-        data,
+        payload,
     )
 
 
@@ -388,6 +548,23 @@ def get_goods(row_id: int) -> dict[str, Any] | None:
     )
 
 
+def goods_name_exists(
+    *, name: str, brand_id: int | None, exclude_id: int | None = None
+) -> bool:
+    """同品牌产品名称不可重复（对齐 Java addGoodsName.ajax）。"""
+    params: dict[str, Any] = {"name": name}
+    where = f"WHERE {_nd('t')} AND t.goods_name = %(name)s"
+    if brand_id:
+        where += " AND t.goods_brand_id = %(bid)s"
+        params["bid"] = int(brand_id)
+    else:
+        where += " AND IFNULL(t.goods_brand_id, 0) = 0"
+    if exclude_id:
+        where += " AND t.id <> %(xid)s"
+        params["xid"] = int(exclude_id)
+    return int(scalar(f"SELECT COUNT(*) FROM experiment_goods t {where}", params) or 0) > 0
+
+
 def save_goods(data: dict[str, Any], *, row_id: int | None = None) -> int:
     if row_id:
         execute(
@@ -465,6 +642,16 @@ def get_exp_brand(row_id: int) -> dict[str, Any] | None:
         """,
         {"id": row_id},
     )
+
+
+def exp_brand_name_exists(*, name: str, exclude_id: int | None = None) -> bool:
+    """实验品牌名称不可重复（对齐 Java goods_brand_verify.htm）。"""
+    params: dict[str, Any] = {"name": name}
+    where = f"WHERE {_nd('b')} AND b.type = 2 AND b.name = %(name)s"
+    if exclude_id:
+        where += " AND b.id <> %(xid)s"
+        params["xid"] = int(exclude_id)
+    return int(scalar(f"SELECT COUNT(*) FROM goodsbrand b {where}", params) or 0) > 0
 
 
 def save_exp_brand(data: dict[str, Any], *, row_id: int | None = None) -> int:

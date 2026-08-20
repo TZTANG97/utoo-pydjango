@@ -329,6 +329,22 @@ def get_class(class_id: int) -> dict[str, Any] | None:
     )
 
 
+def class_name_exists(
+    *, class_name: str, parent_id: int | None, exclude_id: int | None = None
+) -> bool:
+    params: dict[str, Any] = {"name": class_name}
+    where = f"WHERE {_not_deleted()} AND className = %(name)s"
+    if parent_id:
+        where += " AND parent_id = %(pid)s"
+        params["pid"] = int(parent_id)
+    else:
+        where += " AND IFNULL(parent_id, 0) = 0"
+    if exclude_id:
+        where += " AND id <> %(xid)s"
+        params["xid"] = int(exclude_id)
+    return int(scalar(f"SELECT COUNT(*) FROM goodsclass {where}", params) or 0) > 0
+
+
 def save_class(
     *,
     class_id: int | None,

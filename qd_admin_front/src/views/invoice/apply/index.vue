@@ -8,6 +8,7 @@ import {
   agreeInvoice,
   rejectInvoice,
 } from '@/api/billing'
+import { uploadExpBillFile } from '@/api/experiment'
 import {
   INVOICE_STATUS,
   INVOICE_TYPE,
@@ -158,6 +159,9 @@ async function openInvoice(row: Record<string, unknown>) {
       ...l,
       amount: String(l.amount ?? ''),
       mark: String(l.mark || ''),
+      accessoryId: l.accessoryId || '',
+      accessoryName: l.accessoryName || '',
+      uploading: false,
     }))
     if (!openLines.value.length) {
       openLines.value = [
@@ -183,6 +187,7 @@ async function submitInvoice() {
       of_id: Number(l.of_id),
       amount: String(l.amount || '').trim(),
       mark: String(l.mark || openMark.value || ''),
+      accessoryId: l.accessoryId ? Number(l.accessoryId) : undefined,
     }))
   if (!items.length) {
     ElMessage.warning('没有可开票的订单行')
@@ -205,6 +210,37 @@ async function submitInvoice() {
     loadData()
   } finally {
     openSaving.value = false
+  }
+}
+
+async function onUploadInvoiceFile(row: Record<string, unknown>, options: { file: File }) {
+  const oid = String(row.of_id || '')
+  if (!oid) {
+    ElMessage.warning('缺少订单编号，无法上传')
+    return
+  }
+  const fd = new FormData()
+  fd.append('accfile', options.file)
+  fd.append('id', oid)
+  fd.append('ofId', oid)
+  fd.append('billType', '1')
+  row.uploading = true
+  try {
+    const res = await uploadExpBillFile(fd)
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '上传失败'))
+      return
+    }
+    const obj = (res.obj || {}) as { id?: number; info?: string; name?: string }
+    if (!obj.id) {
+      ElMessage.error('上传成功但未返回附件编号')
+      return
+    }
+    row.accessoryId = obj.id
+    row.accessoryName = obj.info || obj.name || options.file.name
+    ElMessage.success(String(res.resMsg || '上传成功'))
+  } finally {
+    row.uploading = false
   }
 }
 
@@ -498,7 +534,7 @@ loadData()
       </template>
     </el-dialog>
 
-    <el-dialog v-model="openVisible" title="开票" width="820px" destroy-on-close>
+    <el-dialog v-model="openVisible" title="开票" width="960px" destroy-on-close>
       <div v-loading="openLoading">
         <el-table :data="openLines" border stripe>
           <el-table-column prop="orderNo" label="订单编号" min-width="150" show-overflow-tooltip />
@@ -515,6 +551,14 @@ loadData()
           <el-table-column label="操作备注" min-width="160">
             <template #default="{ row }">
               <el-input v-model="row.mark" placeholder="可选" clearable />
+            </template>
+          </el-table-column>
+          <el-table-column label="上传文件" width="180">
+            <template #default="{ row }">
+              <el-upload :show-file-list="false" :http-request="(opt) => onUploadInvoiceFile(row, opt)">
+                <el-button type="primary" link :loading="Boolean(row.uploading)">上传</el-button>
+              </el-upload>
+              <div v-if="row.accessoryName" class="cell-muted">{{ row.accessoryName }}</div>
             </template>
           </el-table-column>
         </el-table>

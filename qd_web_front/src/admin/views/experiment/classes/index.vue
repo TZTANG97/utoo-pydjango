@@ -66,8 +66,8 @@
       />
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="form.id ? '编辑类目' : '新增类目'" width="640px" destroy-on-close>
-      <el-form label-width="130px">
+    <el-dialog v-model="dialogVisible" :title="form.id ? '编辑类目' : '新增类目'" width="860px" top="4vh" destroy-on-close>
+      <el-form label-width="140px">
         <el-form-item label="排序序号" required>
           <el-input-number v-model="form.sequence" :min="1" :controls="true" />
         </el-form-item>
@@ -165,23 +165,91 @@
           </el-select>
         </el-form-item>
 
+        <el-form-item label="添加图片">
+          <div class="photo-box">
+            <div class="upload-row">
+              <el-upload
+                :show-file-list="false"
+                accept="image/jpeg,image/png,image/gif,image/webp,.jpg,.jpeg,.png,.gif,.webp"
+                :http-request="(opt) => onUploadImage(opt, 'main')"
+              >
+                <el-button type="primary" :loading="uploading">上传主图</el-button>
+              </el-upload>
+              <el-button @click="openAlbum('main')">从相册选择</el-button>
+              <el-button v-if="form.photoUrl" link type="danger" @click="clearPhoto('main')">清除</el-button>
+            </div>
+            <el-image
+              v-if="form.photoUrl"
+              class="preview-img"
+              :src="form.photoUrl"
+              fit="contain"
+              :preview-src-list="[form.photoUrl]"
+              preview-teleported
+            />
+            <div v-else class="preview-empty">暂无主图</div>
+          </div>
+        </el-form-item>
+
+        <el-form-item v-if="type === 3" label="小程序图片">
+          <div class="photo-box">
+            <div class="upload-row">
+              <el-upload
+                :show-file-list="false"
+                accept="image/jpeg,image/png,image/gif,image/webp,.jpg,.jpeg,.png,.gif,.webp"
+                :http-request="(opt) => onUploadImage(opt, 'app')"
+              >
+                <el-button type="primary" :loading="uploading">上传小程序图</el-button>
+              </el-upload>
+              <el-button @click="openAlbum('app')">从相册选择</el-button>
+              <el-button v-if="form.appPhotoUrl" link type="danger" @click="clearPhoto('app')">清除</el-button>
+            </div>
+            <el-image
+              v-if="form.appPhotoUrl"
+              class="preview-img"
+              :src="form.appPhotoUrl"
+              fit="contain"
+              :preview-src-list="[form.appPhotoUrl]"
+              preview-teleported
+            />
+            <div v-else class="preview-empty">暂无小程序图</div>
+          </div>
+        </el-form-item>
+
         <el-form-item label="简介">
           <el-input v-model="form.intro" type="textarea" :rows="2" :maxlength="introMaxLen" show-word-limit />
         </el-form-item>
 
         <el-form-item :label="type === 1 ? '实验室介绍' : '项目介绍'">
-          <el-input v-model="form.projectDetails" type="textarea" :rows="4" placeholder="支持 HTML 内容" />
+          <HtmlRichEditor v-if="dialogVisible" v-model="form.projectDetails" />
         </el-form-item>
 
         <el-form-item v-if="type === 3" label="项目介绍（小程序）">
-          <el-input v-model="form.appProjectDetails" type="textarea" :rows="4" placeholder="支持 HTML 内容" />
+          <HtmlRichEditor v-if="dialogVisible" v-model="form.appProjectDetails" />
         </el-form-item>
+
+        <template v-if="type === 3 && form.id">
+          <el-form-item label="关联测试账号">
+            <el-table :data="testUsers" border stripe size="small" empty-text="暂无关联测试账号" max-height="220">
+              <el-table-column prop="userName" label="姓名" min-width="120" />
+              <el-table-column prop="loginName" label="账号" min-width="120" />
+              <el-table-column prop="userId" label="用户ID" min-width="120" />
+            </el-table>
+          </el-form-item>
+          <el-form-item label="操作记录">
+            <el-table :data="manageLogs" border stripe size="small" empty-text="暂无操作记录" max-height="220">
+              <el-table-column prop="addTime" label="时间" width="170" />
+              <el-table-column prop="addusername" label="操作人" width="120" />
+              <el-table-column prop="content" label="内容" min-width="180" show-overflow-tooltip />
+            </el-table>
+          </el-form-item>
+        </template>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="handleSubmit">保存</el-button>
       </template>
     </el-dialog>
+    <AlbumImagePicker v-model="albumVisible" @select="onAlbumPick" />
   </admin-page-card>
 </template>
 
@@ -190,6 +258,8 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminPageCard from '@admin/components/AdminPageCard.vue'
+import AlbumImagePicker from '@admin/components/AlbumImagePicker.vue'
+import HtmlRichEditor from '@admin/components/HtmlRichEditor.vue'
 import {
   deleteManage,
   fetchManageList,
@@ -199,6 +269,7 @@ import {
   saveManage,
 } from '@admin/api/experiment'
 import { fetchUserList } from '@admin/api/system'
+import { uploadSellerImage } from '@admin/api/ops'
 import { useDataTable } from '@admin/composables/useDataTable'
 import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
@@ -231,6 +302,13 @@ const userOptions = ref<{ value: string; label: string }[]>([])
 const userLoading = ref(false)
 const dialogVisible = ref(false)
 const saving = ref(false)
+const uploading = ref(false)
+const albumVisible = ref(false)
+const albumTarget = ref<'main' | 'app'>('main')
+const testUsers = ref<Record<string, unknown>[]>([])
+const manageLogs = ref<Record<string, unknown>[]>([])
+const OSS_BASE = 'https://qgongye.oss-cn-shanghai.aliyuncs.com/'
+type AlbumImagePick = { id: number; url: string }
 const form = reactive({
   id: undefined as number | undefined,
   name: '',
@@ -245,6 +323,10 @@ const form = reactive({
   headUserId: '',
   projectDetails: '',
   appProjectDetails: '',
+  photoId: '' as string,
+  photoUrl: '',
+  appPhotoId: '' as string,
+  appPhotoUrl: '',
 })
 
 function listParams() {
@@ -350,6 +432,61 @@ function onSpecialTypeInput(val: string) {
   form.specialType = String(val || '').replace(/\D/g, '').slice(0, 5)
 }
 
+function mediaUrl(path: unknown, name: unknown) {
+  const p = String(path || '')
+  const n = String(name || '')
+  if (!p && !n) return ''
+  if (p.includes('https') || p.startsWith('http://')) {
+    return p.includes(n) ? p : `${p.replace(/\/?$/, '/')}${n}`
+  }
+  return `${OSS_BASE}${p.replace(/^\//, '')}/${n.replace(/^\//, '')}`
+}
+
+function openAlbum(target: 'main' | 'app') {
+  albumTarget.value = target
+  albumVisible.value = true
+}
+
+function applyPhoto(target: 'main' | 'app', id: string, url: string) {
+  if (target === 'app') {
+    form.appPhotoId = id
+    form.appPhotoUrl = url
+    return
+  }
+  form.photoId = id
+  form.photoUrl = url
+}
+
+function clearPhoto(target: 'main' | 'app') {
+  applyPhoto(target, '', '')
+}
+
+function onAlbumPick(pick: AlbumImagePick) {
+  applyPhoto(albumTarget.value, String(pick.id), pick.url)
+}
+
+async function onUploadImage(options: { file: File }, target: 'main' | 'app') {
+  uploading.value = true
+  try {
+    const res = await uploadSellerImage(options.file)
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '上传失败'))
+      return
+    }
+    const obj = (res.obj || res.data || res) as Record<string, unknown>
+    const id = obj.id ?? (obj as { obj?: { id?: unknown } }).obj?.id
+    const url = String(obj.url || '')
+    if (!id) {
+      ElMessage.error('上传成功但未返回图片ID')
+      return
+    }
+    applyPhoto(target, String(id), url)
+    ElMessage.success('上传成功')
+  } finally {
+    uploading.value = false
+  }
+}
+
 function resetForm() {
   Object.assign(form, {
     id: undefined,
@@ -365,7 +502,13 @@ function resetForm() {
     headUserId: '',
     projectDetails: '',
     appProjectDetails: '',
+    photoId: '',
+    photoUrl: '',
+    appPhotoId: '',
+    appPhotoUrl: '',
   })
+  testUsers.value = []
+  manageLogs.value = []
   formSecOpts.value = []
 }
 
@@ -410,7 +553,13 @@ async function openEdit(row: Record<string, unknown>) {
     headUserId: String(obj.headUserId || ''),
     projectDetails: String(obj.projectDetails || ''),
     appProjectDetails: String(obj.appProjectDetails || ''),
+    photoId: obj.photoId != null && String(obj.photoId) !== '0' ? String(obj.photoId) : '',
+    photoUrl: mediaUrl(obj.photoPath, obj.photoName),
+    appPhotoId: obj.appPhotoId != null && String(obj.appPhotoId) !== '0' ? String(obj.appPhotoId) : '',
+    appPhotoUrl: mediaUrl(obj.appPhotoPath, obj.appPhotoName),
   })
+  testUsers.value = Array.isArray(obj.testUsers) ? (obj.testUsers as Record<string, unknown>[]) : []
+  manageLogs.value = Array.isArray(obj.logs) ? (obj.logs as Record<string, unknown>[]) : []
   dialogVisible.value = true
 }
 
@@ -461,6 +610,8 @@ async function handleSubmit() {
       headUserId: form.headUserId || undefined,
       projectDetails: form.projectDetails,
       appProjectDetails: form.appProjectDetails,
+      photoId: form.photoId || undefined,
+      appPhotoId: form.appPhotoId || undefined,
     })
     if (isAjaxOk(res)) {
       ElMessage.success('保存成功')
@@ -509,4 +660,8 @@ onMounted(async () => {
 .type-tabs { margin-bottom: 12px; }
 .filter-form { margin-bottom: 12px; }
 .pager { display: flex; justify-content: flex-end; margin-top: 16px; }
+.photo-box { width: 100%; }
+.upload-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.preview-img { width: 160px; height: 100px; border: 1px solid #ebeef5; border-radius: 4px; }
+.preview-empty { color: #909399; font-size: 13px; }
 </style>

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <admin-page-card title="实验产品名称">
     <template #actions>
       <el-button type="primary" @click="openCreate">新增产品</el-button>
@@ -87,6 +87,7 @@
 
 <script setup lang="ts">
 import { onActivated, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminPageCard from '@/components/AdminPageCard.vue'
 import {
@@ -237,6 +238,9 @@ async function handleDelete(row: Record<string, unknown>) {
 onMounted(async () => {
   await loadBrandOptions()
   reload()
+  if (String(useRoute().query.create || '') === '1') {
+    openCreate()
+  }
 })
 
 // keep-alive：从品牌管理返回时刷新下拉，避免搜不到刚新增的品牌

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div v-loading="loading" class="edit-page">
     <header class="page-head">
       <button type="button" class="back-link" @click="goBack">← 返回列表</button>
@@ -442,6 +442,8 @@
         <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
         <el-button type="success" :loading="ordering" @click="onSaveOrder">生成订单</el-button>
         <el-button type="danger" plain :loading="cancelling" @click="onCancel">取消咨询</el-button>
+        <el-button @click="goCreateGoods">新增产品</el-button>
+        <el-button @click="goCreateProject">新增实验项目</el-button>
       </template>
       <el-button @click="goBack">返回</el-button>
     </div>
@@ -645,6 +647,14 @@ function goRelatedOrder() {
     name: 'ExperimentOrderDetail',
     params: { id: form.relatedOrderId },
   })
+}
+
+function goCreateGoods() {
+  router.push({ name: 'ExperimentGoods', query: { create: '1' } })
+}
+
+function goCreateProject() {
+  router.push({ name: 'ExperimentProjects', query: { create: '1' } })
 }
 
 function fileHref(file: Record<string, unknown>) {

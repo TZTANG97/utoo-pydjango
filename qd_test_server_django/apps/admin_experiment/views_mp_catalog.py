@@ -106,3 +106,39 @@ def goods_list_java(request: Request):
             }
         )
     return Response(datatable_payload(draw=draw, total=total, rows=to_jsonable(out)))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def manage_add_class_name(request: Request):
+    """对齐 Java experimentManage/addClassName.ajax：同级名称查重。"""
+    data = merge_payload(request)
+    name = str(data.get("name") or data.get("className") or "").strip()
+    if not name:
+        return Response(ajax_fail("名称不能为空"))
+    type_ = to_int(data.get("type"), 1) or 1
+    parent_id = to_int(data.get("parentId") or data.get("parent_id"))
+    exclude_id = to_int(data.get("id"))
+    if master_repo.manage_name_exists(
+        name=name, type_=type_, parent_id=parent_id, exclude_id=exclude_id
+    ):
+        return Response(ajax_fail("实验测试分类名称重复!"))
+    return Response(ajax_ok(res_msg="ok"))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def manage_ynexist(request: Request):
+    """对齐 Java ynexist/upynexist：同级排序序号查重。"""
+    data = merge_payload(request)
+    sequence = to_int(data.get("sequence") or data.get("xuhao"), 0) or 0
+    type_ = to_int(data.get("type"), 1) or 1
+    parent_id = to_int(data.get("parentId") or data.get("parent_id"))
+    exclude_id = to_int(data.get("id"))
+    if sequence and master_repo.manage_sequence_exists(
+        sequence=sequence, type_=type_, parent_id=parent_id, exclude_id=exclude_id
+    ):
+        return Response(ajax_fail("该排序序号已经存在!"))
+    return Response(ajax_ok(res_msg="ok"))

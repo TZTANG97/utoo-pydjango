@@ -1157,22 +1157,23 @@ def list_grab_orders(
 ) -> tuple[list[dict[str, Any]], int]:
     """抢单列表：实验子订单(10) + 实验分包子订单(9)，子行 test_user_id=22。"""
     where = """
-        WHERE t.order_status > 0 AND t.order_type IN ('9', '10')
+        WHERE t.order_status > 0
+          AND CAST(IFNULL(t.order_type, '') AS CHAR) IN ('9', '10')
           AND (
             EXISTS (
               SELECT 1
               FROM exp_qd_purchase_order_child poc
-              JOIN experiment_order_child ocf ON poc.order_child_id = ocf.id
-              WHERE poc.purchase_order_id = t.id
-                AND ocf.test_user_id = %(pool_uid)s
+              JOIN experiment_order_child ocf ON CAST(poc.order_child_id AS CHAR) = CAST(ocf.id AS CHAR)
+              WHERE CAST(poc.purchase_order_id AS CHAR) = CAST(t.id AS CHAR)
+                AND CAST(IFNULL(ocf.test_user_id, '') AS CHAR) = CAST(%(pool_uid)s AS CHAR)
                 AND ocf.order_status <= 36
                 AND IFNULL(ocf.delete_status, 2) <> 1
             )
             OR EXISTS (
               SELECT 1
               FROM experiment_order_child ocf2
-              WHERE ocf2.order_form_id = t.id
-                AND ocf2.test_user_id = %(pool_uid)s
+              WHERE CAST(ocf2.order_form_id AS CHAR) = CAST(t.id AS CHAR)
+                AND CAST(IFNULL(ocf2.test_user_id, '') AS CHAR) = CAST(%(pool_uid)s AS CHAR)
                 AND ocf2.order_status <= 36
                 AND IFNULL(ocf2.delete_status, 2) <> 1
             )

@@ -42,8 +42,6 @@ def build_index_class_list() -> list[dict[str, Any]]:
         for sec in by_parent.get(int(em["id"]), []):
             t_list = []
             for third in by_parent.get(int(sec["id"]), []):
-                if not third.get("addTime"):
-                    continue
                 photo = photo_map.get(int(third.get("manage_main_photo_id") or 0), {})
                 t_list.append(
                     {

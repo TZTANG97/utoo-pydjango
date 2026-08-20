@@ -298,10 +298,14 @@ def class_save(request: Request, user=None):
     class_name = (data.get("className") or data.get("class_name") or "").strip()
     if not class_name:
         return Response(ajax_fail("分类名称不能为空"))
+    parent_id = _to_int(data.get("parent_id") or data.get("parentId") or data.get("pid"))
+    cid = _to_int(data.get("id"))
+    if catalog_repo.class_name_exists(class_name=class_name, parent_id=parent_id, exclude_id=cid):
+        return Response(ajax_fail("分类名称重复!"))
     cid = catalog_repo.save_class(
-        class_id=_to_int(data.get("id")),
+        class_id=cid,
         class_name=class_name,
-        parent_id=_to_int(data.get("parent_id") or data.get("parentId") or data.get("pid")),
+        parent_id=parent_id,
         goods_type_id=_to_int(data.get("goodsType_id") or data.get("goodsTypeId") or data.get("goods_type_id")),
         sequence=_to_int(data.get("sequence"), 0) or 0,
         display=_to_int(data.get("display"), 1) if data.get("display") not in (None, "") else 1,

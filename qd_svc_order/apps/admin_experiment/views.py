@@ -168,7 +168,7 @@ def manage_get(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def manage_save(request: Request, user=None):
-    del user
+    staff_id = str((user or {}).get("user_id") or (user or {}).get("id") or "")
     data = merge_payload(request)
     name = (data.get("name") or "").strip()
     if not name:
@@ -189,9 +189,23 @@ def manage_save(request: Request, user=None):
     special_type = to_int(special_raw, 0) or 0 if special_raw not in (None, "") else 0
     syuser_id = (data.get("syuserId") or data.get("syuser_id") or "").strip() or None
     head_user_id = (data.get("headUserId") or data.get("head_user_id") or "").strip() or None
+    row_id = to_int(data.get("id"))
+    sequence = to_int(data.get("sequence"), 0) or 0
+    if master_repo.manage_name_exists(
+        name=name, type_=type_, parent_id=parent_id, exclude_id=row_id
+    ):
+        return fail("实验测试分类名称重复!")
+    if sequence and master_repo.manage_sequence_exists(
+        sequence=sequence, type_=type_, parent_id=parent_id, exclude_id=row_id
+    ):
+        return fail("该排序序号已经存在!")
+    photo_id = to_int(data.get("photoId") or data.get("photo_id") or data.get("manage_main_photo_id"))
+    app_photo_id = to_int(
+        data.get("appPhotoId") or data.get("app_photo_id") or data.get("app_manage_main_photo_id")
+    )
     payload = {
         "name": name,
-        "sequence": to_int(data.get("sequence"), 0) or 0,
+        "sequence": sequence,
         "type": type_,
         "parent_id": parent_id,
         "pt_type": pt_type if type_ == 1 else 0,
@@ -206,9 +220,28 @@ def manage_save(request: Request, user=None):
             if type_ == 3
             else ""
         ),
+        "photo_id": photo_id,
+        "app_photo_id": app_photo_id if type_ == 3 else None,
     }
-    row_id = to_int(data.get("id"))
     new_id = master_repo.save_manage(payload, row_id=row_id)
+    raw_album = data.get("imageIds") or data.get("image_ids") or data.get("albumIds") or ""
+    album_ids: list[int] = []
+    if isinstance(raw_album, (list, tuple)):
+        for x in raw_album:
+            n = to_int(x)
+            if n:
+                album_ids.append(n)
+    else:
+        for part in str(raw_album).split(","):
+            n = to_int(part.strip())
+            if n:
+                album_ids.append(n)
+    master_repo.bind_manage_album(int(new_id), album_ids)
+    master_repo.write_manage_log(
+        row_id=int(new_id),
+        user_id=staff_id,
+        content="编辑类目" if row_id else "新增类目",
+    )
     return ok({"id": new_id}, res_msg="保存成功")
 
 
@@ -400,6 +433,8 @@ def goods_save(request: Request, user=None):
         return fail("产品名称不能为空")
     brand_id = to_int(data.get("brandId") or data.get("brand_id") or data.get("goods_brand_id"))
     row_id = to_int(data.get("id"))
+    if master_repo.goods_name_exists(name=name, brand_id=brand_id, exclude_id=row_id):
+        return fail("产品名称重复!")
     new_id = master_repo.save_goods(
         {
             "goods_name": name,
@@ -471,6 +506,8 @@ def brand_save(request: Request, user=None):
         return fail("品牌名称不能为空")
     first_word = (data.get("firstWord") or data.get("first_word") or "").strip()[:1]
     row_id = to_int(data.get("id"))
+    if master_repo.exp_brand_name_exists(name=name, exclude_id=row_id):
+        return fail("该品牌已经存在")
     new_id = master_repo.save_exp_brand(
         {
             "name": name,

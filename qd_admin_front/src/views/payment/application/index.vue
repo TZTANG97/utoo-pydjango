@@ -1,5 +1,6 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   agreePaymentApply,
@@ -22,6 +23,10 @@ const page = ref(1)
 const pageSize = ref(10)
 const detailVisible = ref(false)
 const detail = ref<Record<string, unknown> | null>(null)
+const detailFiles = ref<Record<string, unknown>[]>([])
+const detailOrders = ref<Record<string, unknown>[]>([])
+const detailLogs = ref<Record<string, unknown>[]>([])
+const router = useRouter()
 
 const filters = reactive({
   order_startime: '',
@@ -89,8 +94,23 @@ async function openDetail(row: Record<string, unknown>) {
     ElMessage.error(ajaxErrorMessage(res, '加载详情失败'))
     return
   }
-  detail.value = (res.obj || null) as Record<string, unknown> | null
+  const payload = (res.obj || {}) as Record<string, unknown>
+  const obj = (payload.obj && typeof payload.obj === 'object'
+    ? payload.obj
+    : payload) as Record<string, unknown>
+  detail.value = obj
+  detailFiles.value = Array.isArray(payload.files) ? (payload.files as Record<string, unknown>[]) : []
+  detailOrders.value = Array.isArray(payload.ofList)
+    ? (payload.ofList as Record<string, unknown>[])
+    : []
+  detailLogs.value = Array.isArray(payload.logs) ? (payload.logs as Record<string, unknown>[]) : []
   detailVisible.value = true
+}
+
+function goOrder(row: Record<string, unknown>) {
+  const id = row.id
+  if (id == null || String(id) === '') return
+  router.push({ name: 'ExperimentOrderDetail', params: { id: String(id) } })
 }
 
 async function handleAgree(row: Record<string, unknown>) {
@@ -109,7 +129,8 @@ async function handleRefuse(row: Record<string, unknown>) {
   const { value } = await ElMessageBox.prompt('请输入驳回原因', '拒绝付款', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
-  })
+  }).catch(() => ({ value: null as string | null }))
+  if (value === null) return
   const res = await refusePaymentApply(String(row.id), value || '')
   if (!isAjaxOk(res)) {
     ElMessage.error(ajaxErrorMessage(res, '操作失败'))
@@ -271,7 +292,7 @@ loadData()
     <el-dialog
       v-model="detailVisible"
       title="付款申请详情"
-      width="720px"
+      width="900px"
       class="detail-dialog"
       destroy-on-close
     >
@@ -297,9 +318,51 @@ loadData()
         <el-descriptions :column="2" border class="detail-desc">
           <el-descriptions-item label="申请时间">{{ formatDate(detail.addTime) }}</el-descriptions-item>
           <el-descriptions-item label="申请类型">{{ orderTypeLabel(detail.orderType) }}</el-descriptions-item>
-          <el-descriptions-item label="关联订单" :span="2">{{ detail.orderId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="关联订单" :span="2">
+            <template v-if="detailOrders.length">
+              <el-link
+                v-for="o in detailOrders"
+                :key="String(o.id)"
+                type="primary"
+                :underline="false"
+                class="order-link"
+                @click="goOrder(o)"
+              >
+                {{ o.order_id || o.orderId || '-' }}
+              </el-link>
+            </template>
+            <span v-else>{{ detail.orderId || '-' }}</span>
+          </el-descriptions-item>
           <el-descriptions-item label="备注" :span="2">{{ detail.mark || '-' }}</el-descriptions-item>
         </el-descriptions>
+
+        <div class="section-title">订单资料</div>
+        <div v-if="detailFiles.length" class="file-list">
+          <a
+            v-for="f in detailFiles"
+            :key="String(f.id)"
+            class="file-link"
+            :href="String(f.url || '#')"
+            target="_blank"
+            rel="noopener"
+          >
+            {{ f.displayName || f.info || f.name || '附件' }}
+          </a>
+        </div>
+        <div v-else class="cell-muted">暂无订单资料</div>
+
+        <div class="section-title">操作记录</div>
+        <el-table :data="detailLogs" border stripe size="small" empty-text="暂无操作记录">
+          <el-table-column label="操作时间" min-width="170">
+            <template #default="{ row }">{{ formatDate(row.addTime) }}</template>
+          </el-table-column>
+          <el-table-column label="操作人员" min-width="120">
+            <template #default="{ row }">{{ row.addusername || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="操作" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.content || '-' }}</template>
+          </el-table-column>
+        </el-table>
 
         <div v-if="String(detail.applyStatus) === '1'" class="detail-actions">
           <el-button type="danger" plain @click="handleRefuse(detail)">拒绝付款</el-button>
@@ -533,5 +596,35 @@ loadData()
   justify-content: flex-end;
   gap: 10px;
   margin-top: 18px;
+}
+
+.section-title {
+  margin: 18px 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #24324a;
+}
+
+.file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.file-link,
+.order-link {
+  margin-right: 12px;
+  color: #2f6fed;
+  text-decoration: none;
+}
+
+.file-link:hover,
+.order-link:hover {
+  text-decoration: underline;
+}
+
+.cell-muted {
+  color: #8a95a8;
+  font-size: 13px;
 }
 </style>

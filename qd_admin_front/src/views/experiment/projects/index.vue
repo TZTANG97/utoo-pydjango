@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <admin-page-card title="实验测试项目">
     <template #actions>
       <el-button type="primary" @click="openCreate">新增项目</el-button>
@@ -106,6 +106,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminPageCard from '@/components/AdminPageCard.vue'
 import {
@@ -270,6 +271,9 @@ async function handleDelete(row: Record<string, unknown>) {
 onMounted(async () => {
   firstOpts.value = await loadOpts(1)
   reload()
+  if (String(useRoute().query.create || '') === '1') {
+    openCreate()
+  }
 })
 </script>
 

@@ -299,7 +299,7 @@ def get_experiment_manage(em_id: int) -> dict[str, Any] | None:
     return fetch_one(
         """
         SELECT * FROM experiment_manage
-        WHERE id = %(id)s AND deleteStatus = 0 LIMIT 1
+        WHERE id = %(id)s AND IFNULL(deleteStatus, 0) = 0 LIMIT 1
         """,
         {"id": em_id},
     )
