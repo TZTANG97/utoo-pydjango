@@ -361,13 +361,24 @@ def agree_invoice(
         except Exception:
             pass
 
+        remark_parts: list[str] = []
+        for _oid, _amt, mk, _acc in bill_items:
+            text = (mk or "").strip()
+            if text and text not in remark_parts and text != "同意开票申请":
+                remark_parts.append(text)
+        log_content = "同意开票申请"
+        if remark_parts:
+            log_content = f"同意开票申请：{'；'.join(remark_parts)}"
+        elif (mark or "").strip():
+            log_content = f"同意开票申请：{(mark or '').strip()}"
+
         execute_insert(
             """
             INSERT INTO invoice_record_log
                 (content, invoice_apply_id, user_id, addTime, deleteStatus)
-            VALUES ('同意开票申请', %(aid)s, %(uid)s, NOW(), 0)
+            VALUES (%(ct)s, %(aid)s, %(uid)s, NOW(), 0)
             """,
-            {"aid": apply_id, "uid": staff_log_uid},
+            {"ct": log_content[:500], "aid": apply_id, "uid": staff_log_uid},
         )
     except DatabaseError as exc:
         logger.exception("agree_invoice db error apply=%s", apply_id)

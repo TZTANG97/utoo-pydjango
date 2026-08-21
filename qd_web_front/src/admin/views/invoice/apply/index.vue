@@ -26,6 +26,8 @@ const pageSize = ref(10)
 const detailVisible = ref(false)
 const detail = ref<Record<string, unknown> | null>(null)
 const detailFiles = ref<Record<string, unknown>[]>([])
+const detailInvoiceFiles = ref<Record<string, unknown>[]>([])
+const detailBills = ref<Record<string, unknown>[]>([])
 const detailOrders = ref<Record<string, unknown>[]>([])
 const detailLogs = ref<Record<string, unknown>[]>([])
 const openVisible = ref(false)
@@ -120,6 +122,10 @@ async function openDetail(row: Record<string, unknown>) {
     : payload) as Record<string, unknown>
   detail.value = obj
   detailFiles.value = Array.isArray(payload.files) ? (payload.files as Record<string, unknown>[]) : []
+  detailInvoiceFiles.value = Array.isArray(payload.invoiceFiles)
+    ? (payload.invoiceFiles as Record<string, unknown>[])
+    : []
+  detailBills.value = Array.isArray(payload.bills) ? (payload.bills as Record<string, unknown>[]) : []
   detailOrders.value = Array.isArray(payload.ofList)
     ? (payload.ofList as Record<string, unknown>[])
     : []
@@ -473,7 +479,7 @@ loadData()
           </el-descriptions-item>
           <el-descriptions-item label="是否回款">{{ payLabel(detail.is_pay) }}</el-descriptions-item>
           <el-descriptions-item label="邮箱">{{ detail.email || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="备注" :span="2">{{ detail.notes || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="申请备注" :span="2">{{ detail.notes || '-' }}</el-descriptions-item>
           <el-descriptions-item label="订单资料" :span="2">
             <div v-if="detailFiles.length" class="file-list">
               <a
@@ -489,7 +495,59 @@ loadData()
             </div>
             <span v-else class="cell-muted">暂无资料</span>
           </el-descriptions-item>
+          <el-descriptions-item label="开票附件" :span="2">
+            <div v-if="detailInvoiceFiles.length" class="file-list">
+              <a
+                v-for="f in detailInvoiceFiles"
+                :key="`kp-${String(f.id)}`"
+                class="file-link"
+                :href="String(f.url || '#')"
+                target="_blank"
+                rel="noopener"
+              >
+                {{ f.displayName || f.info || f.name || '附件' }}
+              </a>
+            </div>
+            <span v-else class="cell-muted">暂无开票附件</span>
+          </el-descriptions-item>
         </el-descriptions>
+
+        <div v-if="detailBills.length" class="section-title">开票记录</div>
+        <el-table
+          v-if="detailBills.length"
+          :data="detailBills"
+          border
+          stripe
+          size="small"
+          empty-text="暂无开票记录"
+          class="detail-bills"
+        >
+          <el-table-column label="开票时间" min-width="170">
+            <template #default="{ row }">{{ formatDate(row.addTime) }}</template>
+          </el-table-column>
+          <el-table-column label="开票金额" width="120" align="right">
+            <template #default="{ row }">
+              <span class="money">¥ {{ formatMoney(row.money) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作备注" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.mark || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="上传文件" min-width="160" show-overflow-tooltip>
+            <template #default="{ row }">
+              <a
+                v-if="row.url"
+                class="file-link"
+                :href="String(row.url)"
+                target="_blank"
+                rel="noopener"
+              >
+                {{ row.displayName || '附件' }}
+              </a>
+              <span v-else class="cell-muted">-</span>
+            </template>
+          </el-table-column>
+        </el-table>
 
         <div class="section-title">关联订单</div>
         <el-table :data="detailOrders" border stripe size="small" empty-text="暂无关联订单">

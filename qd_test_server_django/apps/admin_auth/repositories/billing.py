@@ -178,20 +178,30 @@ def list_invoice_related_orders(order_ids_raw: str) -> list[dict[str, Any]]:
 
 def list_invoice_order_files(order_ids_raw: str) -> list[dict[str, Any]]:
     """订单资料：accessory type=5（对齐 Java getByExpOfId1120）。"""
+    return _list_order_accessories(order_ids_raw, acc_types=(5,))
+
+
+def list_invoice_kp_files(order_ids_raw: str) -> list[dict[str, Any]]:
+    """开票凭据：bill/uploadBill 写入的 accessory type=1。"""
+    return _list_order_accessories(order_ids_raw, acc_types=(1,))
+
+
+def _list_order_accessories(order_ids_raw: str, *, acc_types: tuple[int, ...]) -> list[dict[str, Any]]:
     from django.conf import settings
 
     base = (getattr(settings, "IMAGE_WEB_SERVER", "") or "").rstrip("/")
+    type_list = ",".join(str(int(t)) for t in acc_types) or "5"
     out: list[dict[str, Any]] = []
     for part in str(order_ids_raw or "").split(","):
         part = part.strip()
         if not part.isdigit():
             continue
         rows = fetch_all(
-            """
+            f"""
             SELECT id, name, path, info, ext, type, exp_of_id AS expOfId
             FROM accessory
             WHERE IFNULL(deleteStatus, 0) = 0
-              AND IFNULL(type, 0) = 5
+              AND IFNULL(type, 0) IN ({type_list})
               AND CAST(exp_of_id AS CHAR) = CAST(%(oid)s AS CHAR)
             ORDER BY id ASC
             """,
@@ -208,6 +218,48 @@ def list_invoice_order_files(order_ids_raw: str) -> list[dict[str, Any]]:
             else:
                 item["url"] = f"{path}/{name}" if path and name else (path or name or "")
             item["displayName"] = str(item.get("info") or name or item["url"] or "-")
+            out.append(item)
+    return out
+
+
+def list_invoice_bills(order_ids_raw: str) -> list[dict[str, Any]]:
+    """开票票据：qd_bill type=1 + 关联附件，供详情展示备注/文件。"""
+    from django.conf import settings
+
+    base = (getattr(settings, "IMAGE_WEB_SERVER", "") or "").rstrip("/")
+    out: list[dict[str, Any]] = []
+    for part in str(order_ids_raw or "").split(","):
+        part = part.strip()
+        if not part.isdigit():
+            continue
+        rows = fetch_all(
+            """
+            SELECT
+                b.id, b.add_time AS addTime, b.money, b.mark,
+                b.exp_of_id AS ofId, b.accessory_id AS accessoryId,
+                a.name AS accessoryName, a.path AS accessoryPath,
+                a.info AS accessoryInfo, a.ext AS accessoryExt
+            FROM qd_bill b
+            LEFT JOIN accessory a ON a.id = b.accessory_id
+            WHERE b.type = 1
+              AND CAST(b.exp_of_id AS CHAR) = CAST(%(oid)s AS CHAR)
+            ORDER BY b.id DESC
+            """,
+            {"oid": int(part)},
+        )
+        for r in rows:
+            item = to_jsonable(r)
+            path = str(item.get("accessoryPath") or "").rstrip("/")
+            name = str(item.get("accessoryName") or "")
+            if path.startswith("http"):
+                item["url"] = f"{path}/{name}" if name else path
+            elif base and path and name:
+                item["url"] = f"{base}/{path.strip('/')}/{name}"
+            else:
+                item["url"] = f"{path}/{name}" if path and name else ""
+            item["displayName"] = str(
+                item.get("accessoryInfo") or name or item.get("url") or ""
+            )
             out.append(item)
     return out
 
@@ -230,7 +282,7 @@ def list_invoice_record_logs(apply_id: int) -> list[dict[str, Any]]:
 
 
 def get_invoice_detail(apply_id: int) -> dict[str, Any] | None:
-    """对齐 Java invoiceDetail.ajax：obj + files + ofList + logs。"""
+    """对齐 Java invoiceDetail.ajax：obj + files + ofList + logs + 开票票据/凭据。"""
     row = get_invoice_apply(apply_id)
     if not row:
         return None
@@ -239,6 +291,8 @@ def get_invoice_detail(apply_id: int) -> dict[str, Any] | None:
     return {
         "obj": row,
         "files": list_invoice_order_files(order_ids),
+        "invoiceFiles": list_invoice_kp_files(order_ids),
+        "bills": list_invoice_bills(order_ids),
         "ofList": of_list,
         "logs": list_invoice_record_logs(apply_id),
         "ids": order_ids,

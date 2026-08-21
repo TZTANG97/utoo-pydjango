@@ -1155,21 +1155,11 @@ def list_grab_orders(
     page: int,
     page_size: int,
 ) -> tuple[list[dict[str, Any]], int]:
-    """抢单列表：实验子订单(10) + 实验分包子订单(9)，子行 test_user_id=22。"""
+    """抢单实验列表：仅实验子订单(10)，子行 test_user_id=22。分包子单(9)不进本列表。"""
     where = """
         WHERE t.order_status > 0
-          AND CAST(IFNULL(t.order_type, '') AS CHAR) IN ('9', '10')
-          AND (
-            EXISTS (
-              SELECT 1
-              FROM exp_qd_purchase_order_child poc
-              JOIN experiment_order_child ocf ON CAST(poc.order_child_id AS CHAR) = CAST(ocf.id AS CHAR)
-              WHERE CAST(poc.purchase_order_id AS CHAR) = CAST(t.id AS CHAR)
-                AND CAST(IFNULL(ocf.test_user_id, '') AS CHAR) = CAST(%(pool_uid)s AS CHAR)
-                AND ocf.order_status <= 36
-                AND IFNULL(ocf.delete_status, 2) <> 1
-            )
-            OR EXISTS (
+          AND CAST(IFNULL(t.order_type, '') AS CHAR) = '10'
+          AND EXISTS (
               SELECT 1
               FROM experiment_order_child ocf2
               WHERE CAST(ocf2.order_form_id AS CHAR) = CAST(t.id AS CHAR)
@@ -1177,7 +1167,6 @@ def list_grab_orders(
                 AND ocf2.order_status <= 36
                 AND IFNULL(ocf2.delete_status, 2) <> 1
             )
-          )
     """
     params: dict[str, Any] = {"pool_uid": GRAB_POOL_TEST_USER_ID}
     if order_id:
