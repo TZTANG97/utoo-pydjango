@@ -742,7 +742,15 @@ async function loadOptions() {
     fetchTaxAll(),
   ])
   managerOptions.value = mgr.data || []
-  testManagerOptions.value = testMgr.data || []
+  // 实验室测试主管：测试主管（实验主管）+ 销售主管均可选
+  {
+    const byId = new Map<string, Record<string, unknown>>()
+    for (const u of [...(testMgr.data || []), ...(mgr.data || [])]) {
+      const id = String(u.id ?? '')
+      if (id && !byId.has(id)) byId.set(id, u)
+    }
+    testManagerOptions.value = [...byId.values()]
+  }
   staffOptions.value = staff.data || []
   paytypeOptions.value = (payRes.data || []).filter((p) => !p.delStatus && Number(p.del_status || 0) === 0)
   billTypeOptions.value = (billRes.data || []).filter((b) => !b.delStatus)

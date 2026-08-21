@@ -1121,6 +1121,20 @@ function mapUserRows(rows: Record<string, unknown>[]): Opt[] {
     .filter((o) => o.value !== '')
 }
 
+/** 按 value 去重合并（后出现的不覆盖已有 label） */
+function mergeOpts(...lists: Opt[][]): Opt[] {
+  const seen = new Set<string>()
+  const out: Opt[] = []
+  for (const list of lists) {
+    for (const o of list) {
+      if (!o.value || seen.has(o.value)) continue
+      seen.add(o.value)
+      out.push(o)
+    }
+  }
+  return out
+}
+
 function lineTotal(row: LineRow) {
   const n = (Number(row.goodsNums) || 0) * (parseFloat(String(row.goodsPrice || 0)) || 0)
   return n ? n.toFixed(2) : ''
@@ -1526,14 +1540,17 @@ async function loadOptions() {
     classOpts.value = []
   }
   try {
-    const mgr = await fetchUserList({ start: 0, length: 500, type: 1, draw: 1 }, silent)
+    // type=1 销售主管；type=3 测试主管（实验主管）
+    const [mgr, testMgr] = await Promise.all([
+      fetchUserList({ start: 0, length: 500, type: 1, draw: 1 }, silent),
+      fetchUserList({ start: 0, length: 500, type: 3, draw: 1 }, silent),
+    ])
     managerOpts.value = mapUserRows(Array.isArray(mgr.data) ? mgr.data : [])
-  } catch {
-    /* ignore */
-  }
-  try {
-    const testMgr = await fetchUserList({ start: 0, length: 500, type: 3, draw: 1 }, silent)
-    testManagerOpts.value = mapUserRows(Array.isArray(testMgr.data) ? testMgr.data : [])
+    // 分包子单「实验室测试主管」：销售主管 + 实验主管均可选
+    testManagerOpts.value = mergeOpts(
+      mapUserRows(Array.isArray(testMgr.data) ? testMgr.data : []),
+      managerOpts.value
+    )
   } catch {
     /* ignore */
   }
