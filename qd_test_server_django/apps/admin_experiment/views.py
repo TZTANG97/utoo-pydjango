@@ -797,10 +797,10 @@ def order_list_welcome(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def grab_list(request: Request, user=None):
-    del user
     data = merge_payload(request)
     draw, page, page_size = parse_datatable_params(request)
     rows, total = order_repo.list_grab_orders(
+        viewer_user_id=_staff_id(user),
         order_id=(data.get("orderId") or data.get("order_id") or "").strip(),
         source_order=(data.get("sourceOrder") or data.get("source_order") or data.get("parent_order_id") or "").strip(),
         company_name=(data.get("companyName") or data.get("company_name") or data.get("stockCompanyName") or "").strip(),

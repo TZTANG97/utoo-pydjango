@@ -37,7 +37,7 @@
           </p>
         </div>
         <div class="hero-meta">
-          <div v-if="!isGrabMode" class="meta-item">
+          <div v-if="!isGrabMode && (!isChildKind || canViewFinance)" class="meta-item">
             <span class="meta-label">总价</span>
             <strong>{{ detail.totalPrice ?? '-' }}</strong>
             <small>{{ detail.currencyLabel }}</small>
@@ -113,7 +113,7 @@
           确认已下单
         </el-button>
         <el-button
-          v-if="detail.canAskPay"
+          v-if="canViewFinance && detail.canAskPay"
           type="warning"
           :loading="acting"
           @click="onSubPay('1')"
@@ -121,7 +121,7 @@
           申请付款
         </el-button>
         <el-button
-          v-if="detail.canAuditPay"
+          v-if="canViewFinance && detail.canAuditPay"
           type="success"
           :loading="acting"
           @click="onSubPay('2')"
@@ -129,7 +129,7 @@
           付款审核通过
         </el-button>
         <el-button
-          v-if="detail.canAuditPay"
+          v-if="canViewFinance && detail.canAuditPay"
           type="danger"
           :loading="acting"
           @click="onSubPay('3')"
@@ -137,7 +137,7 @@
           付款申请驳回
         </el-button>
         <el-button
-          v-if="detail.canReAskPay"
+          v-if="canViewFinance && detail.canReAskPay"
           type="warning"
           :loading="acting"
           @click="onSubPay('1')"
@@ -145,7 +145,7 @@
           重新发起付款申请
         </el-button>
         <el-button
-          v-if="detail.canUploadPay"
+          v-if="canViewFinance && detail.canUploadPay"
           type="warning"
           :loading="acting"
           @click="openSubPayDialog"
@@ -153,7 +153,7 @@
           上传付款信息
         </el-button>
         <el-button
-          v-if="detail.canUploadInvoice"
+          v-if="canViewFinance && detail.canUploadInvoice"
           type="warning"
           :loading="acting"
           @click="openSubInvoiceDialog"
@@ -162,7 +162,7 @@
         </el-button>
         <!-- Java 主单：开票 → 收款 → 确认付款 → 沟通确认 → 分成 → 结清 → 关联 -->
         <el-button
-          v-if="detail.canInvoice"
+          v-if="canViewFinance && detail.canInvoice"
           type="warning"
           :loading="acting"
           @click="invoiceVisible = true"
@@ -170,7 +170,7 @@
           开票
         </el-button>
         <el-button
-          v-if="detail.canReceiveBill"
+          v-if="canViewFinance && detail.canReceiveBill"
           type="warning"
           :loading="acting"
           @click="openReceiveDialog"
@@ -178,7 +178,7 @@
           收款
         </el-button>
         <el-button
-          v-if="detail.canConfirmPay"
+          v-if="canViewFinance && detail.canConfirmPay"
           type="success"
           :loading="acting"
           @click="onConfirmPay"
@@ -613,10 +613,8 @@
             {{ detail.costSettleLabel || '-' }}
           </el-descriptions-item>
           <el-descriptions-item v-if="!isChildKind && detail.canViewShareInfo !== false" label="分成信息" :span="3">
-            <div>毛利：{{ detail.userScaleLabel || detail.userScaleInfo || '-' }}</div>
-            <div v-if="detail.costScaleLabel || detail.salecbUserScaleInfo">
-              成本：{{ detail.costScaleLabel || detail.salecbUserScaleInfo }}
-            </div>
+            <div>{{ orderType === '8' ? '利润' : '毛利' }}：{{ shareProfitText }}</div>
+            <div v-if="orderType !== '8'">成本：{{ shareCostText }}</div>
           </el-descriptions-item>
           <el-descriptions-item label="样品是否回收">{{ detail.reversoLabel || '-' }}</el-descriptions-item>
           <el-descriptions-item label="收件人">{{ detail.shipUser || '-' }}</el-descriptions-item>
@@ -653,7 +651,7 @@
                 </el-upload>
               </div>
             </div>
-            <div class="files-row">
+            <div v-if="!isChildKind || canViewFinance" class="files-row">
               <span class="files-label">发票资料</span>
               <div class="files-list">
                 <div v-for="f in invoiceFiles" :key="'inv-' + String(f.id)" class="file-item">
@@ -1016,7 +1014,7 @@
             </template>
           </el-table-column>
           <el-table-column
-            v-if="orderType === '9'"
+            v-if="orderType === '9' && canViewFinance"
             prop="costPrice"
             label="分包单价"
             width="90"
@@ -2049,6 +2047,15 @@ const orderType = computed(() => String(detail.value?.orderType || ''))
 const isChildKind = computed(() => ['9', '10'].includes(orderType.value))
 /** 对齐 Java isFlag：测试主管/测试人员不可看付款、开票等财务数据。 */
 const canViewFinance = computed(() => detail.value?.canViewFinance !== false)
+/** C 类 / 测试人员：分成区只留空标签，不展示人员与比例。 */
+const shareProfitText = computed(() => {
+  if (detail.value?.canViewShareDetail === false) return ''
+  return String(detail.value?.userScaleLabel || '').trim()
+})
+const shareCostText = computed(() => {
+  if (detail.value?.canViewShareDetail === false) return ''
+  return String(detail.value?.costScaleLabel || '').trim()
+})
 const showOrderDocsBlock = computed(() => ['6', '8', '9', '10'].includes(orderType.value))
 const outBillTypeLabel = computed(() => {
   const d = detail.value

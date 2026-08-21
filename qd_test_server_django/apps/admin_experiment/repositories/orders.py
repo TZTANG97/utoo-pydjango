@@ -201,6 +201,7 @@ _UTOO_TYPE_ROLE = {
     "外部公司": "外部公司",
     "销售主管": "销售主管",
     "测试主管": "销售主管",
+    "测试人员": "测试人员",
     "C类销售人员": "C类销售人员",
     "R类人员": "R类人员",
     "H类用户": "H类用户",
@@ -1091,13 +1092,18 @@ _GRAB_DENIED_ROLE_NAME = "R类人员"
 
 
 def _load_grab_perm_ctx(user_id: str | None) -> dict[str, Any] | None:
-    """加载当前用户抢单权限上下文（对齐 Java isqdqx + roleName!=R类人员）。"""
+    """加载当前用户抢单权限上下文。
+
+    列表对齐 Java qd_list_dpt：admin / 测试人员 / 测试主管看全部；
+    其它账号按 sy_user_expmanage 绑定的三级分类过滤。
+    详情抢单按钮对齐 isqdqx：同上 + R 类不可抢。
+    """
     uid = str(user_id or "").strip()
     if not uid:
         return None
     u = fetch_one(
         """
-        SELECT u.utoo_type AS utooType, utr.name AS roleName
+        SELECT u.user_name AS userName, u.utoo_type AS utooType, utr.name AS roleName
         FROM sy_users u
         LEFT JOIN sy_user_type sut
           ON sut.type_name = u.utoo_type AND IFNULL(sut.type, 2) = 2
@@ -1109,12 +1115,20 @@ def _load_grab_perm_ctx(user_id: str | None) -> dict[str, Any] | None:
     )
     if not u:
         return None
+    name = str(u.get("userName") or "").strip().lower()
     utoo = str(u.get("utooType") or "").strip()
     role = str(u.get("roleName") or "").strip() or utoo
     # 模板：#if($!roleName!="R类人员")
     if utoo == _GRAB_DENIED_ROLE_NAME or role == _GRAB_DENIED_ROLE_NAME:
         return {"denied": True, "user_id": uid}
-    if utoo in _GRAB_ALLOWED_UTOO_TYPES:
+    # Java：ADMIN / TEST_USER / TEST_MANAGER 不传 userId2
+    if (
+        name == "admin"
+        or utoo in _GRAB_ALLOWED_UTOO_TYPES
+        or role in ("系统管理员", "测试人员")
+        or "测试主管" in utoo
+        or "测试人员" in utoo
+    ):
         return {"allowed_all": True, "user_id": uid, "class_ids": set()}
     rows = fetch_all(
         """
@@ -1146,6 +1160,7 @@ def _user_has_grab_qx(*, user_id: str, class_id: Any) -> bool:
 
 def list_grab_orders(
     *,
+    viewer_user_id: str | int | None = None,
     order_id: str = "",
     source_order: str = "",
     company_name: str = "",
@@ -1157,32 +1172,70 @@ def list_grab_orders(
 ) -> tuple[list[dict[str, Any]], int]:
     """抢单实验列表：实验子订单(10)，子行 test_user_id=22。
 
-    创建子单时产品行仍挂在主单 order_form_id 上，通过 exp_qd_purchase_order_child
-    挂到子单；只查 order_form_id=子单 id 会把抢单数据漏掉。
+    权限对齐 Java qd_list_dpt + listPagesdpt0419：
+    - 系统管理员 / 测试人员 / 测试主管：看全部待抢单
+    - 其它账号：仅看 sy_user_expmanage 绑定了对应三级分类的待抢子行
     """
-    where = """
-        WHERE t.order_status > 0 AND t.order_type IN ('10')
-          AND (
-            EXISTS (
-              SELECT 1
-              FROM exp_qd_purchase_order_child poc
-              JOIN experiment_order_child ocf ON poc.order_child_id = ocf.id
-              WHERE poc.purchase_order_id = t.id
-                AND ocf.test_user_id = %(pool_uid)s
-                AND ocf.order_status <= 36
-                AND IFNULL(ocf.delete_status, 2) <> 1
+    grab_ctx = _load_grab_perm_ctx(str(viewer_user_id or "").strip() or None)
+    if not grab_ctx or grab_ctx.get("denied"):
+        return [], 0
+    # 非全量权限且未绑定任何测试项目 → 空列表
+    if not grab_ctx.get("allowed_all") and not (grab_ctx.get("class_ids") or set()):
+        return [], 0
+
+    # 子行挂接：采购关联优先，兼容直接挂子单
+    child_match = """
+            (
+              EXISTS (
+                SELECT 1
+                FROM exp_qd_purchase_order_child poc
+                JOIN experiment_order_child ocf ON poc.order_child_id = ocf.id
+                WHERE poc.purchase_order_id = t.id
+                  AND ocf.test_user_id = %(pool_uid)s
+                  AND ocf.order_status <= 36
+                  AND IFNULL(ocf.delete_status, 2) <> 1
+                  {class_filter_poc}
+              )
+              OR EXISTS (
+                SELECT 1
+                FROM experiment_order_child ocf2
+                WHERE ocf2.order_form_id = t.id
+                  AND ocf2.test_user_id = %(pool_uid)s
+                  AND ocf2.order_status <= 36
+                  AND IFNULL(ocf2.delete_status, 2) <> 1
+                  {class_filter_direct}
+              )
             )
-            OR EXISTS (
-              SELECT 1
-              FROM experiment_order_child ocf2
-              WHERE ocf2.order_form_id = t.id
-                AND ocf2.test_user_id = %(pool_uid)s
-                AND ocf2.order_status <= 36
-                AND IFNULL(ocf2.delete_status, 2) <> 1
-            )
-          )
     """
+    class_filter_poc = ""
+    class_filter_direct = ""
     params: dict[str, Any] = {"pool_uid": GRAB_POOL_TEST_USER_ID}
+    # Java：非 admin/测试人员/测试主管 时 userId2 → sue.user_id = 当前用户
+    if not grab_ctx.get("allowed_all"):
+        class_filter_poc = """
+                  AND EXISTS (
+                    SELECT 1 FROM sy_user_expmanage sue
+                    WHERE CAST(sue.user_id AS CHAR) = CAST(%(viewer_uid)s AS CHAR)
+                      AND CAST(sue.exp_manage_id AS CHAR) = CAST(ocf.experiment_class_id AS CHAR)
+                  )
+        """
+        class_filter_direct = """
+                  AND EXISTS (
+                    SELECT 1 FROM sy_user_expmanage sue2
+                    WHERE CAST(sue2.user_id AS CHAR) = CAST(%(viewer_uid)s AS CHAR)
+                      AND CAST(sue2.exp_manage_id AS CHAR) = CAST(ocf2.experiment_class_id AS CHAR)
+                  )
+        """
+        params["viewer_uid"] = str(grab_ctx.get("user_id") or viewer_user_id or "").strip()
+
+    child_match = child_match.format(
+        class_filter_poc=class_filter_poc,
+        class_filter_direct=class_filter_direct,
+    )
+    where = f"""
+        WHERE t.order_status > 0 AND t.order_type IN ('10')
+          AND {child_match}
+    """
     if order_id:
         where += " AND t.order_id LIKE %(order_id)s"
         params["order_id"] = f"%{order_id}%"
@@ -2966,11 +3019,30 @@ def _is_audit_admin(user_id: str | int | None) -> bool:
     return name == "admin" or czqx == 1 or utoo in ("系统管理员",)
 
 
-def apply_audit_permission(row: dict[str, Any], viewer_user_id: str | int | None) -> None:
-    """对齐 Java 详情审核按钮。
+def _is_sys_admin_user(user_id: str | int | None) -> bool:
+    """仅系统管理员 / admin 账号（不含 is_czqx、不含测试主管角色映射）。"""
+    uid = str(user_id or "").strip()
+    if not uid:
+        return False
+    u = fetch_one(
+        """
+        SELECT user_name AS userName, utoo_type AS utooType
+        FROM sy_users WHERE CAST(id AS CHAR) = CAST(%(id)s AS CHAR) LIMIT 1
+        """,
+        {"id": uid},
+    )
+    if not u:
+        return False
+    name = str(u.get("userName") or "").strip().lower()
+    utoo = str(u.get("utooType") or "").strip()
+    return name == "admin" or utoo in ("系统管理员",)
 
-    - type=9 分包子单：test_manager 或 isCzqx/admin（isshqx）
-    - 其它：sale_manager 或 isCzqx/admin
+
+def apply_audit_permission(row: dict[str, Any], viewer_user_id: str | int | None) -> None:
+    """详情订单审核按钮。
+
+    - type=9 分包子单：本单实验室测试主管；系统管理员可审
+    - 其它：本单销售主管或 isCzqx/admin
     """
     try:
         st = int(row.get("orderStatus")) if row.get("orderStatus") is not None else -1
@@ -2983,20 +3055,24 @@ def apply_audit_permission(row: dict[str, Any], viewer_user_id: str | int | None
     if not uid:
         row["canAudit"] = False
         return
+    ot = str(row.get("orderType") or "")
+    if ot == "9":
+        # 提交审核后由实验室测试主管审；admin 看全部
+        if _is_sys_admin_user(uid):
+            row["canAudit"] = True
+            return
+        tm = str(row.get("testManagerId") or "").strip()
+        row["canAudit"] = bool(tm and uid == tm)
+        return
     if _is_audit_admin(uid):
         row["canAudit"] = True
         return
-    ot = str(row.get("orderType") or "")
-    if ot == "9":
-        tm = str(row.get("testManagerId") or "").strip()
-        row["canAudit"] = bool(tm and uid == tm)
-    else:
-        sm = str(row.get("saleManagerId") or "").strip()
-        row["canAudit"] = bool(sm and uid == sm)
+    sm = str(row.get("saleManagerId") or "").strip()
+    row["canAudit"] = bool(sm and uid == sm)
 
 
 def apply_pay_audit_permission(row: dict[str, Any], viewer_user_id: str | int | None) -> None:
-    """对齐 Java 付款审核：sale_manager 或 isxsshqx（销售主管且为本单销售主管）。"""
+    """付款审核：本单销售主管；系统管理员可审（测试主管不可审付款）。"""
     if not row.get("canAuditPay"):
         return
     uid = str(viewer_user_id or "").strip()
@@ -3004,11 +3080,10 @@ def apply_pay_audit_permission(row: dict[str, Any], viewer_user_id: str | int | 
     if not uid:
         row["canAuditPay"] = False
         return
-    if _is_audit_admin(uid):
+    if _is_sys_admin_user(uid):
         return
     if uid == sm:
         return
-    # 销售主管角色且挂接为本单销售主管（与 uid==sm 等价兜底）
     u = fetch_one(
         """
         SELECT utoo_type AS utooType
@@ -3019,6 +3094,10 @@ def apply_pay_audit_permission(row: dict[str, Any], viewer_user_id: str | int | 
         {"id": uid},
     )
     utoo = str((u or {}).get("utooType") or "").strip()
+    # 测试主管 role 映射为销售主管，不可凭角色审付款
+    if "测试主管" in utoo or "测试人员" in utoo:
+        row["canAuditPay"] = False
+        return
     if ("销售主管" in utoo or utoo == "销售主管") and uid == sm:
         return
     row["canAuditPay"] = False
@@ -3537,14 +3616,14 @@ def get_order_detail_bundle(
     yyd_files = [f for f in files if str(f.get("type") or "") == "6"]
     can_view_share = bool(role_ctx.get("can_view_share"))
     row["canViewShareInfo"] = can_view_share
+    row["canViewShareDetail"] = bool(role_ctx.get("can_view_share_detail"))
     row["canViewLogs"] = bool(role_ctx.get("can_view_logs"))
     # Java isFlag 仅实验分包采购子单详情（type 9/10）隐藏财务；实验主单详情始终展示总价/币种/开票等
     can_view_finance = bool(role_ctx.get("can_view_finance", True))
     if ot not in ("9", "10"):
         can_view_finance = True
     row["canViewFinance"] = can_view_finance
-    # 对齐 Java isFlag=false：测试主管/测试人员不返回付款·开票「数据」；
-    # 上传付款/开票/申请付款按钮仍按状态显隐（Java 未用 isFlag 包按钮）。
+    # 对齐 Java isFlag=false：测试主管/测试人员不返回付款·开票数据，并隐藏对应操作。
     if not can_view_finance:
         row["expectPayList"] = []
         row["receiveBills"] = []
@@ -3564,11 +3643,14 @@ def get_order_detail_bundle(
         invoice_files = []
         for ch in children:
             ch["costPrice"] = None
-        # 测试主管不可做付款审核（销售主管权限）；保留上传入口条件
         row["canAuditPay"] = False
         row["canInvoice"] = False
         row["canReceiveBill"] = False
         row["canConfirmPay"] = False
+        row["canAskPay"] = False
+        row["canReAskPay"] = False
+        row["canUploadPay"] = False
+        row["canUploadInvoice"] = False
     if not can_view_share or not role_ctx.get("can_view_share_detail"):
         # 隐藏区或 C 类：不返回分成明细（C 类仍显示空的分成信息标签）
         row["userScaleLabel"] = ""
@@ -3661,9 +3743,9 @@ def audit_order(
     uid = str(staff_user_id or "").strip()
     ot = str(row.get("orderType") or "")
     if ot == "9":
-        # 对齐 Java：实验室测试主管 / isCzqx
+        # 实验室测试主管审单；系统管理员可审
         tm = str(row.get("testManagerId") or "").strip()
-        if not uid or (uid != tm and not _is_audit_admin(uid)):
+        if not uid or (uid != tm and not _is_sys_admin_user(uid)):
             return False, "无审核权限（需实验室测试主管）"
     else:
         sm = str(row.get("saleManagerId") or "").strip()
@@ -3902,14 +3984,23 @@ def _viewer_role_context(viewer_user_id: str | int | None) -> dict[str, Any]:
     is_c = role == "C类销售人员" or "C类销售人员" in utoo
     ctx["is_c_sales"] = is_c
     is_test_mgr = "测试主管" in utoo
-    is_test_user = ("测试人员" in utoo) and (not is_test_mgr)
-    if is_test_mgr or is_test_user:
+    # Java compareRole(TEST_USER)：roleName==测试人员，不要求 utoo_type 字面量
+    is_test_user = (not is_test_mgr) and (role == "测试人员" or "测试人员" in utoo)
+    if is_test_mgr:
         ctx["is_test_role"] = True
         ctx["can_view_share"] = False
         ctx["can_view_share_detail"] = False
         ctx["can_share_ratio"] = False
         ctx["can_view_finance"] = False
-        # 对齐 Java 详情：测试主管/测试人员可看完整操作记录（非仅本人）
+        ctx["can_view_all_logs"] = True
+    elif is_test_user:
+        ctx["is_test_role"] = True
+        # 主订单分成同 C 类：只显示空的毛利/成本，不给具体人员与比例
+        ctx["can_view_share"] = True
+        ctx["can_view_share_detail"] = False
+        ctx["can_share_ratio"] = False
+        # 分包子单详情同测试主管：隐藏付款/开票
+        ctx["can_view_finance"] = False
         ctx["can_view_all_logs"] = True
     if role in ("R类人员", "H类用户"):
         ctx["can_view_share"] = False

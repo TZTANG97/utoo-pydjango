@@ -373,21 +373,32 @@ def attach_sample_action_flags(
     )
 
 
-def _is_sample_admin(user_id: str | int | None) -> bool:
+def _load_sample_viewer(user_id: str | int | None) -> dict[str, Any] | None:
     uid = str(user_id or "").strip()
     if not uid:
-        return False
-    u = fetch_one(
+        return None
+    return fetch_one(
         """
         SELECT user_name AS userName, utoo_type AS utooType, is_czqx AS isCzqx
         FROM sy_users WHERE CAST(id AS CHAR) = CAST(%(id)s AS CHAR) LIMIT 1
         """,
         {"id": uid},
     )
+
+
+def _is_warehouse_utoo(utoo: str) -> bool:
+    return "仓库管理" in str(utoo or "")
+
+
+def _is_sample_admin(user_id: str | int | None) -> bool:
+    """系统管理员可见全部样品按钮；仓库管理即便 is_czqx=1 也不算全权。"""
+    u = _load_sample_viewer(user_id)
     if not u:
         return False
     name = str(u.get("userName") or "").strip().lower()
     utoo = str(u.get("utooType") or "").strip()
+    if _is_warehouse_utoo(utoo):
+        return False
     try:
         czqx = int(u.get("isCzqx") or 0)
     except (TypeError, ValueError):
@@ -402,10 +413,13 @@ def _filter_sample_flags_by_viewer(
     children: list[dict[str, Any]],
     parent: dict[str, Any] | None,
 ) -> None:
-    """对齐 Java：仓库管理员(warehouse_user)可到货/寄回/留存；领用等不含仓库。"""
+    """对齐 Java：仓库管理员仅到货/寄回/留存；领用/开始测试/结束测试不含仓库。"""
     uid = str(viewer_user_id or "").strip()
     if not uid or _is_sample_admin(uid):
         return
+
+    viewer = _load_sample_viewer(uid) or {}
+    is_wh_role = _is_warehouse_utoo(str(viewer.get("utooType") or ""))
 
     ot = str(row.get("orderType") or "")
     full_ids: set[str] = set()
@@ -456,12 +470,21 @@ def _filter_sample_flags_by_viewer(
     )
     # 仓库侧可操作：到货(含入库选仓)、寄回、留存/报废
     warehouse_keys = ("ypdhShow", "ypjhShow", "yplcShow")
+
+    # 用户类型「仓库管理」：实验子单仅到货/寄回/留存，且须为本单 warehouse_user
+    if is_wh_role:
+        allow_wh = ot == "10" and bool(wh) and uid == wh
+        for k in sample_keys:
+            if not (allow_wh and k in warehouse_keys):
+                row[k] = False
+        return
+
     if uid not in warehouse_scope_ids:
         for k in sample_keys:
             row[k] = False
         return
 
-    # 仅仓库管理员（不在销售/测试等 full 名单）：只保留仓库侧按钮
+    # 仅本单 warehouse_user（不在销售/测试等 full 名单）：只保留仓库侧按钮
     if uid not in full_ids:
         for k in sample_keys:
             if k not in warehouse_keys:
