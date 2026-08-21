@@ -1155,18 +1155,32 @@ def list_grab_orders(
     page: int,
     page_size: int,
 ) -> tuple[list[dict[str, Any]], int]:
-    """抢单实验列表：仅实验子订单(10)，子行 test_user_id=22。分包子单(9)不进本列表。"""
+    """抢单实验列表：实验子订单(10)，子行 test_user_id=22。
+
+    创建子单时产品行仍挂在主单 order_form_id 上，通过 exp_qd_purchase_order_child
+    挂到子单；只查 order_form_id=子单 id 会把抢单数据漏掉。
+    """
     where = """
-        WHERE t.order_status > 0
-          AND CAST(IFNULL(t.order_type, '') AS CHAR) = '10'
-          AND EXISTS (
+        WHERE t.order_status > 0 AND t.order_type IN ('10')
+          AND (
+            EXISTS (
+              SELECT 1
+              FROM exp_qd_purchase_order_child poc
+              JOIN experiment_order_child ocf ON poc.order_child_id = ocf.id
+              WHERE poc.purchase_order_id = t.id
+                AND ocf.test_user_id = %(pool_uid)s
+                AND ocf.order_status <= 36
+                AND IFNULL(ocf.delete_status, 2) <> 1
+            )
+            OR EXISTS (
               SELECT 1
               FROM experiment_order_child ocf2
-              WHERE CAST(ocf2.order_form_id AS CHAR) = CAST(t.id AS CHAR)
-                AND CAST(IFNULL(ocf2.test_user_id, '') AS CHAR) = CAST(%(pool_uid)s AS CHAR)
+              WHERE ocf2.order_form_id = t.id
+                AND ocf2.test_user_id = %(pool_uid)s
                 AND ocf2.order_status <= 36
                 AND IFNULL(ocf2.delete_status, 2) <> 1
             )
+          )
     """
     params: dict[str, Any] = {"pool_uid": GRAB_POOL_TEST_USER_ID}
     if order_id:
