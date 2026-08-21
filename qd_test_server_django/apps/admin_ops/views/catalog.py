@@ -416,7 +416,7 @@ def album_images(request: Request, user=None):
 @admin_ajax_view()
 def goods_img_album(request: Request, user=None):
     """对齐 Java /seller/goods_img_album.htm：轮播等「从相册选择」图片列表。"""
-    del user, request
+    del user
     draw, page, page_size = parse_datatable_params(request)
     rows, total = catalog_repo.list_goods_album_images(page=page, page_size=page_size)
     return Response(datatable_payload(draw=draw, total=total, rows=rows))

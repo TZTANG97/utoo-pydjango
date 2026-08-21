@@ -4,6 +4,9 @@
     title="从相册选择图片"
     width="780px"
     destroy-on-close
+    append-to-body
+    align-center
+    :z-index="5200"
     @open="onOpen"
   >
     <div v-loading="loading" class="image-grid">

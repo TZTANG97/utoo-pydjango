@@ -1,4 +1,9 @@
-import request, { type AjaxBody, type RequestConfig, isAjaxOk } from '@admin/utils/request'
+import request, {
+  type AjaxBody,
+  type RequestConfig,
+  ajaxErrorMessage,
+  isAjaxOk,
+} from '@admin/utils/request'
 
 export type { AjaxBody }
 export { isAjaxOk }
@@ -23,7 +28,33 @@ async function fetchDatatable<T>(
   params: Record<string, unknown>
 ): Promise<DataTableResult<T>> {
   const res = await postAjax(url, params)
-  const payload = (res.data ? res : (res.obj as DataTableResult<T> | undefined) || res) as DataTableResult<T>
+  if (typeof res.res === 'boolean' || typeof res.res === 'number') {
+    if (!isAjaxOk(res)) {
+      throw new Error(ajaxErrorMessage(res, '加载失败'))
+    }
+    const wrapped = (res.obj as DataTableResult<T> | undefined) || {}
+    if (Array.isArray(wrapped.data) || typeof wrapped.recordsTotal === 'number') {
+      return {
+        draw: wrapped.draw || 1,
+        recordsTotal: Number(wrapped.recordsTotal || 0),
+        recordsFiltered: Number(wrapped.recordsFiltered || wrapped.recordsTotal || 0),
+        data: Array.isArray(wrapped.data) ? wrapped.data : [],
+      }
+    }
+  }
+  if (
+    Array.isArray((res as DataTableResult<T>).data) ||
+    typeof (res as DataTableResult<T>).recordsTotal === 'number'
+  ) {
+    const direct = res as DataTableResult<T>
+    return {
+      draw: direct.draw || 1,
+      recordsTotal: direct.recordsTotal || 0,
+      recordsFiltered: direct.recordsFiltered || 0,
+      data: Array.isArray(direct.data) ? direct.data : [],
+    }
+  }
+  const payload = ((res.obj as DataTableResult<T> | undefined) || res) as DataTableResult<T>
   return {
     draw: payload.draw || 1,
     recordsTotal: payload.recordsTotal || 0,

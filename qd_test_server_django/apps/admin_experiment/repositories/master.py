@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from apps.admin_experiment.helpers import page_clause
 from apps.core.db_utils import execute, execute_insert, fetch_all, fetch_one, scalar
+
+logger = logging.getLogger(__name__)
 
 
 def _nd(alias: str = "t") -> str:
@@ -144,16 +147,16 @@ def list_manage_test_users(row_id: int) -> list[dict[str, Any]]:
 
 
 def list_manage_logs(row_id: int) -> list[dict[str, Any]]:
-    """三级编辑操作记录（对齐 Java experiment_manage_log）。"""
+    """三级编辑操作记录（表字段：manage_id / info，非 em_id / content）。"""
     try:
         rows = fetch_all(
             """
             SELECT
-                l.id, l.addTime, l.content,
+                l.id, l.addTime, l.info AS content,
                 IFNULL(su.true_name, IFNULL(su.user_name, '')) AS addusername
             FROM experiment_manage_log l
             LEFT JOIN sy_users su ON CAST(su.id AS CHAR) = CAST(l.user_id AS CHAR)
-            WHERE CAST(l.em_id AS CHAR) = CAST(%(id)s AS CHAR)
+            WHERE CAST(l.manage_id AS CHAR) = CAST(%(id)s AS CHAR)
               AND IFNULL(l.deleteStatus, 0) = 0
             ORDER BY l.id DESC
             LIMIT 200
@@ -162,6 +165,7 @@ def list_manage_logs(row_id: int) -> list[dict[str, Any]]:
         )
         return [dict(r) for r in (rows or [])]
     except Exception:
+        logger.exception("list_manage_logs failed row_id=%s", row_id)
         return []
 
 
@@ -172,13 +176,13 @@ def write_manage_log(*, row_id: int, user_id: str, content: str) -> None:
         execute_insert(
             """
             INSERT INTO experiment_manage_log
-                (addTime, deleteStatus, em_id, user_id, content)
+                (addTime, deleteStatus, manage_id, user_id, info)
             VALUES (NOW(), 0, %(em)s, %(uid)s, %(ct)s)
             """,
             {"em": int(row_id), "uid": str(user_id or "")[:64], "ct": content[:500]},
         )
     except Exception:
-        pass
+        logger.exception("write_manage_log failed row_id=%s", row_id)
 
 
 def bind_manage_album(row_id: int, image_ids: list[int]) -> None:
@@ -207,6 +211,10 @@ def get_manage(row_id: int) -> dict[str, Any] | None:
             t.id, t.addTime, t.name, t.sequence, t.type, t.parent_id AS parentId,
             t.pt_type AS ptType, t.enname, t.special_type AS specialType,
             t.syuser_id AS syuserId, t.head_user_id AS headUserId,
+            IFNULL(syu.true_name, IFNULL(syu.user_name, '')) AS syuserName,
+            syu.user_name AS syuserLoginName,
+            IFNULL(hu.true_name, IFNULL(hu.user_name, '')) AS headUserName,
+            hu.user_name AS headUserLoginName,
             t.intro, t.project_details AS projectDetails,
             t.app_project_details AS appProjectDetails,
             t.manage_main_photo_id AS photoId,
@@ -221,6 +229,8 @@ def get_manage(row_id: int) -> dict[str, Any] | None:
         LEFT JOIN pt_type pt ON t.pt_type = pt.id
         LEFT JOIN accessory acc ON t.manage_main_photo_id = acc.id
         LEFT JOIN accessory appacc ON t.app_manage_main_photo_id = appacc.id
+        LEFT JOIN sy_users syu ON CAST(syu.id AS CHAR) = CAST(t.syuser_id AS CHAR)
+        LEFT JOIN sy_users hu ON CAST(hu.id AS CHAR) = CAST(t.head_user_id AS CHAR)
         WHERE t.id = %(id)s
         LIMIT 1
         """,

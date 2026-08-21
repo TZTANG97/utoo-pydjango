@@ -66,7 +66,14 @@
       />
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="form.id ? '编辑类目' : '新增类目'" width="860px" top="4vh" destroy-on-close>
+    <el-dialog
+      v-model="dialogVisible"
+      :title="form.id ? '编辑类目' : '新增类目'"
+      width="860px"
+      top="4vh"
+      destroy-on-close
+      append-to-body
+    >
       <el-form label-width="140px">
         <el-form-item label="排序序号" required>
           <el-input-number v-model="form.sequence" :min="1" :controls="true" />
@@ -232,7 +239,6 @@
             <el-table :data="testUsers" border stripe size="small" empty-text="暂无关联测试账号" max-height="220">
               <el-table-column prop="userName" label="姓名" min-width="120" />
               <el-table-column prop="loginName" label="账号" min-width="120" />
-              <el-table-column prop="userId" label="用户ID" min-width="120" />
             </el-table>
           </el-form-item>
           <el-form-item label="操作记录">
@@ -411,6 +417,22 @@ async function loadUserOptions() {
   }
 }
 
+/** 关联/负责人账号可能不在 pt_type=2 的员工列表里，需用详情人名补进下拉，避免只显示 UUID */
+function ensureUserOption(id: string, trueName: string, loginName: string) {
+  const uid = String(id || '').trim()
+  if (!uid) return
+  const label =
+    trueName && loginName
+      ? `${loginName}（${trueName}）`
+      : trueName || loginName || uid
+  const idx = userOptions.value.findIndex((u) => u.value === uid)
+  if (idx >= 0) {
+    if (label !== uid) userOptions.value[idx] = { value: uid, label }
+    return
+  }
+  userOptions.value = [...userOptions.value, { value: uid, label }]
+}
+
 function onFirstFilterChange() {
   filters.parentId = ''
   loadSecOpts(filters.firstId)
@@ -558,6 +580,16 @@ async function openEdit(row: Record<string, unknown>) {
     appPhotoId: obj.appPhotoId != null && String(obj.appPhotoId) !== '0' ? String(obj.appPhotoId) : '',
     appPhotoUrl: mediaUrl(obj.appPhotoPath, obj.appPhotoName),
   })
+  ensureUserOption(
+    form.syuserId,
+    String(obj.syuserName || ''),
+    String(obj.syuserLoginName || '')
+  )
+  ensureUserOption(
+    form.headUserId,
+    String(obj.headUserName || ''),
+    String(obj.headUserLoginName || '')
+  )
   testUsers.value = Array.isArray(obj.testUsers) ? (obj.testUsers as Record<string, unknown>[]) : []
   manageLogs.value = Array.isArray(obj.logs) ? (obj.logs as Record<string, unknown>[]) : []
   dialogVisible.value = true
