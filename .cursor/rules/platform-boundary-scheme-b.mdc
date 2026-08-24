@@ -1,0 +1,21 @@
+---
+description: 方案B强制边界；本仓 qd_svc_* 禁止活跃发版，改动去大平台仓
+alwaysApply: true
+---
+
+# 方案 B · 旧 UTOO 仓约束（强制）
+
+权威全文：`E:/utoo/docs/中台基础能力与各端业务边界-方案B.md`  
+边界规则：`E:/utoo/.cursor/rules/platform-boundary-scheme-b.mdc`
+
+## 本仓（utoo-pydjango）
+
+- **`qd_svc_*`、`qd_test_server_django`、`qd_web_front`**：只读对照或紧急热修；**禁止活跃发版与新功能**。
+- 中台改动 → `E:/mall_qingdao_pydjango/platform/`
+- UTOO 网关/业务/前端 → `E:/mall_qingdao_pydjango/platform/utoo_gateway`、`services/utoo_biz`、`utoo-web-front`
+
+## 必须遵守（与平台规则一致）
+
+- 中台只**基础接口**；菜单/登录产品逻辑在各端 BFF，**禁止**堆进 identity。
+- 一张表一个写进程；禁止网关 twin 写库。
+- 不确定归属 **必须先问用户**。

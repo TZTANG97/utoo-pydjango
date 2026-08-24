@@ -196,32 +196,34 @@ export default {
       <div class="menus">
         <div class="menus-list">
           <router-link class="logo" target="_blank" to="/">
-            <img src="@client/static/1.png" alt="" />
+            <img src="@client/static/1.png" alt="愉兔检测" />
           </router-link>
           <a
             v-if="cateList.length"
+            class="nav-link"
             @mouseleave="showCate = false"
             @mouseenter="(showCate = true), openCateDialog()"
           >
             测试预约
           </a>
           <router-link
+            class="nav-link"
             target="_blank"
             to="/companyInt"
             @mouseenter="prefetchCompanyInt"
           >
             公司介绍
           </router-link>
-          <a href="javascript:void(0)" @click.prevent="openDiscussion">讨论</a>
+          <a class="nav-link" href="javascript:void(0)" @click.prevent="openDiscussion">讨论</a>
         </div>
       </div>
       <div class="user">
-        <router-link to="/login" v-if="!isLoggedIn">登&nbsp;录</router-link>
-        <a v-else href="javascript:void(0)" @click.prevent="goPersonalCenter">
+        <router-link class="user-link" to="/login" v-if="!isLoggedIn">登&nbsp;录</router-link>
+        <a v-else class="user-link user-link--primary" href="javascript:void(0)" @click.prevent="goPersonalCenter">
           个人中心
         </a>
         <template v-if="name">
-          <span style="margin-left: 40px; cursor: auto">{{ `@${name}` }}</span>
+          <span class="user-name">{{ `@${name}` }}</span>
           <span class="logout" @click="logout">退出</span>
         </template>
       </div>
@@ -424,56 +426,50 @@ export default {
 </template>
 
 <style scoped lang="scss">
-.fixedBox {
-  position: fixed;
-  right: 0;
-  top: 40%;
-  z-index: 1000;
-  div {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    width: 50px;
-    height: 50px;
-    background-color: #f29800;
-    cursor: pointer;
-    span {
-      display: none;
-    }
-    img {
-      display: block;
-    }
-  }
-  div:hover {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    width: 50px;
-    height: 50px;
-    color: #fff;
-    font-size: 12px;
-    background-color: #cecece;
-    span {
-      display: block;
-    }
-    img {
-      display: none;
-    }
-  }
-}
 .logo {
   img {
     height: 44px;
     width: 185px;
     vertical-align: middle;
     cursor: pointer;
+    transition: opacity 0.2s ease;
+  }
+
+  &:hover img {
+    opacity: 0.92;
   }
 }
 
 .menus-list {
-  a {
+  display: flex;
+  align-items: center;
+
+  .nav-link {
+    position: relative;
     display: inline-block;
     height: 60px;
+    line-height: 60px;
+    transition: opacity 0.2s ease;
+
+    &::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      bottom: 14px;
+      width: 0;
+      height: 2px;
+      background: #fff;
+      border-radius: 1px;
+      transition: width 0.25s ease;
+    }
+
+    &:hover {
+      opacity: 0.92;
+
+      &::after {
+        width: 100%;
+      }
+    }
 
     &:nth-child(n + 2) {
       margin-left: 70px;
@@ -482,12 +478,52 @@ export default {
 }
 
 .user {
-  a,
-  span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  .user-link {
     display: inline-block;
     height: 60px;
-    margin-left: 30px;
+    line-height: 60px;
+    margin-left: 22px;
     cursor: pointer;
+    transition: opacity 0.2s ease;
+
+    &:hover {
+      opacity: 0.9;
+    }
+
+    &--primary {
+      padding: 0 14px;
+      margin-left: 0;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.14);
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.22);
+      }
+    }
+  }
+
+  .user-name {
+    margin-left: 24px;
+    cursor: auto;
+    opacity: 0.92;
+    font-size: 15px;
+  }
+
+  .logout {
+    margin-left: 16px;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
   }
 }
 
@@ -501,11 +537,12 @@ export default {
   top: 0;
   width: 100%;
   height: 60px;
-  background-color: var(--mainColor);
+  background: linear-gradient(180deg, var(--mainColor) 0%, #d85a00 100%);
   line-height: 60px;
   color: #fff;
   font-size: 16px;
   z-index: 9;
+  box-shadow: 0 4px 20px rgba(233, 99, 2, 0.25);
 }
 
 .container {
@@ -710,8 +747,8 @@ export default {
   z-index: 99;
   min-width: 1240px;
   max-width: 100%;
-  box-shadow: 0 12px 10px #00000012;
-  transition: all 0.3s;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08);
+  transition: height 0.35s ease, opacity 0.35s ease, padding 0.35s ease;
 
   .test-cate-bg {
     position: absolute;

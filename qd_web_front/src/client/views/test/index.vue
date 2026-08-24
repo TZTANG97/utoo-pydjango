@@ -1,5 +1,7 @@
 <script>
 import subTest from "@client/components/subTest.vue";
+import HomeFloatToolbar from "@client/components/HomeFloatToolbar.vue";
+import HomeQuickDialogs from "@client/components/HomeQuickDialogs.vue";
 import {
   getRecommendTestListApi,
   myExpMakeStatusList,
@@ -13,7 +15,7 @@ import { loadAMap } from "@client/utils/loadScript";
 
 export default {
   name: "Test",
-  components: { subTest },
+  components: { subTest, HomeFloatToolbar, HomeQuickDialogs },
   data() {
     return {
       testList: [],
@@ -336,9 +338,15 @@ export default {
     },
     // 意见反馈
     feedbackShowFn() {
-      addFeedBack({ content: this.feedback }).then((res) => {
+      const content = (this.feedback || "").trim();
+      if (!content) {
+        this.$message.warning("请输入反馈内容");
+        return;
+      }
+      addFeedBack({ content }).then((res) => {
         if (res.res) {
           this.$message({ type: "success", message: res.resMsg });
+          this.feedback = "";
           this.feedbackShow = false;
         }
       });
@@ -421,7 +429,6 @@ export default {
 <!--            </div>-->
 <!--          </div>-->
         </el-carousel-item>
-        l
       </el-carousel>
       <div class="direction-icon" v-if="!scroll_num">
         <svg-icon
@@ -601,47 +608,20 @@ export default {
       </div>
     </div>
 
-    <el-dialog
-      class="detail-dialog"
-      title="系统消息"
-      v-model="systemShow"
-    >
-      <!-- <div style="width: 100%;height: 400px;overflow: auto;"> -->
-        <el-table :data="tableData" style="width: 100%;" height="400">
-        <el-table-column type="index" label="序号"> </el-table-column>
-        <el-table-column prop="addTime" label="日期">
-          <template #default="{ row }">
-            {{ alterTime(row.addTime) }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="info" label="描述">
-        </el-table-column>
-      </el-table>
-
-      <div style="display: flex;justify-content: right">
-        <el-pagination
-          background
-          :page-sizes="[5, 10]"
-          :page-size="limit"
-          :current-page="page"
-          @size-change="handleSizeChange"
-          @current-change="handleCurrentChange"
-          layout="total, prev, pager, next, sizes"
-          :total="total"
-        >
-        </el-pagination>
-      </div>
-      <!-- </div> -->
-      <template #footer>
-        <el-button
-          type="primary"
-          style="width: 80px; height: 40px; font-size: 15px"
-          size="mini"
-          @click="systemShow = false"
-          >确 定</el-button
-        >
-      </template>
-    </el-dialog>
+    <HomeQuickDialogs
+      v-model:system-show="systemShow"
+      v-model:online-service-show="onlineServiceShow"
+      v-model:feedback-show="feedbackShow"
+      v-model:feedback="feedback"
+      :table-data="tableData"
+      :page="page"
+      :limit="limit"
+      :total="total"
+      :alter-time="alterTime"
+      @size-change="handleSizeChange"
+      @page-change="handleCurrentChange"
+      @submit-feedback="feedbackShowFn"
+    />
 
     <el-dialog
       class="detail-dialog"
@@ -666,82 +646,13 @@ export default {
 
     <sub-test :open-dialog.sync="openDialog" :test-id="testId" />
 
-    <el-dialog
-      class="detail-dialog"
-      title="在线客服（8:30 - 18:30）"
-      v-model="onlineServiceShow"
-      width="660px"
-    >
-      <div style="width: 100%;text-align: center;font-size: 16px;font-weight: 700">
-        <p>在线聊天功能调整中</p>
-        <p>可添加企业微信沟通</p>
-      </div>
-      <div style="width: 630px;display: flex;justify-content: space-between">
-        <img width="300" src="@client/static/kefuQRcode.png" alt="" />
-        <img width="300" src="@client/static/kefuQRcode2.png" alt="" />
-      </div>
-    </el-dialog>
-
-    <el-dialog
-      width="30%"
-      :close-on-click-modal="false"
-      style="height: 380px !important"
-      title="意见反馈"
-      v-model="feedbackShow"
-    >
-      <div>
-        <el-input
-          type="textarea"
-          v-model="feedback"
-          placeholder="请输入意见反馈"
-        ></el-input>
-      </div>
-      <div style="text-align: right; margin-top: 40px">
-        <el-button
-          style="width: 80px; height: 40px; font-size: 16px"
-          size="mini"
-          type="primary"
-          @click="feedbackShowFn"
-          >确定</el-button
-        >
-        <el-button
-          style="width: 80px; height: 40px; font-size: 16px"
-          size="mini"
-          @click="feedbackShow = false"
-          >取消</el-button
-        >
-      </div>
-    </el-dialog>
-
-    <div class="fixedBox">
-      <div @click="systemFn">
-        <img width="30px" height="30px" src="@client/static/xiaoxi.png" alt="" /><span
-          >系统消息</span
-        >
-      </div>
-      <div @click="onlineService">
-        <img width="30px" height="30px" src="@client/static/kefu.png" alt="" /><span
-          >在线客服</span
-        >
-      </div>
-      <div @click="feedbackFn">
-        <img width="30px" height="30px" src="@client/static/yijian.png" alt="" /><span
-          >意见反馈</span
-        >
-      </div>
-      <div @click="backTop" :class="{ 'is-disabled': !scroll_num }">
-        <img
-          width="30px"
-          height="30px"
-          src="@client/static/yijiandaoding.png"
-          alt=""
-        /><span>一键到顶</span>
-      </div>
-    </div>
-
-    <!-- <div class="back-top" v-if="scroll_num" @click="backTop">
-      <i class="el-icon-caret-top"></i>
-    </div> -->
+    <HomeFloatToolbar
+      :back-top-disabled="!scroll_num"
+      @system="systemFn"
+      @service="onlineService"
+      @feedback="feedbackFn"
+      @back-top="backTop"
+    />
   </div>
 </template>
 
@@ -786,63 +697,6 @@ export default {
 </style>
 
 <style scoped lang="scss">
-.fixedBox {
-  position: fixed;
-  right: 0;
-  top: 40%;
-  z-index: 1000;
-  div {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    width: 50px;
-    height: 50px;
-    background-color: #f29800;
-    cursor: pointer;
-    user-select: none;
-    span {
-      display: none;
-    }
-    img {
-      display: block;
-      pointer-events: none;
-    }
-    &.is-disabled {
-      opacity: 0.45;
-      cursor: default;
-    }
-  }
-  div:hover:not(.is-disabled) {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    width: 50px;
-    height: 50px;
-    color: #fff;
-    font-size: 12px;
-    background-color: #cecece;
-    span {
-      display: block;
-    }
-    img {
-      display: none;
-    }
-  }
-}
-.back-top {
-  position: fixed;
-  right: 40px;
-  bottom: 60px;
-  border-radius: 50%;
-  z-index: 2045;
-  background-color: #fff;
-  box-shadow: 0 0 10px var(--mainColor);
-  padding: 10px;
-  font-size: 30px;
-  color: var(--mainColor);
-  cursor: pointer;
-}
-
 .particular {
   align-items: normal !important;
   position: relative;
@@ -1290,21 +1144,29 @@ export default {
     display: flex;
     justify-content: space-between;
     width: 100%;
-    padding: 0 80px 0 30px;
+    padding: 0 28px 0 30px;
     position: absolute;
     right: 0;
     top: 50%;
     transform: translateY(-50%);
     z-index: 2;
+    pointer-events: none;
 
     .icon {
-      font-size: 30px;
+      font-size: 28px;
       fill: #ffffff;
-      transition: all 0.2s;
+      transition: all 0.22s ease;
       cursor: pointer;
+      pointer-events: auto;
+      padding: 10px;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.22);
+      backdrop-filter: blur(4px);
 
       &:hover {
-        fill: var(--mainColor);
+        fill: #fff;
+        background: rgba(233, 99, 2, 0.85);
+        transform: scale(1.08);
       }
 
       &:nth-child(2) {
