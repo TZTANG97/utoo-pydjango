@@ -1,0 +1,2015 @@
+"""后台实验管理 API（主数据 + 订单列表/详情/抢单/审核/导出）。"""
+from __future__ import annotations
+
+from django.http import HttpResponse
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.permissions import AllowAny
+from rest_framework.request import Request
+from rest_framework.response import Response
+
+from apps.admin_experiment.admin_ajax import admin_ajax_view, fail, ok
+from apps.admin_experiment.helpers import (
+    datatable_payload,
+    merge_payload,
+    parse_datatable_params,
+    to_int,
+)
+from apps.admin_experiment.repositories import master as master_repo
+from apps.admin_experiment.repositories import orders as order_repo
+from apps.admin_experiment.repositories import sample_flow as sample_flow_repo
+from qd_common.responses import ajax_ok
+
+
+def _order_id_from(data: dict) -> int | None:
+    return to_int(data.get("id") or data.get("ofId") or data.get("orderId"))
+
+
+def _explicit_id_or_clear(data: dict, keys: tuple[str, ...]):
+    """请求里带了字段：取首个非空值，全空则 ""（清空）；未带字段：None（不改库）。"""
+    present = False
+    for k in keys:
+        if k not in data:
+            continue
+        present = True
+        val = data.get(k)
+        if val not in (None, ""):
+            return val
+    return "" if present else None
+
+
+def _child_ids_from(data: dict):
+    return data.get("childIds") or data.get("childids") or data.get("ids") or data.get("childId")
+
+
+def _staff_id(user) -> str:
+    """JWT 员工 payload 常用 user_id；兼容 id / userId。"""
+    if not isinstance(user, dict):
+        return ""
+    return str(user.get("user_id") or user.get("id") or user.get("userId") or "").strip()
+
+
+def _deny_sample_if_needed(oid: int, action: str, user) -> Response | None:
+    """仓库管理员等：对齐 Java 样品按钮权限，无权限则直接拒绝。"""
+    ok_perm, msg = sample_flow_repo.viewer_can_sample_action(
+        order_id=oid, action=action, viewer_user_id=_staff_id(user)
+    )
+    if ok_perm:
+        return None
+    return fail(msg or "当前账号无此操作权限")
+
+
+def _parse_children_payload(data: dict) -> list | None:
+    """解析编辑保存的产品行；兼容 list / 单对象 / JSON 字符串。
+
+    网关曾把单行 children:[{...}] 展成 {...}，此处兜底包成 list，避免静默丢行。
+    """
+    raw = data.get("children")
+    if raw is None and "children" not in data:
+        return None
+    if isinstance(raw, list):
+        return raw
+    if isinstance(raw, dict):
+        return [raw]
+    if isinstance(raw, str) and raw.strip():
+        import json
+
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                return parsed
+            if isinstance(parsed, dict):
+                return [parsed]
+        except Exception:
+            return None
+    return None
+
+
+def _parse_id_list(data: dict, *keys: str) -> list:
+    """解析 deletedChildIds 等 id 列表。"""
+    raw = None
+    for k in keys:
+        if k in data:
+            raw = data.get(k)
+            break
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return raw
+    if isinstance(raw, (int, float)):
+        return [raw]
+    if isinstance(raw, str) and raw.strip():
+        s = raw.strip()
+        if s.startswith("["):
+            import json
+
+            try:
+                parsed = json.loads(s)
+                return parsed if isinstance(parsed, list) else []
+            except Exception:
+                return []
+        return [p.strip() for p in s.split(",") if p.strip()]
+    return []
+
+
+# ---------- health ----------
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def health_probe(request: Request):
+    del request
+    return ok(
+        {
+            "module": "admin_experiment",
+            "status": "ready",
+            "note": "实验管理后台 API 已就绪",
+        }
+    )
+
+
+# ---------- experiment_manage ----------
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def manage_list(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    draw, page, page_size = parse_datatable_params(request)
+    type_ = to_int(data.get("type"), 1) or 1
+    rows, total = master_repo.list_manages(
+        type_=type_,
+        name=(data.get("name") or "").strip(),
+        parent_id=str(data.get("parentId") or data.get("parent_id") or "").strip(),
+        first_id=str(data.get("firstId") or data.get("first_id") or "").strip(),
+        page=page,
+        page_size=page_size,
+    )
+    return Response(datatable_payload(draw=draw, total=total, rows=rows))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def manage_get(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    row_id = to_int(data.get("id"))
+    if not row_id:
+        return fail("参数错误")
+    row = master_repo.get_manage(row_id)
+    if not row:
+        return fail("记录不存在")
+    return ok(row)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def manage_save(request: Request, user=None):
+    staff_id = str((user or {}).get("user_id") or (user or {}).get("id") or "")
+    data = merge_payload(request)
+    name = (data.get("name") or "").strip()
+    if not name:
+        return fail("名称不能为空")
+    type_ = to_int(data.get("type"), 1) or 1
+    parent_id = to_int(data.get("parentId") or data.get("parent_id"))
+    if type_ > 1 and not parent_id:
+        return fail("请选择上级类目")
+    enname = (data.get("enname") or data.get("enName") or "").strip().upper()
+    if not enname:
+        return fail("请填写项目英文大写代码")
+    if len(enname) > 4 or not enname.isalpha():
+        return fail("项目英文大写代码须为不超过4位的英文字母")
+    pt_type = to_int(data.get("ptType") or data.get("pt_type"), 0) or 0
+    if type_ == 1 and not pt_type:
+        return fail("请选择所属平台")
+    special_raw = data.get("specialType") if "specialType" in data else data.get("special_type")
+    special_type = to_int(special_raw, 0) or 0 if special_raw not in (None, "") else 0
+    syuser_id = (data.get("syuserId") or data.get("syuser_id") or "").strip() or None
+    head_user_id = (data.get("headUserId") or data.get("head_user_id") or "").strip() or None
+    row_id = to_int(data.get("id"))
+    sequence = to_int(data.get("sequence"), 0) or 0
+    if master_repo.manage_name_exists(
+        name=name, type_=type_, parent_id=parent_id, exclude_id=row_id
+    ):
+        return fail("实验测试分类名称重复!")
+    if sequence and master_repo.manage_sequence_exists(
+        sequence=sequence, type_=type_, parent_id=parent_id, exclude_id=row_id
+    ):
+        return fail("该排序序号已经存在!")
+    photo_id = to_int(data.get("photoId") or data.get("photo_id") or data.get("manage_main_photo_id"))
+    app_photo_id = to_int(
+        data.get("appPhotoId") or data.get("app_photo_id") or data.get("app_manage_main_photo_id")
+    )
+    payload = {
+        "name": name,
+        "sequence": sequence,
+        "type": type_,
+        "parent_id": parent_id,
+        "pt_type": pt_type if type_ == 1 else 0,
+        "enname": enname,
+        "special_type": special_type if type_ == 1 else 0,
+        "syuser_id": syuser_id if type_ in (2, 3) else None,
+        "head_user_id": head_user_id if type_ == 3 else None,
+        "intro": (data.get("intro") or "").strip(),
+        "project_details": data.get("projectDetails") or data.get("project_details") or "",
+        "app_project_details": (
+            (data.get("appProjectDetails") or data.get("app_project_details") or "")
+            if type_ == 3
+            else ""
+        ),
+        "photo_id": photo_id,
+        "app_photo_id": app_photo_id if type_ == 3 else None,
+    }
+    new_id = master_repo.save_manage(payload, row_id=row_id)
+    raw_album = data.get("imageIds") or data.get("image_ids") or data.get("albumIds") or ""
+    album_ids: list[int] = []
+    if isinstance(raw_album, (list, tuple)):
+        for x in raw_album:
+            n = to_int(x)
+            if n:
+                album_ids.append(n)
+    else:
+        for part in str(raw_album).split(","):
+            n = to_int(part.strip())
+            if n:
+                album_ids.append(n)
+    master_repo.bind_manage_album(int(new_id), album_ids)
+    master_repo.write_manage_log(
+        row_id=int(new_id),
+        user_id=staff_id,
+        content="编辑类目" if row_id else "新增类目",
+    )
+    return ok({"id": new_id}, res_msg="保存成功")
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def manage_status(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    row_id = to_int(data.get("id"))
+    status = to_int(data.get("status"), 1)
+    if not row_id or status is None:
+        return fail("参数错误")
+    err = master_repo.set_manage_status(row_id, status)
+    if err:
+        return fail(err)
+    return ok(res_msg="操作成功")
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def manage_del(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    row_id = to_int(data.get("id"))
+    if not row_id:
+        return fail("参数错误")
+    err = master_repo.soft_delete_manage(row_id)
+    if err:
+        return fail(err)
+    return ok(res_msg="删除成功")
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def manage_options(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    type_ = to_int(data.get("type"), 1) or 1
+    parent_id = str(data.get("parentId") or data.get("parent_id") or "").strip()
+    return ok(master_repo.list_manage_options(type_, parent_id))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def manage_pt_types(request: Request, user=None):
+    del user, request
+    return ok(master_repo.list_pt_types())
+
+
+# ---------- experiment_project ----------
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def project_list(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    draw, page, page_size = parse_datatable_params(request)
+    rows, total = master_repo.list_projects(
+        name=(data.get("name") or data.get("projectName") or "").strip(),
+        first_id=str(data.get("firstId") or data.get("first_id") or "").strip(),
+        sec_id=str(data.get("secId") or data.get("sec_id") or "").strip(),
+        third_id=str(data.get("thirdId") or data.get("third_id") or data.get("classId") or "").strip(),
+        page=page,
+        page_size=page_size,
+    )
+    return Response(datatable_payload(draw=draw, total=total, rows=rows))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def project_get(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    row_id = to_int(data.get("id"))
+    if not row_id:
+        return fail("参数错误")
+    row = master_repo.get_project(row_id)
+    if not row:
+        return fail("记录不存在")
+    return ok(row)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def project_save(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    name = (data.get("projectName") or data.get("project_name") or data.get("name") or "").strip()
+    class_id = to_int(data.get("classId") or data.get("class_id") or data.get("thirdId"))
+    if not name:
+        return fail("项目名称不能为空")
+    if not class_id:
+        return fail("请选择三级类目")
+    price_raw = data.get("testPrice")
+    if price_raw is None:
+        price_raw = data.get("test_price")
+    test_price = None
+    if price_raw not in (None, ""):
+        try:
+            test_price = float(price_raw)
+        except (TypeError, ValueError):
+            return fail("测试单价格式错误")
+        if test_price < 0:
+            return fail("测试单价不能为负数")
+    country = str(data.get("country") or "").strip() or None
+    row_id = to_int(data.get("id"))
+    new_id = master_repo.save_project(
+        {
+            "project_name": name,
+            "class_id": class_id,
+            "test_price": test_price,
+            "country": country,
+        },
+        row_id=row_id,
+    )
+    return ok({"id": new_id}, res_msg="保存成功")
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def project_del(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    row_id = to_int(data.get("id"))
+    if not row_id:
+        return fail("参数错误")
+    master_repo.soft_delete_project(row_id)
+    return ok(res_msg="删除成功")
+
+
+# ---------- experiment_goods ----------
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def goods_list(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    draw, page, page_size = parse_datatable_params(request)
+    rows, total = master_repo.list_goods(
+        name=(data.get("name") or data.get("goodsName") or "").strip(),
+        brand_id=str(data.get("brandId") or data.get("brand_id") or "").strip(),
+        page=page,
+        page_size=page_size,
+    )
+    return Response(datatable_payload(draw=draw, total=total, rows=rows))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def goods_get(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    row_id = to_int(data.get("id"))
+    if not row_id:
+        return fail("参数错误")
+    row = master_repo.get_goods(row_id)
+    if not row:
+        return fail("记录不存在")
+    return ok(row)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def goods_save(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    name = (data.get("goodsName") or data.get("goods_name") or data.get("name") or "").strip()
+    if not name:
+        return fail("产品名称不能为空")
+    brand_id = to_int(data.get("brandId") or data.get("brand_id") or data.get("goods_brand_id"))
+    row_id = to_int(data.get("id"))
+    if master_repo.goods_name_exists(name=name, brand_id=brand_id, exclude_id=row_id):
+        return fail("产品名称重复!")
+    new_id = master_repo.save_goods(
+        {
+            "goods_name": name,
+            "goods_brand_id": brand_id,
+            "goods_model": (data.get("goodsModel") or data.get("goods_model") or "").strip(),
+        },
+        row_id=row_id,
+    )
+    return ok({"id": new_id}, res_msg="保存成功")
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def goods_del(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    row_id = to_int(data.get("id"))
+    if not row_id:
+        return fail("参数错误")
+    master_repo.soft_delete_goods(row_id)
+    return ok(res_msg="删除成功")
+
+
+# ---------- goodsbrand type=2 ----------
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def brand_list(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    draw, page, page_size = parse_datatable_params(request)
+    rows, total = master_repo.list_exp_brands(
+        name=(data.get("name") or "").strip(),
+        add_time=(data.get("addTime") or data.get("add_time") or "").strip(),
+        page=page,
+        page_size=page_size,
+    )
+    return Response(datatable_payload(draw=draw, total=total, rows=rows))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def brand_get(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    row_id = to_int(data.get("id"))
+    if not row_id:
+        return fail("参数错误")
+    row = master_repo.get_exp_brand(row_id)
+    if not row:
+        return fail("记录不存在")
+    return ok(row)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def brand_save(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    name = (data.get("name") or "").strip()
+    if not name:
+        return fail("品牌名称不能为空")
+    first_word = (data.get("firstWord") or data.get("first_word") or "").strip()[:1]
+    row_id = to_int(data.get("id"))
+    if master_repo.exp_brand_name_exists(name=name, exclude_id=row_id):
+        return fail("该品牌已经存在")
+    new_id = master_repo.save_exp_brand(
+        {
+            "name": name,
+            "first_word": first_word,
+            "sequence": to_int(data.get("sequence"), 0) or 0,
+            "en_name": (data.get("enName") or data.get("en_name") or "").strip(),
+        },
+        row_id=row_id,
+    )
+    return ok({"id": new_id}, res_msg="保存成功")
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def brand_del(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    row_id = to_int(data.get("id"))
+    if not row_id:
+        return fail("参数错误")
+    master_repo.soft_delete_exp_brand(row_id)
+    return ok(res_msg="删除成功")
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def brand_options(request: Request, user=None):
+    del user, request
+    return ok(master_repo.list_exp_brand_options())
+
+
+# ---------- sample_attribute_manage ----------
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def sample_attr_list(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    draw, page, page_size = parse_datatable_params(request)
+    type_ = to_int(data.get("type"), 1) or 1
+    rows, total = master_repo.list_sample_attrs(
+        type_=type_,
+        name=(data.get("name") or "").strip(),
+        parent_id=str(data.get("parentId") or data.get("parent_id") or "").strip(),
+        first_id=str(data.get("firstId") or data.get("first_id") or "").strip(),
+        page=page,
+        page_size=page_size,
+    )
+    return Response(datatable_payload(draw=draw, total=total, rows=rows))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def sample_attr_get(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    row_id = to_int(data.get("id"))
+    if not row_id:
+        return fail("参数错误")
+    row = master_repo.get_sample_attr(row_id)
+    if not row:
+        return fail("记录不存在")
+    return ok(row)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def sample_attr_save(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    name = (data.get("name") or data.get("sttribute_name") or "").strip()
+    if not name:
+        return fail("属性名称不能为空")
+    type_ = to_int(data.get("type"), 1) or 1
+    parent_id = to_int(data.get("parentId") or data.get("parent_id"))
+    if type_ > 1 and not parent_id:
+        return fail("请选择上级属性")
+    row_id = to_int(data.get("id"))
+    special_id = to_int(data.get("specialId") or data.get("special_id"))
+    if type_ == 1:
+        if special_id is None:
+            return fail("请填写特殊字段编号")
+        if special_id < 1 or special_id > 100:
+            return fail("特殊字段编号须为 1-100 的整数")
+        if master_repo.special_id_exists(special_id, exclude_id=row_id):
+            return fail("该一级特殊字段编号已存在，请重新填写！")
+    payload: dict = {
+        "name": name,
+        "type": type_,
+        "parent_id": parent_id,
+        "special_id": special_id,
+    }
+    # 选择方式仅二级属性使用；三级不传则不覆盖原值
+    if "selection" in data and data.get("selection") not in (None, ""):
+        payload["selection"] = to_int(data.get("selection"), 1) or 1
+    elif type_ == 2:
+        payload["selection"] = to_int(data.get("selection"), 1) or 1
+    new_id = master_repo.save_sample_attr(payload, row_id=row_id)
+    return ok({"id": new_id}, res_msg="保存成功")
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def sample_attr_status(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    row_id = to_int(data.get("id"))
+    status = to_int(data.get("status"), 1)
+    if not row_id or status is None:
+        return fail("参数错误")
+    master_repo.set_sample_attr_status(row_id, status)
+    return ok(res_msg="操作成功")
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def sample_attr_del(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    row_id = to_int(data.get("id"))
+    if not row_id:
+        return fail("参数错误")
+    err = master_repo.soft_delete_sample_attr(row_id)
+    if err:
+        return fail(err)
+    return ok(res_msg="删除成功")
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def sample_attr_options(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    type_ = to_int(data.get("type"), 1) or 1
+    parent_id = str(data.get("parentId") or data.get("parent_id") or "").strip()
+    return ok(master_repo.list_sample_attr_options(type_, parent_id))
+
+
+# ---------- orders ----------
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_list(request: Request, user=None):
+    data = merge_payload(request)
+    draw, page, page_size = parse_datatable_params(request)
+    order_type = str(data.get("orderType") or data.get("order_type") or "6")
+    if order_type in ("9", "10"):
+        # 对齐 Java list_dpt1：非管理员按 userId2 过滤
+        sub_scope = order_repo.build_sub_order_list_scope(user, order_type=order_type)
+        rows, total = order_repo.list_sub_orders(
+            order_type=order_type,
+            order_id=(data.get("orderId") or data.get("order_id") or "").strip(),
+            parent_order_id=(
+                data.get("parentOrderId")
+                or data.get("parent_order_id")
+                or data.get("sourceOrder")
+                or ""
+            ).strip(),
+            customer_name=(
+                data.get("customerName")
+                or data.get("customer_name")
+                or data.get("stockCompanyName")
+                or data.get("companyName")
+                or ""
+            ).strip(),
+            sale_manager=(
+                data.get("saleManager") or data.get("sale_Manager") or data.get("sale_manager") or ""
+            ).strip(),
+            test_manager=(
+                data.get("testManager") or data.get("test_manager") or data.get("test_Manager") or ""
+            ).strip(),
+            sale_user=(data.get("saleUser") or data.get("sale_user") or "").strip(),
+            order_status=str(data.get("orderStatus") or data.get("order_status") or "").strip(),
+            pay_status=str(
+                data.get("payStatus") if data.get("payStatus") is not None else data.get("pay_status") or ""
+            ).strip(),
+            test_user_id=str(data.get("testUserId") or data.get("test_user_id") or "").strip(),
+            is_confirm=str(data.get("isConfirm") if data.get("isConfirm") is not None else data.get("is_confirm") or "").strip(),
+            finish_start=(
+                data.get("finishStart") or data.get("order_startime") or data.get("orderStart") or ""
+            ).strip(),
+            finish_end=(
+                data.get("finishEnd") or data.get("order_endtime") or data.get("orderEnd") or ""
+            ).strip(),
+            page=page,
+            page_size=page_size,
+            scope=sub_scope,
+        )
+    else:
+        scope = order_repo.build_exp_order_list_scope(user, order_type=order_type)
+        rows, total = order_repo.list_orders(
+            order_type=order_type,
+            order_id=(data.get("orderId") or data.get("order_id") or "").strip(),
+            company_name=(
+                data.get("companyName")
+                or data.get("company_name")
+                or data.get("customer_name")
+                or ""
+            ).strip(),
+            supplier_name=str(
+                data.get("supplierName") or data.get("supplier_name") or ""
+            ).strip(),
+            sale_manager=(
+                data.get("saleManager") or data.get("sale_Manager") or data.get("sale_manager") or ""
+            ).strip(),
+            sale_user=(data.get("saleUser") or data.get("sale_user") or "").strip(),
+            order_status=str(data.get("orderStatus") or data.get("order_status") or "").strip(),
+            goods_name=(data.get("goodsName") or data.get("goods_name") or "").strip(),
+            order_start=(
+                data.get("orderStart") or data.get("order_startime") or data.get("orderStartime") or ""
+            ).strip(),
+            order_end=(
+                data.get("orderEnd") or data.get("order_endtime") or data.get("orderEndtime") or ""
+            ).strip(),
+            page=page,
+            page_size=page_size,
+            scope=scope,
+        )
+    return Response(datatable_payload(draw=draw, total=total, rows=rows))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_list_welcome(request: Request, user=None):
+    """对齐 Java experimentChildOrder/list_dpt_welcome.ajax。"""
+    data = merge_payload(request)
+    draw, page, page_size = parse_datatable_params(request)
+    rows, total = order_repo.list_welcome_timeout_orders(
+        user=user,
+        order_status_out=str(
+            data.get("order_status_out")
+            if data.get("order_status_out") is not None
+            else data.get("orderStatusOut")
+            or ""
+        ).strip(),
+        is_timeout=str(
+            data.get("is_timeout") if data.get("is_timeout") is not None else data.get("isTimeout") or ""
+        ).strip(),
+        order_id=(data.get("orderId") or data.get("order_id") or "").strip(),
+        parent_order_id=(
+            data.get("parentOrderId") or data.get("parent_order_id") or ""
+        ).strip(),
+        customer_name=(
+            data.get("customerName")
+            or data.get("stockCompanyName")
+            or data.get("customer_name")
+            or ""
+        ).strip(),
+        sale_manager=(
+            data.get("saleManager") or data.get("sale_Manager") or data.get("sale_manager") or ""
+        ).strip(),
+        sale_user=(data.get("saleUser") or data.get("sale_user") or "").strip(),
+        order_status=str(data.get("orderStatus") or data.get("order_status") or "").strip(),
+        test_user_id=str(data.get("testUserId") or data.get("test_user_id") or "").strip(),
+        finish_start=(
+            data.get("finishStart") or data.get("order_startime") or data.get("orderStart") or ""
+        ).strip(),
+        finish_end=(
+            data.get("finishEnd") or data.get("order_endtime") or data.get("orderEnd") or ""
+        ).strip(),
+        page=page,
+        page_size=page_size,
+    )
+    return Response(datatable_payload(draw=draw, total=total, rows=rows))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def grab_list(request: Request, user=None):
+    data = merge_payload(request)
+    draw, page, page_size = parse_datatable_params(request)
+    rows, total = order_repo.list_grab_orders(
+        viewer_user_id=_staff_id(user),
+        order_id=(data.get("orderId") or data.get("order_id") or "").strip(),
+        source_order=(data.get("sourceOrder") or data.get("source_order") or data.get("parent_order_id") or "").strip(),
+        company_name=(data.get("companyName") or data.get("company_name") or data.get("stockCompanyName") or "").strip(),
+        sale_manager=(data.get("saleManager") or data.get("sale_Manager") or data.get("sale_manager") or "").strip(),
+        sale_user=(data.get("saleUser") or data.get("sale_user") or "").strip(),
+        order_status=str(data.get("orderStatus") or data.get("order_status") or "").strip(),
+        page=page,
+        page_size=page_size,
+    )
+    return Response(datatable_payload(draw=draw, total=total, rows=rows))
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def grab_order(request: Request, user=None):
+    """对齐 Java competitionOrder.ajax：ofId 为子单 id。"""
+    data = merge_payload(request)
+    child_id = to_int(data.get("ofId") or data.get("id") or data.get("childId") or data.get("orderId"))
+    if not child_id:
+        return fail("参数错误")
+    # 与其它接口一致：JWT 只有 user_id，勿优先取不存在的 id
+    uid = _staff_id(user)
+    if not uid:
+        return fail("用户未登录")
+    ok_flag, msg = order_repo.grab_order(order_id=child_id, user_id=uid)
+    if not ok_flag:
+        return fail(msg)
+    return ok(res_msg=msg)
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_detail(request: Request, user=None):
+    data = merge_payload(request)
+    order_id = to_int(data.get("id") or data.get("ofId"))
+    if not order_id:
+        return fail("参数错误")
+    # viewer 用于子单 canGrab / isqdqx（对齐 Java qdorderdetail）
+    detail = order_repo.get_order_detail_bundle(
+        order_id, viewer_user_id=_staff_id(user)
+    )
+    if not detail:
+        return fail("订单不存在")
+    return ok(detail)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_audit(request: Request, user=None):
+    data = merge_payload(request)
+    order_id = to_int(data.get("id") or data.get("ofId"))
+    if not order_id:
+        return fail("参数错误")
+    pass_raw = data.get("pass")
+    if pass_raw is None:
+        pass_raw = data.get("auditPass")
+    if isinstance(pass_raw, str):
+        pass_ = pass_raw.lower() in ("1", "true", "yes", "y")
+    else:
+        pass_ = bool(pass_raw) if pass_raw is not None else True
+    remark = (data.get("remark") or data.get("mark") or "").strip()
+    staff = _staff_id(user)
+    ok_flag, msg = order_repo.audit_order(
+        order_id=order_id, pass_=pass_, remark=remark, staff_user_id=staff
+    )
+    if not ok_flag:
+        return fail(msg)
+    return ok(res_msg=msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_cancel(request: Request, user=None):
+    data = merge_payload(request)
+    order_id = to_int(data.get("id") or data.get("ofId"))
+    if not order_id:
+        return fail("参数错误")
+    staff = _staff_id(user)
+    ok_flag, msg = order_repo.cancel_order(
+        order_id=order_id,
+        remark=(data.get("remark") or data.get("mark") or "").strip(),
+        staff_user_id=staff,
+    )
+    if not ok_flag:
+        return fail(msg)
+    return ok(res_msg=msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_submit_audit(request: Request, user=None):
+    data = merge_payload(request)
+    order_id = to_int(data.get("id") or data.get("ofId"))
+    if not order_id:
+        return fail("参数错误")
+    ok_flag, msg = order_repo.submit_audit(order_id=order_id, staff_user_id=_staff_id(user))
+    if not ok_flag:
+        return fail(msg)
+    return ok(res_msg=msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_withdraw_audit(request: Request, user=None):
+    data = merge_payload(request)
+    order_id = to_int(data.get("id") or data.get("ofId"))
+    if not order_id:
+        return fail("参数错误")
+    ok_flag, msg = order_repo.withdraw_audit(order_id=order_id, staff_user_id=_staff_id(user))
+    if not ok_flag:
+        return fail(msg)
+    return ok(res_msg=msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_cost_settle(request: Request, user=None):
+    data = merge_payload(request)
+    order_id = to_int(data.get("id") or data.get("ofId"))
+    if not order_id:
+        return fail("参数错误")
+    ok_flag, msg = order_repo.cost_settle_sure(
+        order_id=order_id, staff_user_id=_staff_id(user)
+    )
+    if not ok_flag:
+        return fail(msg)
+    return ok(res_msg=msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_save_receive_bill(request: Request, user=None):
+    """对齐 Java 订单详情录入收款 → saveBillAndAccessory(type=2) + 分钱。"""
+    data = merge_payload(request)
+    order_id = to_int(data.get("id") or data.get("ofId") or data.get("orderId"))
+    if not order_id:
+        return fail("参数错误")
+    money = data.get("money") or data.get("amount")
+    staff_id = ""
+    if isinstance(user, dict):
+        staff_id = _staff_id(user)
+    from apps.admin_experiment.services.split_money import save_receive_bill
+
+    ok_flag, msg = save_receive_bill(
+        order_id=order_id,
+        money=money,
+        staff_user_id=staff_id,
+        log_info=str(data.get("logInfo") or data.get("remark") or "录入收款"),
+        bill_date=str(data.get("billDate") or data.get("bill_date") or ""),
+        accessory_id=data.get("accessoryId") or data.get("accessory_id"),
+    )
+    if not ok_flag:
+        return fail(msg)
+    return ok(res_msg=msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_amount_pay(request: Request, user=None):
+    """对齐 Java bill/amountPay.ajax：会员余额收款。"""
+    data = merge_payload(request)
+    order_id = to_int(data.get("id") or data.get("ofId") or data.get("orderId"))
+    if not order_id:
+        return fail("参数错误")
+    money = data.get("money") or data.get("amount")
+    staff_id = ""
+    if isinstance(user, dict):
+        staff_id = _staff_id(user)
+    from apps.admin_experiment.services.split_money import save_member_balance_receive
+
+    ok_flag, msg = save_member_balance_receive(
+        order_id=order_id,
+        money=money,
+        exp_user_id=data.get("exp_userId")
+        or data.get("expUserId")
+        or data.get("customUserId")
+        or "",
+        staff_user_id=staff_id,
+        bill_date=str(data.get("billDate") or data.get("bill_date") or ""),
+        accessory_id=data.get("accessoryId") or data.get("accessory_id"),
+    )
+    if not ok_flag:
+        return fail(msg)
+    return ok(res_msg=msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_share_ratio(request: Request, user=None):
+    data = merge_payload(request)
+    order_id = to_int(data.get("id") or data.get("ofId"))
+    if not order_id:
+        return fail("参数错误")
+    ok_flag, msg = order_repo.update_share_ratio(
+        order_id=order_id,
+        user_scale_info=str(
+            data.get("user_scale_info")
+            or data.get("userScaleInfo")
+            or data.get("scaleInfo")
+            or data.get("info")
+            or ""
+        ),
+        salecb_user_scale_info=str(
+            data.get("salecb_user_scale_info")
+            or data.get("salecbUserScaleInfo")
+            or data.get("salecbScaleInfo")
+            or ""
+        ),
+        staff_user_id=_staff_id(user),
+    )
+    if not ok_flag:
+        return fail(msg)
+    return ok(res_msg=msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_add_related(request: Request, user=None):
+    data = merge_payload(request)
+    order_id = to_int(data.get("id") or data.get("ofId"))
+    if not order_id:
+        return fail("参数错误")
+    ok_flag, msg = order_repo.add_related_order(
+        order_id=order_id,
+        related_order_no=str(
+            data.get("rOrderId")
+            or data.get("relatedOrderId")
+            or data.get("relatedOrderNo")
+            or data.get("orderId")
+            or ""
+        ),
+        r_select=str(data.get("rSelect") or data.get("relatedType") or data.get("type") or ""),
+        staff_user_id=_staff_id(user),
+    )
+    if not ok_flag:
+        return fail(msg)
+    return ok(res_msg=msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_del_related(request: Request, user=None):
+    data = merge_payload(request)
+    of_id = str(data.get("ofId") or data.get("of_id") or data.get("orderId") or "").strip()
+    related_no = str(
+        data.get("order_id") or data.get("relatedOrderNo") or data.get("relatedOrderId") or ""
+    ).strip()
+    if not of_id or not related_no:
+        return fail("参数错误")
+    ok_flag, msg = order_repo.del_related_order(
+        of_order_no=of_id,
+        related_order_no=related_no,
+        staff_user_id=_staff_id(user),
+    )
+    if not ok_flag:
+        return fail(msg)
+    return ok(res_msg=msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_save_finish(request: Request, user=None):
+    import json
+
+    data = merge_payload(request)
+    order_id = to_int(data.get("id") or data.get("ofId"))
+    if not order_id:
+        return fail("参数错误")
+    items = data.get("items") or data.get("children") or []
+    if isinstance(items, str):
+        text = items.strip()
+        if text:
+            try:
+                items = json.loads(text)
+            except Exception:
+                return fail("明细格式错误")
+        else:
+            items = []
+    # 单个对象 / 数字键字典 也按列表处理
+    if isinstance(items, dict):
+        if "id" in items or "finishTime" in items or "expectFinishTime" in items:
+            items = [items]
+        else:
+            try:
+                items = [items[k] for k in sorted(items.keys(), key=lambda x: int(x) if str(x).isdigit() else str(x))]
+            except Exception:
+                items = list(items.values())
+    if not isinstance(items, list):
+        # 兼容平行数组：childIds + finishTimes
+        ids = data.get("childIds") or data.get("ids") or []
+        fts = data.get("finishTimes") or data.get("finish_times") or []
+        if isinstance(ids, str):
+            ids = [x.strip() for x in ids.split(",") if x.strip()]
+        if isinstance(fts, str):
+            fts = [x.strip() for x in fts.split(",")]
+        if isinstance(ids, (list, tuple)):
+            items = [
+                {"id": ids[i], "finishTime": fts[i] if isinstance(fts, (list, tuple)) and i < len(fts) else ""}
+                for i in range(len(ids))
+            ]
+        else:
+            return fail("明细格式错误")
+    ok_flag, msg = order_repo.save_finish_times(
+        order_id=order_id, items=items, staff_user_id=_staff_id(user)
+    )
+    if not ok_flag:
+        return fail(msg)
+    return ok(res_msg=msg)
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_more_info(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    order_id = to_int(data.get("id") or data.get("ofId"))
+    if not order_id:
+        return fail("参数错误")
+    info = order_repo.build_more_info(order_id)
+    if not info:
+        return fail("订单不存在")
+    return ok(info)
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_export(request: Request, user=None):
+    """实验订单(type=6)与实验(子)订单(type=9/10)对齐 Java：返回 xlsx base64；其它类型仍返回行数据。"""
+    import base64
+
+    from apps.admin_experiment import excel_util
+
+    data = merge_payload(request)
+    order_type = str(data.get("orderType") or data.get("order_type") or "6")
+    if order_type in ("9", "10"):
+        scope = order_repo.build_sub_order_list_scope(user, order_type=order_type)
+    else:
+        scope = order_repo.build_exp_order_list_scope(user, order_type=order_type)
+    common_filters = dict(
+        scope=scope,
+        order_id=(data.get("orderId") or data.get("order_id") or "").strip(),
+        parent_order_id=(
+            data.get("parentOrderId")
+            or data.get("parent_order_id")
+            or data.get("sourceOrder")
+            or ""
+        ).strip(),
+        customer_name=(
+            data.get("customerName")
+            or data.get("customer_name")
+            or data.get("stockCompanyName")
+            or data.get("companyName")
+            or ""
+        ).strip(),
+        supplier_name=str(data.get("supplierName") or data.get("supplier_name") or "").strip(),
+        goods_name=(data.get("goodsName") or data.get("goods_name") or "").strip(),
+        sale_manager=(
+            data.get("saleManager") or data.get("sale_Manager") or data.get("sale_manager") or ""
+        ).strip(),
+        sale_user=(data.get("saleUser") or data.get("sale_user") or "").strip(),
+        order_status=str(data.get("orderStatus") or data.get("order_status") or "").strip(),
+        pay_status=str(
+            data.get("payStatus") if data.get("payStatus") is not None else data.get("pay_status") or ""
+        ).strip(),
+        test_user_id=str(data.get("testUserId") or data.get("test_user_id") or "").strip(),
+        is_confirm=str(
+            data.get("isConfirm") if data.get("isConfirm") is not None else data.get("is_confirm") or ""
+        ).strip(),
+        finish_start=(
+            data.get("finishStart") or data.get("order_startime") or data.get("orderStart") or ""
+        ).strip(),
+        finish_end=(
+            data.get("finishEnd") or data.get("order_endtime") or data.get("orderEnd") or ""
+        ).strip(),
+        order_start=(
+            data.get("orderStart") or data.get("order_startime") or data.get("orderStartime") or ""
+        ).strip(),
+        order_end=(
+            data.get("orderEnd") or data.get("order_endtime") or data.get("orderEndtime") or ""
+        ).strip(),
+    )
+    if order_type == "6":
+        headers, matrix = order_repo.build_experiment_order_export_matrix(
+            limit=5000, **common_filters
+        )
+        raw = excel_util.rows_to_xlsx(headers, matrix, sheet_name="实验订单")
+        return ok(
+            {
+                "fileName": "实验订单.xlsx",
+                "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "base64": base64.b64encode(raw).decode("ascii"),
+                "rowCount": len(matrix),
+            },
+            res_msg="ok",
+        )
+    if order_type in ("9", "10"):
+        export_mode = str(data.get("exportMode") or data.get("export_mode") or "").strip().lower()
+        finished_only = export_mode in ("finished", "bj", "bjexport") or str(
+            data.get("bjExport")
+            or data.get("finishedOnly")
+            or data.get("finished_only")
+            or ""
+        ).lower() in ("1", "true", "yes")
+        headers, matrix, merges = order_repo.build_sub_order_export_matrix(
+            order_type=order_type,
+            finished_only=finished_only,
+            limit=5000,
+            **common_filters,
+        )
+        if order_type == "9":
+            sheet = "实验分包子订单测试完成" if finished_only else "实验分包子订单"
+            file_name = "实验分包子订单测试完成.xlsx" if finished_only else "实验分包子订单.xlsx"
+        else:
+            sheet = "实验子订单测试完成" if finished_only else "实验子订单"
+            file_name = "实验子订单测试完成.xlsx" if finished_only else "实验子订单.xlsx"
+        raw = excel_util.rows_to_xlsx(headers, matrix, sheet_name=sheet, merges=merges)
+        return ok(
+            {
+                "fileName": file_name,
+                "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "base64": base64.b64encode(raw).decode("ascii"),
+                "rowCount": len(matrix),
+            },
+            res_msg="ok",
+        )
+    rows = order_repo.list_export_orders(
+        order_type=order_type,
+        limit=5000,
+        **common_filters,
+    )
+    return ok(rows, res_msg="ok")
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_status_options(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    kind = str(data.get("kind") or data.get("orderType") or data.get("order_type") or "").strip()
+    if kind in ("9", "10", "sub", "sub9"):
+        return Response(ajax_ok(obj=order_repo.SUB_ORDER_STATUS_FILTER_OPTIONS))
+    if kind in ("pay", "payStatus"):
+        return Response(ajax_ok(obj=order_repo.PAY_STATUS_FILTER_OPTIONS))
+    return Response(ajax_ok(obj=order_repo.ORDER_STATUS_FILTER_OPTIONS))
+
+
+# ---------- type=10 样品 / 测试流转 ----------
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_sample_arrive(request: Request, user=None):
+    data = merge_payload(request)
+    oid = _order_id_from(data)
+    if not oid:
+        return fail("参数错误")
+    denied = _deny_sample_if_needed(oid, "arrive", user)
+    if denied:
+        return denied
+    ok_flag, msg = sample_flow_repo.sample_arrive(
+        order_id=oid,
+        child_ids=_child_ids_from(data),
+        store_id=str(data.get("storeId") or data.get("store_id") or ""),
+        store_position_id=str(
+            data.get("storePosId")
+            or data.get("storePositionId")
+            or data.get("store_position_id")
+            or ""
+        ),
+        staff_user_id=_staff_id(user),
+    )
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_sample_pick(request: Request, user=None):
+    data = merge_payload(request)
+    oid = _order_id_from(data)
+    if not oid:
+        return fail("参数错误")
+    denied = _deny_sample_if_needed(oid, "pick", user)
+    if denied:
+        return denied
+    ok_flag, msg = sample_flow_repo.sample_pick(
+        order_id=oid,
+        child_ids=_child_ids_from(data),
+        store_position_id=str(
+            data.get("storePosId")
+            or data.get("storePositionId")
+            or data.get("store_position_id")
+            or ""
+        ),
+        staff_user_id=_staff_id(user),
+    )
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_test_start(request: Request, user=None):
+    data = merge_payload(request)
+    oid = _order_id_from(data)
+    if not oid:
+        return fail("参数错误")
+    denied = _deny_sample_if_needed(oid, "testStart", user)
+    if denied:
+        return denied
+    ok_flag, msg = sample_flow_repo.test_start(
+        order_id=oid,
+        child_ids=_child_ids_from(data),
+        line_id=str(data.get("lineId") or data.get("line_id") or ""),
+        staff_user_id=_staff_id(user),
+    )
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_test_end(request: Request, user=None):
+    data = merge_payload(request)
+    oid = _order_id_from(data)
+    if not oid:
+        return fail("参数错误")
+    denied = _deny_sample_if_needed(oid, "testEnd", user)
+    if denied:
+        return denied
+    ok_flag, msg = sample_flow_repo.test_end(
+        order_id=oid, child_ids=_child_ids_from(data), staff_user_id=_staff_id(user)
+    )
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_sample_return(request: Request, user=None):
+    data = merge_payload(request)
+    oid = _order_id_from(data)
+    if not oid:
+        return fail("参数错误")
+    denied = _deny_sample_if_needed(oid, "return", user)
+    if denied:
+        return denied
+    ok_flag, msg = sample_flow_repo.sample_return(
+        order_id=oid,
+        child_ids=_child_ids_from(data),
+        store_id=str(data.get("storeId") or data.get("store_id") or ""),
+        store_position_id=str(
+            data.get("storePosId")
+            or data.get("storePositionId")
+            or data.get("store_position_id")
+            or ""
+        ),
+        staff_user_id=_staff_id(user),
+    )
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_sample_ship(request: Request, user=None):
+    data = merge_payload(request)
+    oid = _order_id_from(data)
+    if not oid:
+        return fail("参数错误")
+    denied = _deny_sample_if_needed(oid, "ship", user)
+    if denied:
+        return denied
+    ok_flag, msg = sample_flow_repo.sample_ship_back(
+        order_id=oid,
+        child_ids=_child_ids_from(data),
+        express_no=str(data.get("expressNo") or data.get("express_no") or ""),
+        express_name=str(data.get("expressName") or data.get("express_name") or ""),
+        store_position_id=str(
+            data.get("storePosId")
+            or data.get("storePositionId")
+            or data.get("store_position_id")
+            or ""
+        ),
+        staff_user_id=_staff_id(user),
+    )
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_sample_retain(request: Request, user=None):
+    data = merge_payload(request)
+    oid = _order_id_from(data)
+    if not oid:
+        return fail("参数错误")
+    scrap_raw = data.get("scrap")
+    if scrap_raw is True or scrap_raw is False:
+        scrap = bool(scrap_raw)
+    else:
+        scrap = str(scrap_raw or data.get("type") or "").strip().lower() in (
+            "1",
+            "4",
+            "true",
+            "scrap",
+        )
+    denied = _deny_sample_if_needed(oid, "scrap" if scrap else "retain", user)
+    if denied:
+        return denied
+    ok_flag, msg = sample_flow_repo.sample_retain(
+        order_id=oid,
+        child_ids=_child_ids_from(data),
+        scrap=scrap,
+        is_position=str(
+            data.get("isPosition") if data.get("isPosition") is not None else data.get("is_position") or "0"
+        ),
+        store_pos_id=str(
+            data.get("storePosId")
+            or data.get("storePositionId")
+            or data.get("store_position_id")
+            or ""
+        ),
+        new_store_pos_id=str(
+            data.get("newStorePosId")
+            or data.get("new_store_pos_id")
+            or data.get("retainStorePosId")
+            or ""
+        ),
+        staff_user_id=_staff_id(user),
+    )
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_add_video(request: Request, user=None):
+    data = merge_payload(request)
+    oid = _order_id_from(data)
+    if not oid:
+        return fail("参数错误")
+    denied = _deny_sample_if_needed(oid, "video", user)
+    if denied:
+        return denied
+    ok_flag, msg = sample_flow_repo.add_video_meeting(
+        order_id=oid,
+        child_ids=_child_ids_from(data),
+        meeting_num=str(data.get("meetingNum") or data.get("meeting_num") or ""),
+        setting_time=str(data.get("settingTime") or data.get("setting_time") or ""),
+        staff_user_id=_staff_id(user),
+    )
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_confirm_done(request: Request, user=None):
+    data = merge_payload(request)
+    oid = _order_id_from(data)
+    if not oid:
+        return fail("参数错误")
+    denied = _deny_sample_if_needed(oid, "confirmDone", user)
+    if denied:
+        return denied
+    ok_flag, msg = sample_flow_repo.confirm_children(
+        order_id=oid,
+        child_ids=_child_ids_from(data),
+        mark=str(data.get("mark") or data.get("remark") or ""),
+        staff_user_id=_staff_id(user),
+    )
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_retest(request: Request, user=None):
+    data = merge_payload(request)
+    oid = _order_id_from(data)
+    if not oid:
+        return fail("参数错误")
+    denied = _deny_sample_if_needed(oid, "retest", user)
+    if denied:
+        return denied
+    ok_flag, msg = sample_flow_repo.retest_apply(
+        order_id=oid,
+        child_ids=_child_ids_from(data),
+        staff_user_id=_staff_id(user),
+    )
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_save_invoice_bill(request: Request, user=None):
+    data = merge_payload(request)
+    oid = _order_id_from(data)
+    if not oid:
+        return fail("参数错误")
+    staff = _staff_id(user)
+    ok_flag, msg = order_repo.save_invoice_bill(
+        order_id=oid,
+        money=data.get("money") or data.get("amount"),
+        staff_user_id=staff,
+        log_info=str(data.get("logInfo") or data.get("remark") or "录入开票"),
+        accessory_id=data.get("accessoryId") or data.get("accessory_id"),
+        bill_date=str(data.get("billDate") or data.get("bill_date") or ""),
+    )
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_confirm_customer(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    oid = _order_id_from(data)
+    if not oid:
+        return fail("参数错误")
+    ok_flag, msg = order_repo.confirm_customer_order(order_id=oid)
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_confirm_pay(request: Request, user=None):
+    data = merge_payload(request)
+    oid = _order_id_from(data)
+    if not oid:
+        return fail("参数错误")
+    staff = _staff_id(user)
+    ok_flag, msg = order_repo.confirm_online_pay(order_id=oid, staff_user_id=staff)
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_generate_appointment(request: Request, user=None):
+    data = merge_payload(request)
+    oid = _order_id_from(data)
+    if not oid:
+        return fail("参数错误")
+    staff = _staff_id(user)
+    ok_flag, msg = order_repo.generate_appointment(
+        order_id=oid,
+        test_address_id=str(data.get("testAddressId") or data.get("test_address_id") or ""),
+        staff_user_id=staff,
+    )
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_update_basic(request: Request, user=None):
+    data = merge_payload(request)
+    oid = _order_id_from(data)
+    if not oid:
+        return fail("参数错误")
+    ok_flag, msg = order_repo.update_order_basic(
+        order_id=oid,
+        mark=str(data.get("mark") if data.get("mark") is not None else ""),
+        ship_user=(
+            data.get("shipUser")
+            if "shipUser" in data
+            else data.get("ship_user")
+            if "ship_user" in data
+            else data.get("addressee_name")
+            if "addressee_name" in data
+            else data.get("addresseeName")
+            if "addresseeName" in data
+            else None
+        ),
+        ship_phone=(
+            data.get("shipPhone")
+            if "shipPhone" in data
+            else data.get("ship_phone")
+            if "ship_phone" in data
+            else data.get("addressee_mobile")
+            if "addressee_mobile" in data
+            else data.get("addresseeMobile")
+            if "addresseeMobile" in data
+            else None
+        ),
+        ship_address=(
+            data.get("shipAddress")
+            if "shipAddress" in data
+            else data.get("ship_address")
+            if "ship_address" in data
+            else data.get("send_address")
+            if "send_address" in data
+            else data.get("sendAddress")
+            if "sendAddress" in data
+            else None
+        ),
+        total_price=data.get("totalPrice") if "totalPrice" in data or "total_price" in data else None,
+        delivery_time=str(data.get("deliveryTime") or data.get("delivery_time") or ""),
+        order_time=str(data.get("orderTime") or data.get("order_time") or ""),
+        collection_time=str(data.get("collectionTime") or data.get("collection_time") or ""),
+        currency_type=data.get("currencyType") if "currencyType" in data or "currency_type" in data else None,
+        pay_way=data.get("payWay") if "payWay" in data or "pay_way" in data else None,
+        invoice_type=data.get("invoiceType") if "invoiceType" in data or "invoice_type" in data else None,
+        reverso_context=data.get("reversoContext")
+        if "reversoContext" in data or "reverso_context" in data
+        else None,
+        taxes=data.get("taxes") if "taxes" in data else None,
+        out_bill_type_id=data.get("outBillTypeId")
+        if "outBillTypeId" in data or "out_bill_type_id" in data
+        else None,
+        sale_manager=_explicit_id_or_clear(
+            data, ("saleManagerId", "sale_manager", "saleManager")
+        ),
+        # Java sale_user 是字符串员工 ID；勿只用 saleUserId，避免只带 sale_user 时被读成 None
+        sale_user=_explicit_id_or_clear(
+            data, ("saleUserId", "sale_user", "saleUser", "sale_user_id")
+        ),
+        supplier_id=data.get("supplierId")
+        if "supplierId" in data or "supplier_name" in data or "supplier_id" in data
+        else None,
+        # 键存在时：null/空 → ""（允许清空）；键不存在 → None（不改库）
+        customer_id=_explicit_id_or_clear(
+            data, ("customerId", "customer_name", "customerName")
+        ),
+        custom_user_id=_explicit_id_or_clear(
+            data, ("customUserId", "custom_user_id")
+        ),
+        class_id=data.get("classId") if "classId" in data or "class_id" in data else None,
+        test_address_id=data.get("testAddressId")
+        if "testAddressId" in data or "test_address_id" in data
+        else None,
+        company_account_id=data.get("companyAccountId")
+        if "companyAccountId" in data or "company_account_id" in data
+        else None,
+        is_video=data.get("isVideo") if "isVideo" in data or "is_video" in data else None,
+        user_scale_info=data.get("userScaleInfo")
+        if "userScaleInfo" in data or "user_scale_info" in data
+        else None,
+        salecb_user_scale_info=data.get("salecbUserScaleInfo")
+        if "salecbUserScaleInfo" in data or "salecb_user_scale_info" in data
+        else None,
+        warehouse_user=(
+            data.get("warehouseUser")
+            or data.get("warehouse_user")
+            or data.get("stockUser")
+            or data.get("stock_user")
+        )
+        if any(
+            k in data
+            for k in ("warehouseUser", "warehouse_user", "stockUser", "stock_user")
+        )
+        else None,
+        test_manager=_explicit_id_or_clear(
+            data, ("testManagerId", "test_manager", "testManager")
+        ),
+        stock_company_id=(
+            data.get("stockCompanyId")
+            or data.get("stock_company_id")
+            or data.get("stock_company_name")
+            or data.get("stockCompanyName")
+        )
+        if any(
+            k in data
+            for k in (
+                "stockCompanyId",
+                "stock_company_id",
+                "stock_company_name",
+                "stockCompanyName",
+            )
+        )
+        else None,
+        in_bill_type_id=data.get("inBillTypeId")
+        if "inBillTypeId" in data or "in_bill_type_id" in data
+        else None,
+        children=_parse_children_payload(data),
+        deleted_child_ids=_parse_id_list(
+            data, "deletedChildIds", "deleted_child_ids", "deletedIds", "deleted_ids"
+        ),
+        check_child_ids=(
+            _parse_id_list(data, "checkChilds", "check_childs")
+            if any(k in data for k in ("checkChilds", "check_childs"))
+            else None
+        ),
+        staff_user_id=_staff_id(user),
+    )
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_submit_exp(request: Request, user=None):
+    """对齐 Java experimentOrder/submitExpOrder.ajax：body 为 [主单, ...明细行]。"""
+    raw = request.data
+    items: list = []
+    if isinstance(raw, list):
+        items = raw
+    else:
+        data = merge_payload(request)
+        payload = data.get("list") or data.get("data") or data.get("orders")
+        if isinstance(payload, list):
+            items = payload
+        elif isinstance(payload, str):
+            import json
+
+            try:
+                parsed = json.loads(payload)
+                if isinstance(parsed, list):
+                    items = parsed
+            except Exception:
+                items = []
+        # 兼容个别网关把数组包进 dict 根节点的情况
+        elif isinstance(raw, dict) and len(raw) == 1:
+            only = next(iter(raw.values()))
+            if isinstance(only, list):
+                items = only
+    if not items:
+        return fail("提交订单失败,订单没有数据，请确认!")
+    header = items[0] if isinstance(items[0], dict) else {}
+    children = [x for x in items[1:] if isinstance(x, dict)]
+    accessory_ids = header.get("accessoryId") or header.get("accessoryIds")
+    ok_flag, msg, new_id = order_repo.create_exp_order(
+        header=header,
+        children=children,
+        user_id=_staff_id(user),
+        accessory_ids=accessory_ids if isinstance(accessory_ids, list) else None,
+    )
+    if not ok_flag:
+        return fail(msg)
+    # 对齐 Java：resMsg 为新订单数字 id
+    return ok(obj=new_id, res_msg=str(new_id))
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_create_sub(request: Request, user=None):
+    data = merge_payload(request)
+    pid = to_int(data.get("saleOrderId") or data.get("parentId") or data.get("id"))
+    if not pid:
+        return fail("参数错误")
+    ok_flag, msg, new_id = order_repo.create_sub_order_from_parent(
+        parent_id=pid,
+        child_line_ids=(
+            data.get("childIds")
+            or data.get("childids")
+            or data.get("checkChilds")
+            or data.get("check_childs")
+            or data.get("ids")
+        ),
+        form=data,
+        staff_user_id=_staff_id(user),
+    )
+    if not ok_flag:
+        return fail(msg)
+    return ok({"id": new_id}, res_msg=msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_save_reference_price(request: Request, user=None):
+    """对齐 Java experimentChildOrder/saveReferencePrice.ajax。"""
+    data = merge_payload(request)
+    child_id = to_int(data.get("id") or data.get("childId"))
+    if not child_id:
+        return fail("参数错误")
+    price = data.get("referencePrice")
+    if price is None:
+        price = data.get("reference_price")
+    ok_flag, msg = order_repo.save_child_reference_price(
+        child_id=child_id,
+        reference_price=price,
+        staff_user_id=_staff_id(user),
+    )
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_update_time_type(request: Request, user=None):
+    """对齐 Java experimentSubOrder/updateTimeType.ajax。"""
+    data = merge_payload(request)
+    child_id = to_int(data.get("id") or data.get("childId"))
+    if not child_id:
+        return fail("参数错误")
+    ok_flag, msg = order_repo.update_child_time_type(
+        child_id=child_id,
+        time_type=data.get("time_type") if "time_type" in data else data.get("timeType"),
+        staff_user_id=_staff_id(user),
+    )
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_confirm_ordered(request: Request, user=None):
+    data = merge_payload(request)
+    oid = _order_id_from(data)
+    if not oid:
+        return fail("参数错误")
+    ok_flag, msg = order_repo.confirm_ordered(
+        order_id=oid, staff_user_id=_staff_id(user)
+    )
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_sub_pay(request: Request, user=None):
+    """type=9 付款申请：type 1申请/重提 2通过 3驳回。"""
+    data = merge_payload(request)
+    oid = _order_id_from(data) or to_int(data.get("ofId"))
+    if not oid:
+        return fail("参数错误")
+    ok_flag, msg = order_repo.update_sub_pay(
+        order_id=oid,
+        pay_type=data.get("type") or data.get("payType") or "",
+        staff_user_id=_staff_id(user),
+    )
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_upload_sub_pay(request: Request, user=None):
+    data = merge_payload(request)
+    oid = _order_id_from(data)
+    if not oid:
+        return fail("参数错误")
+    staff = _staff_id(user)
+    ok_flag, msg = order_repo.upload_sub_pay_bill(
+        order_id=oid,
+        money=data.get("money") or data.get("amount"),
+        staff_user_id=staff,
+        log_info=str(data.get("logInfo") or data.get("remark") or "上传付款信息"),
+        accessory_id=data.get("accessoryId") or data.get("accessory_id"),
+    )
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_upload_sub_invoice(request: Request, user=None):
+    data = merge_payload(request)
+    oid = _order_id_from(data)
+    if not oid:
+        return fail("参数错误")
+    staff = _staff_id(user)
+    ok_flag, msg = order_repo.upload_sub_invoice_bill(
+        order_id=oid,
+        money=data.get("money") or data.get("amount"),
+        staff_user_id=staff,
+        log_info=str(data.get("logInfo") or data.get("remark") or "上传发票信息"),
+        accessory_id=data.get("accessoryId") or data.get("accessory_id"),
+    )
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_upload_file(request: Request, user=None):
+    """对齐 Java uploadChildData：订单资料 type=3；测试数据 type=4（可挂 child_of_id）。
+
+    type=6 主单写 exp_of_id；type=9/10 子单写 child_of_id（对齐 ExperimentSubOrderController）。
+    """
+    del user
+    from apps.orders.services import accessory_upload as accessory_upload_svc
+
+    uploaded = request.FILES.get("orderdata") or request.FILES.get("file")
+    if not uploaded:
+        return fail("文件为空")
+    data = merge_payload(request)
+    oid = _order_id_from(data) or 0
+    child_id = to_int(data.get("childId") or data.get("child_of_id") or data.get("ofcId"))
+    type_raw = str(data.get("type") or request.POST.get("type") or "3")
+    acc_type = int(type_raw) if type_raw.isdigit() else 3
+    exp_of_id = oid or None
+    child_of_id = child_id
+    if oid:
+        of = order_repo.get_order(oid)
+        ot = str((of or {}).get("orderType") or "")
+        if ot in ("9", "10"):
+            # Java 子单上传：accessory.child_of_id = 子订单 id
+            child_of_id = oid
+            exp_of_id = None
+    ok_flag, msg, obj = accessory_upload_svc.save_order_attachment(
+        data=uploaded.read(),
+        orig_name=uploaded.name or "upload",
+        content_type=uploaded.content_type or "application/octet-stream",
+        acc_type=acc_type,
+        exp_of_id=exp_of_id,
+        child_of_id=child_of_id,
+    )
+    return ok(obj, res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_delete_file(request: Request, user=None):
+    """对齐 Java experimentSubOrder/deleteFile.ajax。"""
+    del user
+    data = merge_payload(request)
+    aid = to_int(data.get("id") or data.get("accessoryId"))
+    if not aid:
+        return fail("参数错误")
+    ok_flag, msg = order_repo.delete_order_file(accessory_id=aid)
+    return ok(res_msg=msg) if ok_flag else fail(msg)
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def order_download_file(request: Request):
+    """对齐 Java experimentOrder/downloadFile.ajax：强制 attachment 下载，避免浏览器预览。"""
+    data = merge_payload(request)
+    aid = to_int(data.get("id") or data.get("accessoryId"))
+    if not aid:
+        return fail("参数错误")
+    name_hint = str(data.get("name") or data.get("info") or "").strip()
+    from apps.orders.services.file_download import content_disposition, load_accessory_bytes
+
+    raw, filename = load_accessory_bytes(aid, name_hint=name_hint)
+    if not raw:
+        return fail("文件不存在")
+    resp = HttpResponse(raw, content_type="application/octet-stream")
+    resp["Content-Disposition"] = content_disposition(filename or "download")
+    return resp
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def order_update_msg(request: Request, user=None):
+    """对齐 Java msgBlur：保存订单备注。"""
+    del user
+    data = merge_payload(request)
+    oid = _order_id_from(data)
+    if not oid:
+        return fail("参数错误")
+    msg_text = str(data.get("msg") or data.get("mark") or "")
+    ok_flag, msg = order_repo.update_order_msg(order_id=oid, msg=msg_text)
+    return ok(res_msg=msg) if ok_flag else fail(msg)

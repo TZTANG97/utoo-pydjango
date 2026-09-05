@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Discover one service's active Utoo upstream port.
-# Placeholders are replaced by ci-deploy-windows.ps1.
+# Discover one Qingdao service active upstream port.
 set -euo pipefail
 
 CONF="__CONF__"

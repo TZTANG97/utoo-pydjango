@@ -1,6 +1,5 @@
-﻿# Resolve repo root in GitLab CI (Windows bash runner may set wrong CI_PROJECT_DIR).
-# Align with factoryproductsystem2/deploy/emku-windows/ci-project-root.ps1:
-# prefer cwd (after bash pwd -W checkout) then script path, then CI_PROJECT_DIR.
+﻿# Resolve utoo monorepo root under GitLab CI (Windows).
+# P5: also exposes Get-QdMallCiProjectRoot alias for scripts copied from mall deploy.
 function Get-UtooCiProjectRoot {
 	$fromScript = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 	$cwd = (Get-Location).Path
@@ -14,8 +13,9 @@ function Get-UtooCiProjectRoot {
 			return $false
 		}
 		return (Test-Path -LiteralPath (Join-Path $full '.git')) -or
-			(Test-Path -LiteralPath (Join-Path $full 'deploy\utoo-windows\ci-build-frontend.ps1')) -or
-			(Test-Path -LiteralPath (Join-Path $full 'qd_web_front\package.json'))
+			(Test-Path -LiteralPath (Join-Path $full 'deploy\utoo-windows\ci-deploy-windows.ps1')) -or
+			(Test-Path -LiteralPath (Join-Path $full 'platform\utoo_gateway\manage.py')) -or
+			(Test-Path -LiteralPath (Join-Path $full 'utoo-web-front\package.json'))
 	}
 
 	function Assert-CiCheckout([string]$Root) {
@@ -41,7 +41,6 @@ function Get-UtooCiProjectRoot {
 		}
 	}
 
-	# Factory order: cwd first (bash executor leaves cwd at repo root)
 	if (Test-RepoRoot $cwd) {
 		$full = [IO.Path]::GetFullPath($cwd)
 		Write-Host ("[ci] project root from cwd: {0}" -f $full)
@@ -67,7 +66,12 @@ function Get-UtooCiProjectRoot {
 	}
 
 	if ($inCi) {
-		throw 'Cannot resolve utoo repo root under GitLab CI (cwd/script/CI_PROJECT_DIR all invalid)'
+		throw 'Cannot resolve utoo repo root under GitLab CI'
 	}
 	return $fromScript
+}
+
+function Get-QdMallCiProjectRoot {
+	# Alias for mall-origin scripts running inside utoo-pydjango (P5).
+	return Get-UtooCiProjectRoot
 }

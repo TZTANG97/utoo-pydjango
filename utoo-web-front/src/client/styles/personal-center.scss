@@ -1,0 +1,353 @@
+﻿// 瀵瑰涓汉涓績锛?b/*锛夌粺涓€瑙嗚
+$pc-sidebar-width: 232px;
+$pc-radius: 12px;
+$pc-radius-lg: 16px;
+$pc-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+$pc-shadow-hover: 0 12px 32px rgba(15, 23, 42, 0.1);
+$pc-bg: #f4f6fb;
+$pc-card: #ffffff;
+$pc-text: #1f2937;
+$pc-text-secondary: #6b7280;
+$pc-border: #e8edf5;
+$pc-accent: var(--mainColor, #e96302);
+$pc-accent-soft: rgba(233, 99, 2, 0.1);
+
+.client-shell {
+  background: $pc-bg;
+  /* 个人中心布局：锁死视口，禁止整页滚动带走侧栏 */
+  height: 100vh !important;
+  max-height: 100vh !important;
+  overflow: hidden !important;
+
+  /* 左侧菜单固定，禁止内部滚动 */
+  .sidebar-container {
+    position: fixed !important;
+    top: 52px !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    height: calc(100vh - 52px) !important;
+    overflow: hidden !important;
+    overscroll-behavior: none;
+    z-index: 1001;
+
+    .sidebar-menu-wrap,
+    .el-scrollbar,
+    .el-scrollbar__wrap {
+      overflow: hidden !important;
+    }
+  }
+
+  .main-container {
+    background: $pc-bg;
+    height: calc(100vh - 52px) !important;
+    max-height: calc(100vh - 52px) !important;
+    overflow: hidden !important;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .navbar,
+  .tags-view-container {
+    flex-shrink: 0;
+  }
+
+  .app-main {
+    flex: 1 1 auto;
+    min-height: 0 !important;
+    height: auto !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+  }
+
+  .app-main {
+    background:
+      radial-gradient(ellipse 80% 50% at 100% 0%, rgba(233, 99, 2, 0.06), transparent 55%),
+      radial-gradient(ellipse 60% 40% at 0% 100%, rgba(59, 130, 246, 0.04), transparent 50%),
+      $pc-bg;
+    padding: 0 20px 24px;
+  }
+
+  .navbar {
+    height: 56px;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid $pc-border;
+    box-shadow: none;
+
+    .hamburger-container {
+      line-height: 56px;
+      border-radius: 8px;
+      margin-left: 4px;
+    }
+
+    .app-breadcrumb.el-breadcrumb {
+      line-height: 56px;
+
+      .no-redirect {
+        color: $pc-text;
+        font-weight: 600;
+        font-size: 15px;
+      }
+    }
+  }
+
+  .tags-view-container {
+    background: transparent;
+    border-bottom: none;
+    height: 38px;
+    padding: 0 4px;
+    overflow: visible;
+
+    .tags-view-item {
+      border-radius: 999px;
+      border: 1px solid $pc-border;
+      background: #fff;
+      color: $pc-text-secondary;
+      margin-top: 4px;
+      height: 28px;
+      line-height: 26px;
+      padding: 0 12px;
+      transition: all 0.2s ease;
+
+      &.active {
+        background: $pc-accent-soft;
+        border-color: rgba(233, 99, 2, 0.35);
+        color: $pc-accent;
+        font-weight: 600;
+      }
+    }
+  }
+
+  // 鏃х増 .container 椤甸潰鍏滃簳锛堟湭鍖?PersonalPageShell 鐨勮鎯呴〉绛夛級
+  .app-main .container,
+  .app-main .profile {
+    animation: pc-fade-in 0.35s ease;
+  }
+
+  .app-main .container {
+    padding: 0;
+    width: 100%;
+    margin: 0 auto;
+
+    > header {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 16px;
+      padding: 16px 20px;
+      background: $pc-card;
+      border-radius: $pc-radius-lg;
+      border: 1px solid $pc-border;
+      box-shadow: $pc-shadow;
+    }
+
+    > main {
+      margin-top: 0;
+      padding: 4px 20px 20px;
+      background: $pc-card;
+      border-radius: $pc-radius-lg;
+      border: 1px solid $pc-border;
+      box-shadow: $pc-shadow;
+    }
+
+    footer {
+      margin-top: 16px;
+      padding: 0 4px;
+    }
+  }
+
+  .app-main .profile {
+    width: 100%;
+    margin: 0 auto;
+
+    .el-tabs--border-card {
+      border: 1px solid $pc-border;
+      border-radius: $pc-radius-lg;
+      box-shadow: $pc-shadow;
+      overflow: hidden;
+      background: $pc-card;
+
+      > .el-tabs__header {
+        background: #fafbfd;
+        border-bottom: 1px solid $pc-border;
+      }
+
+      > .el-tabs__content {
+        padding: 20px 24px 28px;
+      }
+    }
+  }
+
+  // Element Plus 琛ㄦ牸 / 鏍囩椤电粺涓€
+  .el-tabs__header {
+    margin-bottom: 16px;
+  }
+
+  .el-tabs__item {
+    font-size: 14px;
+    font-weight: 500;
+    transition: color 0.2s ease;
+
+    &.is-active {
+      color: $pc-accent;
+      font-weight: 600;
+    }
+  }
+
+  .el-tabs__active-bar {
+    background-color: $pc-accent;
+    height: 3px;
+    border-radius: 3px;
+  }
+
+  .el-table {
+    border-radius: $pc-radius;
+    overflow: hidden;
+
+    th.el-table__cell {
+      background: #f8fafc !important;
+      color: $pc-text-secondary;
+      font-weight: 600;
+      font-size: 13px;
+    }
+
+    .el-table__row {
+      transition: background-color 0.15s ease;
+    }
+
+    .el-table__row:hover > td {
+      background: #fafbfd !important;
+    }
+  }
+
+  .el-button--primary {
+    background: linear-gradient(135deg, $pc-accent 0%, #f59a3c 100%);
+    border: none;
+    box-shadow: 0 4px 12px rgba(233, 99, 2, 0.25);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+
+    &:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(233, 99, 2, 0.32);
+    }
+  }
+
+  .el-pagination {
+    margin-top: 20px;
+    justify-content: flex-end;
+  }
+}
+
+// 缁熻鍗＄墖琛岋紙绉垎 / 璧勪骇 / 鍙戠エ锛?
+.pc-stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+
+  > .my-integral,
+  > .expiring-soon,
+  > .wrapper {
+    padding: 20px 22px;
+    border-radius: 14px;
+    border: 1px solid #e8edf5;
+    background: linear-gradient(145deg, #ffffff 0%, #fffaf6 100%);
+    box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+    }
+  }
+
+  .integer,
+  .parse-int {
+    font-size: 32px;
+    font-weight: 700;
+    color: #1f2937;
+    line-height: 1.2;
+  }
+
+  .inter-label,
+  .label {
+    margin-top: 8px;
+    font-size: 13px;
+    color: #6b7280;
+  }
+
+  .parse-float {
+    font-size: 18px;
+    color: #6b7280;
+  }
+}
+
+.invoice-summary .wrapper {
+  min-height: 140px;
+}
+
+.property-summary {
+  width: 100%;
+}
+
+.status-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+
+  .btn-status {
+    padding: 8px 16px;
+    border-radius: 999px;
+    border: 1px solid #e8edf5;
+    background: #fff;
+    cursor: pointer;
+    font-size: 13px;
+    color: #6b7280;
+    transition: all 0.2s ease;
+
+    &:hover {
+      border-color: rgba(233, 99, 2, 0.35);
+      color: $pc-accent;
+    }
+
+    &.status-active {
+      background: $pc-accent-soft;
+      border-color: rgba(233, 99, 2, 0.35);
+      color: $pc-accent;
+      font-weight: 600;
+    }
+  }
+}
+
+.pc-date-range {
+  min-width: 320px;
+}
+
+.profile .el-tabs--border-card {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+
+  > .el-tabs__header {
+    background: #f8fafc;
+    border-radius: 10px;
+    margin-bottom: 16px;
+  }
+
+  > .el-tabs__content {
+    padding: 8px 4px 0;
+  }
+}
+@keyframes pc-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+

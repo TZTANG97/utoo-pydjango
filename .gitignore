@@ -40,3 +40,9 @@ dist/
 
 # uni-app / 微信小程序编译产物
 unpackage/
+
+# P5 product trees
+platform/utoo_gateway/.venv/
+utoo-web-front/node_modules/
+utoo-web-front/dist/
+utoo-web-front/.vite/

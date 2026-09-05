@@ -1,0 +1,299 @@
+#app {
+
+  .main-container {
+    /* 高度由 layout 的 flex/calc 约束；勿再用 min-height:100% 把整页撑出视口滚动 */
+    min-height: 0;
+    transition: margin-left .28s;
+    margin-left: $sideBarWidth;
+    position: relative;
+  }
+
+  /**
+   * 作者：yanmh0722@163.com
+   * 时间：2023/10/20 15:22:42
+   * 功能：自定义header
+   */
+
+  .sidebar-container {
+    transition: width 0.28s;
+    width: $sideBarWidth !important;
+    background-color: $menuBg;
+    border-right: 1px solid #e8edf5;
+    box-shadow: 4px 0 24px rgba(15, 23, 42, 0.04);
+    /* 固定在顶栏下方，不随主内容滚动 */
+    height: calc(100vh - 52px);
+    position: fixed;
+    font-size: 0px;
+    top: 52px;
+    bottom: 0;
+    left: 0;
+    z-index: 1001;
+    overflow: hidden !important;
+    overscroll-behavior: none;
+
+    // reset element-ui css
+    .horizontal-collapse-transition {
+      transition: 0s width ease-in-out, 0s padding-left ease-in-out, 0s padding-right ease-in-out;
+    }
+
+    .sidebar-menu-wrap,
+    .scrollbar-wrapper {
+      overflow: hidden !important;
+    }
+
+    .el-scrollbar {
+      height: 100%;
+      overflow: hidden !important;
+    }
+
+    &.has-logo {
+      .el-scrollbar,
+      .sidebar-menu-wrap {
+        height: calc(100% - 56px);
+      }
+    }
+
+    .is-horizontal {
+      display: none;
+    }
+
+    a {
+      display: inline-block;
+      width: 100%;
+      overflow: hidden;
+    }
+
+    .svg-icon {
+      margin-right: 16px;
+      width: 18px;
+      height: 18px;
+      vertical-align: middle;
+    }
+
+    .sub-el-icon {
+      margin-right: 12px;
+      margin-left: -2px;
+    }
+
+    .el-menu {
+      border: none;
+      height: auto !important;
+      max-height: none;
+      width: 100% !important;
+      overflow: visible !important;
+    }
+
+    /* 彻底隐藏侧栏滚动条（含遗留 el-scrollbar） */
+    .el-scrollbar__bar,
+    .el-scrollbar__wrap {
+      overflow: hidden !important;
+    }
+    .el-scrollbar__wrap {
+      height: 100% !important;
+      margin-bottom: 0 !important;
+      margin-right: 0 !important;
+    }
+
+    // 浅色侧栏：激活项左侧色条 + 浅橙底
+    .el-menu-item {
+      color: $menuText !important;
+      margin: 4px 10px;
+      border-radius: 10px;
+      height: 46px;
+      line-height: 46px;
+
+      &.is-active {
+        color: $menuActiveText !important;
+        background: rgba(233, 99, 2, 0.1) !important;
+        font-weight: 600;
+        position: relative;
+
+        &::before {
+          content: '';
+          position: absolute;
+          left: 0;
+          top: 10px;
+          bottom: 10px;
+          width: 3px;
+          border-radius: 0 3px 3px 0;
+          background: var(--mainColor, #e96302);
+        }
+      }
+
+      &:hover {
+        color: $menuActiveText !important;
+        background-color: $menuHover !important;
+      }
+    }
+
+    .submenu-title-noDropdown {
+      color: $menuText !important;
+      margin: 4px 10px;
+      border-radius: 10px;
+
+      &.is-active {
+        color: $menuActiveText !important;
+        background: rgba(233, 99, 2, 0.1) !important;
+        font-weight: 600;
+      }
+    }
+
+    // menu hover
+    .submenu-title-noDropdown,
+    .el-submenu__title {
+      &:hover {
+        background-color: $menuHover !important;
+      }
+    }
+
+    .is-active>.el-submenu__title {
+      color: $subMenuActiveText !important;
+    }
+
+    & .nest-menu .el-submenu>.el-submenu__title,
+    & .el-submenu .el-menu-item {
+      min-width: $sideBarWidth !important;
+      background-color: $subMenuBg !important;
+
+      &:hover {
+        background-color: $subMenuHover !important;
+      }
+    }
+  }
+
+  .hideSidebar {
+    .sidebar-container {
+      width: 54px !important;
+
+      // Element Plus 收起态：只居中显示图标，隐藏文字，避免竖排挤字
+      .el-menu--collapse {
+        width: 54px !important;
+
+        .el-menu-item,
+        .el-sub-menu > .el-sub-menu__title {
+          padding: 0 !important;
+          display: flex !important;
+          justify-content: center;
+          align-items: center;
+
+          .svg-icon,
+          .sub-el-icon {
+            margin: 0 !important;
+            font-size: 18px;
+          }
+
+          .menu-title,
+          > span:not(.el-sub-menu__icon-arrow) {
+            height: 0 !important;
+            width: 0 !important;
+            overflow: hidden !important;
+            visibility: hidden !important;
+            display: inline-block !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+
+          .el-sub-menu__icon-arrow {
+            display: none !important;
+          }
+        }
+
+        .el-tooltip__trigger,
+        .el-menu-tooltip__trigger {
+          display: flex !important;
+          justify-content: center;
+          align-items: center;
+          width: 100% !important;
+          height: 56px;
+          padding: 0 !important;
+          box-sizing: border-box;
+        }
+      }
+    }
+
+    .main-container {
+      margin-left: 54px;
+    }
+
+    .submenu-title-noDropdown {
+      padding: 0 !important;
+      position: relative;
+    }
+
+    .el-sub-menu {
+      overflow: hidden;
+    }
+  }
+
+  .el-menu--collapse .el-menu .el-submenu {
+    min-width: $sideBarWidth !important;
+  }
+
+  // mobile responsive
+  .mobile {
+    .main-container {
+      margin-left: 0px;
+    }
+
+    .sidebar-container {
+      transition: transform .28s;
+      width: $sideBarWidth !important;
+    }
+
+    &.hideSidebar {
+      .sidebar-container {
+        pointer-events: none;
+        transition-duration: 0.3s;
+        transform: translate3d(-$sideBarWidth, 0, 0);
+      }
+    }
+  }
+
+  .withoutAnimation {
+
+    .main-container,
+    .sidebar-container {
+      transition: none;
+    }
+  }
+}
+
+// when menu collapsed
+.el-menu--vertical {
+  &>.el-menu {
+    .svg-icon {
+      margin-right: 16px;
+    }
+    .sub-el-icon {
+      margin-right: 12px;
+      margin-left: -2px;
+    }
+  }
+
+  .nest-menu .el-submenu>.el-submenu__title,
+  .el-menu-item {
+    &:hover {
+      // you can use $subMenuHover
+      background-color: $menuHover !important;
+    }
+  }
+
+  // the scroll bar appears when the subMenu is too long
+  >.el-menu--popup {
+    max-height: 100vh;
+    overflow-y: auto;
+
+    &::-webkit-scrollbar-track-piece {
+      background: #d3dce6;
+    }
+
+    &::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: #99a9bf;
+      border-radius: 20px;
+    }
+  }
+}

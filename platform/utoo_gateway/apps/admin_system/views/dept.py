@@ -1,0 +1,134 @@
+from __future__ import annotations
+
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.permissions import AllowAny
+from rest_framework.request import Request
+from rest_framework.response import Response
+
+from apps.admin_core.admin_ajax import admin_ajax_view, ajax_response
+from apps.admin_system.repositories import dept as dept_repo
+from apps.admin_system.views.common import merge_payload
+from apps.core.responses import ajax_fail, ajax_ok
+
+
+def _normalize_lab_ids(value) -> str | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, (list, tuple)):
+        parts = [str(x).strip() for x in value if x not in (None, "")]
+        return ",".join(parts) if parts else None
+    text = str(value).strip()
+    return text or None
+
+
+def _dept_payload(data: dict) -> dict:
+    return {
+        "id": data.get("id"),
+        "dept_sort": data.get("deptSort") or data.get("dept_sort") or 0,
+        "dept_name": (data.get("deptName") or data.get("dept_name") or "").strip(),
+        "dept_phone": data.get("deptPhone") or data.get("dept_phone"),
+        "dept_fax": data.get("deptFax") or data.get("dept_fax"),
+        "dept_address": data.get("deptAddress") or data.get("dept_address"),
+        "super_id": data.get("superId") or data.get("super_id") or "0",
+        "lead_uid": data.get("leadUid") or data.get("lead_uid"),
+        "dept_desc": data.get("deptDesc") or data.get("dept_desc"),
+        "lab_ids": _normalize_lab_ids(data.get("labIds") if "labIds" in data else data.get("lab_ids")),
+    }
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def dept_tree(_request: Request, user=None):
+    del user
+    return ajax_response(True, obj=dept_repo.list_all_depts())
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def dept_get(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    dept_id = data.get("id")
+    if not dept_id:
+        return Response(ajax_fail("数据错误"))
+    row = dept_repo.get_dept(str(dept_id))
+    return Response(ajax_ok(obj=row))
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def dept_add(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    payload = _dept_payload(data)
+    if not payload["dept_name"]:
+        return Response(False)
+    dept_repo.insert_dept(payload)
+    return Response(True)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def dept_update(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    payload = _dept_payload(data)
+    if not payload["id"] or not payload["dept_name"]:
+        return Response(False)
+    dept_repo.update_dept(payload)
+    return Response(True)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def dept_delete(request: Request, user=None):
+    del user
+    data = merge_payload(request)
+    dept_id = data.get("id")
+    if not dept_id:
+        return Response(False)
+    dept_repo.delete_dept(str(dept_id))
+    return Response(True)
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def dept_options(request: Request, user=None):
+    data = merge_payload(request)
+    scope = str(data.get("scope") or data.get("for") or "").strip().lower()
+    # 用户管理下拉：非 admin 仅本部门及下级
+    if scope in ("yhgl", "usermgmt", "1"):
+        name = ""
+        dept_id = ""
+        if isinstance(user, dict):
+            name = str(user.get("user_name") or user.get("userName") or "").strip()
+            dept_id = str(user.get("dept_id") or user.get("deptId") or "").strip()
+        opts = dept_repo.list_dept_options_for_yhgl(is_admin=(name == "admin"), dept_id=dept_id)
+        return ajax_response(True, obj=opts)
+    return ajax_response(True, obj=dept_repo.list_dept_options())
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def dept_load_all_yhgl(_request: Request, user=None):
+    name = ""
+    dept_id = ""
+    if isinstance(user, dict):
+        name = str(user.get("user_name") or user.get("userName") or "").strip()
+        dept_id = str(user.get("dept_id") or user.get("deptId") or "").strip()
+    opts = dept_repo.list_dept_options_for_yhgl(is_admin=(name == "admin"), dept_id=dept_id)
+    return ajax_response(True, obj=opts)

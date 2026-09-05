@@ -1,163 +1,39 @@
-# utoo GitLab CI/CD（微服务 + 红绿双实例）
+# utoo GitLab CI/CD（P5 发版分家 · UTOO 业务）
 
-**本流水线专用于 Utoo 微服务 monorepo，与工厂 EMKU 发版完全分开**：独立 Runner tag（`utoo-windows`）、独立 Variables、独立服务器目录（`/opt/utoo-blue` / `/opt/utoo-green`）。**禁止**使用 `emku-windows`、`/opt/emku-*`、`emku-switch-*`、`emku_upstream_*` 或 8021/8023/8024/8027。
+**本流水线只发 UTOO 产品**，与大平台 / EMKU 分开：独立 Runner tag（`utoo-windows`）、独立 Variables。
 
-## P4 / 方案 B（强制）
+| | UTOO（本仓） | 大平台 | EMKU |
+|--|--------------|--------|------|
+| Runner | **`utoo-windows`**（须 `shell=powershell`） | `qd-mall-windows` | `emku-windows` |
+| 发什么 | `platform/utoo_gateway`、`services/utoo_biz`、`utoo-web-front` | 中台 + 青岛 + admin-web | 工厂 |
+| 运行槽 | 现网仍写 **`/opt/qd-mall-{blue\|green}`** 内 UTOO 子树 | 同槽发中台/青岛 | `/opt/emku-*` |
+| 静态 | `/var/www/utoo-web` | `/var/www/qd-admin-web` | — |
 
-- **禁止**从本仓发第二套中台：`identity` / `order` / `payment` / `admin_asset` / `admin_platform`（`qd_svc_*`）。
-- 活跃中台唯一发版源：**大平台仓** `mall_qingdao_pydjango` 的 `platform/*`。
-- 过渡期本仓 CI **仍可**手动发 `gateway` / `frontend`；`deploy_all_*` 也只发这两项（跳过中台）。
-- 对应中台 job 已 `when: never`；脚本对 `libs_services` / 中台 `service` 会直接拒绝。
+## P4 / P5 强制
 
-机制：Windows Shell Runner + SSH → Linux **systemd 裸进程** + **Nginx upstream 独立切流**。gateway 和前端是独立发布入口。
+- **禁止**从本仓发中台五件套（`identity` / `order` / `payment` / `admin_asset` / `admin_platform`）— job `when: never`。
+- 中台唯一发版源：大平台仓 `mall_qingdao_pydjango/platform/*`。
+- **禁止**发青岛 `gateway` / `mall` / `admin-web`。
+- 旧目录 `qd_test_server_django` / `qd_web_front` 已标 DEPRECATED，**不是**发版源。
 
-与本地一致：网关 `.env` 配置 `SVC_*_URL` 后，对应 upstream 不可用时该域 API 返回 **503**。
+## 活跃 Job
 
-## 红绿架构
+| Job | 代码 | 目标 |
+|-----|------|------|
+| `deploy_utoo_biz_*` | `services/utoo_biz` | `qd-utoo-biz-*` @ 18093/18193 |
+| `deploy_utoo_gateway_*` | `platform/utoo_gateway` | `qd-gateway-*` @ 18083/18183 |
+| `deploy_utoo_frontend_*` | `utoo-web-front` | `/var/www/utoo-web` |
+| `deploy_all_*` | 上三者顺序 | biz → gateway → frontend |
+| `deploy_gateway_*` / `deploy_frontend_*` | 兼容旧名 | 分别指向 gateway / frontend 上表 |
 
-```text
-公网 Nginx（uat.utoodev.laide.tech 等）
-  /api/  → utoo_upstream_server.conf → 当前 gateway :18083 或 :18183
-  /      → /var/www/utoo-web
+入口：`deploy/utoo-windows/ci-entry-*.cmd` → `powershell -File`。  
+Runner 若被改成 bash：管理员运行 `C:\GitLab-Runner\fix-utoo-runner-admin.cmd`。
 
-内部 Nginx（仅 127.0.0.1）
-  :19081 → utoo_upstream_identity.conf      → identity :18081 或 :18181
-  :19082 → utoo_upstream_order.conf          → order :18082 或 :18182
-  :19084 → utoo_upstream_payment.conf        → payment :18084 或 :18184
-  :19090 → utoo_upstream_admin_asset.conf    → asset :18090 或 :18190
-  :19091 → utoo_upstream_admin_platform.conf → platform :18091 或 :18191
+## 改哪仓
 
-/opt/utoo-blue/     180xx 物理实例
-/opt/utoo-green/    181xx 物理实例
-/opt/utoo/config/shared-database.env   # 双槽共用密钥（CI 不覆盖；各槽 config/ 下可 symlink）
-```
+| 改动 | 仓 | 点谁 |
+|------|-----|------|
+| 愉兔菜单/me、官网、biz | **本仓** | `deploy_utoo_*` |
+| 登录原子、实验单、库存、青岛经营 | **大平台仓** | `deploy_identity|order|asset|mall|...` |
 
-| 槽 | 根目录 | 网关 | identity | order | payment | asset | platform | systemd 后缀 |
-|----|--------|------|----------|-------|---------|-------|----------|--------------|
-| blue | `/opt/utoo-blue` | **18083** | **18081** | 18082 | 18084 | 18090 | 18091 | `-blue` |
-| green | `/opt/utoo-green` | **18183** | **18181** | 18182 | 18184 | 18190 | 18191 | `-green` |
-
-- 两个 gateway `.env` 的 `SVC_*_URL` 均指向稳定内部端口 `19081/82/84/90/91`。
-- 静态单目录 `/var/www/utoo-web` 独立发布，无蓝绿切流。
-- gateway upstream：`/usr/local/nginx/conf/utoo_upstream_server.conf`（一行 `server 127.0.0.1:PORT;`）。
-- 单服务 upstream：`/usr/local/nginx/conf/utoo_upstream_{service}.conf`。
-- 切流脚本：`utoo-switch-active.sh <gateway_port>` 或 `utoo-switch-service.sh <service> <port>`。
-
-样例见 [`deploy/nginx/`](nginx/)、[`deploy/systemd/`](systemd/)。从单实例迁 139：见 [`MIGRATE-BLUE-GREEN-139.md`](MIGRATE-BLUE-GREEN-139.md)。
-
-## 发布流程
-
-1. 推送到 `dev` 或 `prod`
-2. GitLab → **CI/CD → Pipelines**（`deploy`：**gateway / frontend** 手动按钮；中台五件套已停用）
-3. 按改动范围选择对应按钮；所有按钮互不自动触发。
-
-| Job | 状态 | 发布内容 |
-|-----|------|----------|
-| `deploy_order_*` | **P4 停用** `when: never` | 旧 `qd_svc_order` → 改走大平台 `platform/order` |
-| `deploy_identity_*` | **P4 停用** | 旧 `qd_svc_identity` → 改走大平台 `platform/identity` |
-| `deploy_payment_*` | **P4 停用** | 旧 `qd_svc_payment` → 改走大平台 `platform/payment` |
-| `deploy_admin_asset_*` | **P4 停用** | 旧 `qd_svc_admin_asset` → 改走大平台 `platform/asset` |
-| `deploy_admin_platform_*` | **P4 停用** | 旧 `qd_svc_admin_platform` → 改走大平台 `platform/platform` |
-| `deploy_gateway_*` | 过渡期可发 | `qd_test_server_django` :18083 ↔ :18183 |
-| `deploy_frontend_*` | 过渡期可发 | `qd_web_front` → `/var/www/utoo-web` |
-| `deploy_all_*` | 过渡期可发 | **仅** gateway + frontend（跳过中台） |
-
-若 Pipeline 显示 **stuck**：没有 tag=`utoo-windows` 的 Runner，先注册 Runner，不是 stages 少了。
-
-不发：`qd_svc_wx` / `qd_svc_entry` / `qd_svc_invoice`（已废弃）。旧 `qd_svc_auth` **已从仓库删除**。`qd_worker` 未进流水线。中台五件套 **禁止**从本仓再启用。
-
-## 网关 SVC_*（每槽各自 `.env`）
-
-**blue 和 green 均使用相同的服务地址**（gateway 自身 `SERVER_PORT_HTTP` 保持各自 18083 / 18183）：
-
-```env
-# 勿设 SVC_AUTH_URL
-# 登录切流：配了才打身份中台；空则网关本地登录（回滚）
-SVC_IDENTITY_URL=http://127.0.0.1:19081
-SVC_ORDER_URL=http://127.0.0.1:19082
-SVC_PAYMENT_URL=http://127.0.0.1:19084
-SVC_WX_URL=http://127.0.0.1:19084
-SVC_ADMIN_ASSET_URL=http://127.0.0.1:19090
-SVC_ADMIN_PLATFORM_URL=http://127.0.0.1:19091
-SVC_INVOICE_URL=http://127.0.0.1:19091
-SVC_ENTRY_URL=http://127.0.0.1:19091
-DEBUG_RELOAD=false
-SERVER_PORT_HTTP=18083
-```
-
-各上游 `.env` 的 `SERVER_PORT_HTTP` 与上表一致。CI **不会**覆盖 `.env` / `shared-database.env`。  
-身份中台 JWT 用共享文件里的 `JWT_SECRET_KEY`，必须与网关同一把。
-
-## 身份中台首次上线（登录切流）
-
-先做 **UAT（`dev` / 139）**，不要先动 `prod`。前端不用发。
-
-1. 把含 `deploy/` 的代码放到服务器（或从已有 `/opt/utoo-blue` 更新 `deploy/`）。
-2. 一次性安装 systemd + Nginx `:19081`：
-
-```bash
-# 在目标机；REPO 指向含 deploy/ 的树
-sudo REPO=/opt/utoo-blue bash /opt/utoo-blue/deploy/identity-first-install.sh.example
-```
-
-3. 推送到 `dev` 后，GitLab **只点** `deploy_identity_dev`。此时 **不要** 写 `SVC_IDENTITY_URL`。
-4. 探活：`curl -fsS http://127.0.0.1:18081/health` 与 `curl -fsS http://127.0.0.1:19081/health`
-5. 两槽网关 `.env` 加上 `SVC_IDENTITY_URL=http://127.0.0.1:19081`，再点 `deploy_gateway_dev`（或重启当前网关）。
-6. 测管理端 / PC / 小程序密码登录。短信与微信一键仍走网关。
-7. 青岛大平台：先确认公网 `POST https://uat.utoodev.laide.tech/api/v1/identity/auth/login`（`X-Channel: mall_qd`，空账号）命中中台（body `code=400`，不是 404），再把青岛 gateway `IDENTITY_MID_SERVICE_URL` 设为同一 VIP 并重启。`JWT_SECRET` 必须等于中台 `MALL_JWT_SECRET`。组织写（部门/角色/用户/菜单）和改密也走该 VIP。
-
-回滚登录：清空 `SVC_IDENTITY_URL` 并重启当前网关。中台切槽：`sudo /usr/local/sbin/utoo-switch-service.sh identity 18081`。
-
-日常（P4 后）：中台改动 → **只从大平台仓** `platform/*` 发版；本仓只改网关 → 点 `deploy_gateway_*`；只改前端 → 点 `deploy_frontend_*`。`deploy_all_*` **不再**带中台。历史「身份中台首次上线」步骤仅作档案，勿再点本仓 `deploy_identity_*`。
-
-## GitLab / Runner 配置（独立于 EMKU）
-
-### 1. 为本项目注册 Windows Runner
-
-1. 准备一台 Windows 机器（建议与 EMKU Runner **分开**）
-2. 使用 **本项目** registration token；Executor **`shell`**
-3. Tag 只打：**`utoo-windows`**（不要打 `emku-windows`）
-4. 需已装：PowerShell、OpenSSH Client、Node.js、能访问目标 Linux
-
-### 2. CI 变量
-
-| 变量 | 说明 |
-|------|------|
-| `DEPLOY_USER` / `DEPLOY_HOST` / `SSH_PRIVATE_KEY` | SSH（可 `_DEV` / `_PROD` 后缀） |
-| `UTOO_UPSTREAM_CONF` | 可选，默认 `/usr/local/nginx/conf/utoo_upstream_server.conf` |
-| `UTOO_SWITCH_SCRIPT` | 可选，默认 `/usr/local/sbin/utoo-switch-active.sh` |
-| `UTOO_SERVICE_UPSTREAM_CONF_DIR` | 可选，默认 `/usr/local/nginx/conf` |
-| `UTOO_SERVICE_SWITCH_SCRIPT` | 可选，默认 `/usr/local/sbin/utoo-switch-service.sh` |
-| `UTOO_STATIC_WEB` | 可选，默认 `/var/www/utoo-web` |
-| `UTOO_SHARED_CONFIG` | 可选，默认 `/opt/utoo/config`（共享密钥目录） |
-
-### 3. 远端 sudo
-
-```text
-# /etc/sudoers.d/utoo-gitlab-deploy
-deploy ALL=(root) NOPASSWD: /bin/bash, /usr/bin/bash, /bin/systemctl, /usr/bin/systemctl, /bin/mkdir, /bin/rm, /bin/tar, /usr/bin/tar, /bin/chown, /usr/bin/find, /usr/bin/xargs, /bin/chmod, /usr/local/sbin/utoo-switch-active.sh, /usr/local/sbin/utoo-switch-service.sh, /usr/local/nginx/sbin/nginx
-```
-
-单元名示例：`qd-order-blue` `qd-order-green` `qd-gateway-blue` `qd-gateway-green` 等（见 systemd 样例）。
-
-### 4. known_hosts / Auto DevOps
-
-脚本自动 `ssh-keyscan`。关闭 Auto DevOps，避免干扰。
-
-## 服务器一次性准备
-
-见 [`MIGRATE-BLUE-GREEN-139.md`](MIGRATE-BLUE-GREEN-139.md)（从旧 `/opt/utoo` 单实例迁蓝绿）或新机：
-
-```bash
-sudo mkdir -p /opt/utoo/config /opt/utoo-blue /opt/utoo-green /var/www/utoo-web
-sudo chown -R deploy:deploy /opt/utoo /opt/utoo-blue /opt/utoo-green /var/www/utoo-web
-# 放置 shared-database.env；各槽 config/ 下 symlink
-# 安装 deploy/systemd/*-{blue,green}.service.example
-# 安装 gateway upstream、5 个服务 upstream、utoo-internal-upstreams.conf 与两个切流脚本
-```
-
-## 回滚
-
-- 单服务：`sudo /usr/local/sbin/utoo-switch-service.sh order 18082`（identity 用 `identity 18081`）。
-- gateway：`sudo /usr/local/sbin/utoo-switch-active.sh 18083`（或 `18183`）切回上一 gateway。
-- 前端：重新执行上一 commit 的 `deploy_frontend_*`。
+本地 env：优先 `C:\ProgramData\qd-mall-deploy-{dev|prod}.env.ps1`（同机槽），否则 `utoo-deploy-*.env.ps1`。

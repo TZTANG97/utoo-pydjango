@@ -1,22 +1,16 @@
-# .gitlab-ci.yml — Utoo 微服务红绿双实例发版（与 EMKU 无关）
-# Runner tag：utoo-windows（须为本项目单独注册，否则会 stuck）
+# .gitlab-ci.yml — UTOO 业务发版（P5 发版分家）
+# Runner tag：utoo-windows（须 shell=powershell；禁止改成 bash）
 #
-# ========== P4 / 方案 B（强制，禁止回退）==========
-# 禁止再启用本仓 identity / order / payment / admin_asset / admin_platform（中台五件套）发版。
-# 活跃中台唯一发版源：大平台仓 mall_qingdao_pydjango 的 platform/*。
-# 过渡期仍可发 gateway / frontend（UTOO 业务入口）；禁止发第二套 qd_svc_* 式中台。
-# 对应 job 已 when: never；禁止改回 when: manual。
+# ========== P5 / 方案 B（强制）==========
+# 本仓只发：utoo_gateway / utoo_biz / utoo-web-front
+# 部署到现网同机槽：/opt/qd-mall-{blue|green} + /var/www/utoo-web
+# 禁止发中台五件套（identity/order/payment/admin_asset/admin_platform）
+# 中台唯一发版源：大平台仓 mall_qingdao_pydjango 的 platform/*
+# 大平台前端 admin-web 由大平台仓发；本仓前端是 utoo-web-front（不是 admin-web）
 # ==================================================
 #
-# 每个环境：
-# - stage deploy：gateway / frontend 手动发布（中台五件套 job 已停用）
-# - stage deploy_all：一键只发 gateway + frontend（跳过中台；见 ci-run-all.ps1）
-#
-# Runner 必须 shell=powershell（LocalSystem + bash = mkdir not found，发版必挂）。
-# 禁止把 C:\GitLab-Runner\config.toml 的 utoo-windows 改成 bash。
-# 发版入口：cmd -> powershell -File（ci-entry-*.cmd），失败码靠 ERRORLEVEL。
-# 若 shell 被改坏：管理员运行 C:\GitLab-Runner\fix-utoo-runner-admin.cmd
-# 禁止复用 emku-windows /opt/emku-* / emku_upstream_*
+# 发版入口：ci-entry-*.cmd → powershell -File
+
 stages:
   - deploy
   - deploy_all
@@ -24,269 +18,299 @@ stages:
 variables:
   GIT_STRATEGY: fetch
   GIT_CLEAN_FLAGS: "-ffd"
-  UTOO_STATIC_WEB: "/var/www/utoo-web"
-  UTOO_SHARED_CONFIG: "/opt/utoo/config"
-  UTOO_UPSTREAM_CONF: "/usr/local/nginx/conf/utoo_upstream_server.conf"
-  UTOO_SWITCH_SCRIPT: "/usr/local/sbin/utoo-switch-active.sh"
+  QD_MALL_UTOO_STATIC_WEB: "/var/www/utoo-web"
+  QD_MALL_SHARED_CONFIG: "/opt/qd-mall/config"
+  QD_MALL_UTOO_GATEWAY_UPSTREAM_CONF: "/usr/local/nginx/conf/utoo_upstream_server.conf"
+  QD_MALL_UTOO_GATEWAY_SWITCH_SCRIPT: "/usr/local/sbin/qd-mall-switch-utoo-active.sh"
+  QD_MALL_SERVICE_UPSTREAM_CONF_DIR: "/usr/local/nginx/conf"
+  QD_MALL_SERVICE_SWITCH_SCRIPT: "/usr/local/sbin/qd-mall-switch-service.sh"
   # 兼容旧变量名
-  UTOO_STATIC_C: "/var/www/utoo-web"
-  UTOO_STATIC_ADMIN: "/var/www/utoo-web"
+  UTOO_STATIC_WEB: "/var/www/utoo-web"
+  CI_COMMIT_DESCRIPTION: "-"
+  CI_COMMIT_MESSAGE: "-"
 
 .utoo_windows_runner:
   tags:
     - utoo-windows
+  variables:
+    SSH_PRIVATE_KEY: ""
+    SSH_PRIVATE_KEY_DEV: ""
+    SSH_PRIVATE_KEY_PROD: ""
+    CI_COMMIT_DESCRIPTION: "-"
+    CI_COMMIT_MESSAGE: "-"
 
-# PowerShell executor：用 cmd 入口保证 ERRORLEVEL；$CI_PROJECT_DIR 由 Runner 注入
 .utoo_run_deploy: &utoo_run_deploy
   - cmd.exe /c "$CI_PROJECT_DIR\\deploy\\utoo-windows\\ci-entry-deploy.cmd"
 
 .utoo_run_frontend: &utoo_run_frontend
-  - cmd.exe /c "$CI_PROJECT_DIR\\deploy\\utoo-windows\\ci-entry-frontend.cmd"
+  - cmd.exe /c "$CI_PROJECT_DIR\\deploy\\utoo-windows\\ci-entry-utoo-frontend.cmd"
 
 .utoo_run_all: &utoo_run_all
   - cmd.exe /c "$CI_PROJECT_DIR\\deploy\\utoo-windows\\ci-entry-all.cmd"
 
-# --- P4 停发：中台五件套（保留 job 定义便于审计，when: never 禁止点选）---
+# --- P4 停发：中台五件套（保留定义便于审计）---
 
 deploy_order_dev:
   extends: .utoo_windows_runner
   stage: deploy
-  only:
-    - dev
-  except:
-    - merge_requests
+  only: [dev]
+  except: [merge_requests]
   variables:
+    QD_MALL_DEPLOY_TARGET: dev
     UTOO_DEPLOY_TARGET: dev
-    UTOO_DEPLOY_PHASE: service
-    UTOO_DEPLOY_SERVICE: order
+    QD_MALL_DEPLOY_PHASE: service
+    QD_MALL_DEPLOY_SERVICE: order
   when: never
-  allow_failure: false
+  allow_failure: true
   script: *utoo_run_deploy
 
 deploy_identity_dev:
   extends: .utoo_windows_runner
   stage: deploy
-  only:
-    - dev
-  except:
-    - merge_requests
+  only: [dev]
+  except: [merge_requests]
   variables:
+    QD_MALL_DEPLOY_TARGET: dev
     UTOO_DEPLOY_TARGET: dev
-    UTOO_DEPLOY_PHASE: service
-    UTOO_DEPLOY_SERVICE: identity
+    QD_MALL_DEPLOY_PHASE: service
+    QD_MALL_DEPLOY_SERVICE: identity
   when: never
-  allow_failure: false
+  allow_failure: true
   script: *utoo_run_deploy
 
 deploy_payment_dev:
   extends: .utoo_windows_runner
   stage: deploy
-  only:
-    - dev
-  except:
-    - merge_requests
+  only: [dev]
+  except: [merge_requests]
   variables:
+    QD_MALL_DEPLOY_TARGET: dev
     UTOO_DEPLOY_TARGET: dev
-    UTOO_DEPLOY_PHASE: service
-    UTOO_DEPLOY_SERVICE: payment
+    QD_MALL_DEPLOY_PHASE: service
+    QD_MALL_DEPLOY_SERVICE: payment
   when: never
-  allow_failure: false
+  allow_failure: true
   script: *utoo_run_deploy
 
 deploy_admin_asset_dev:
   extends: .utoo_windows_runner
   stage: deploy
-  only:
-    - dev
-  except:
-    - merge_requests
+  only: [dev]
+  except: [merge_requests]
   variables:
+    QD_MALL_DEPLOY_TARGET: dev
     UTOO_DEPLOY_TARGET: dev
-    UTOO_DEPLOY_PHASE: service
-    UTOO_DEPLOY_SERVICE: admin_asset
+    QD_MALL_DEPLOY_PHASE: service
+    QD_MALL_DEPLOY_SERVICE: admin_asset
   when: never
-  allow_failure: false
+  allow_failure: true
   script: *utoo_run_deploy
 
 deploy_admin_platform_dev:
   extends: .utoo_windows_runner
   stage: deploy
-  only:
-    - dev
-  except:
-    - merge_requests
+  only: [dev]
+  except: [merge_requests]
   variables:
+    QD_MALL_DEPLOY_TARGET: dev
     UTOO_DEPLOY_TARGET: dev
-    UTOO_DEPLOY_PHASE: service
-    UTOO_DEPLOY_SERVICE: admin_platform
+    QD_MALL_DEPLOY_PHASE: service
+    QD_MALL_DEPLOY_SERVICE: admin_platform
   when: never
-  allow_failure: false
+  allow_failure: true
   script: *utoo_run_deploy
 
-deploy_gateway_dev:
+# --- P5 活跃：UTOO 三件套 ---
+
+deploy_utoo_biz_dev:
   extends: .utoo_windows_runner
   stage: deploy
-  only:
-    - dev
-  except:
-    - merge_requests
-  variables:
-    UTOO_DEPLOY_TARGET: dev
-    UTOO_DEPLOY_PHASE: gateway
-    UTOO_DEPLOY_SERVICE: gateway
+  only: [dev]
+  except: [merge_requests]
   when: manual
   allow_failure: false
+  variables:
+    QD_MALL_DEPLOY_TARGET: dev
+    UTOO_DEPLOY_TARGET: dev
+    QD_MALL_DEPLOY_PHASE: service
+    QD_MALL_DEPLOY_SERVICE: utoo_biz
   script: *utoo_run_deploy
+
+deploy_utoo_gateway_dev:
+  extends: .utoo_windows_runner
+  stage: deploy
+  only: [dev]
+  except: [merge_requests]
+  when: manual
+  allow_failure: false
+  variables:
+    QD_MALL_DEPLOY_TARGET: dev
+    UTOO_DEPLOY_TARGET: dev
+    QD_MALL_DEPLOY_PHASE: utoo_gateway
+    QD_MALL_DEPLOY_SERVICE: utoo_gateway
+  script: *utoo_run_deploy
+
+deploy_utoo_frontend_dev:
+  extends: .utoo_windows_runner
+  stage: deploy
+  only: [dev]
+  except: [merge_requests]
+  when: manual
+  allow_failure: false
+  variables:
+    QD_MALL_DEPLOY_TARGET: dev
+    UTOO_DEPLOY_TARGET: dev
+  script: *utoo_run_frontend
+
+# 旧名兼容：gateway/frontend 指向新路径（勿再发 qd_test_server_django / qd_web_front）
+deploy_gateway_dev:
+  extends: deploy_utoo_gateway_dev
 
 deploy_frontend_dev:
-  extends: .utoo_windows_runner
-  stage: deploy
-  only:
-    - dev
-  except:
-    - merge_requests
-  variables:
-    UTOO_DEPLOY_TARGET: dev
-    UTOO_DEPLOY_PHASE: static
-    UTOO_DEPLOY_SERVICE: frontend
-  when: manual
-  allow_failure: false
-  script: *utoo_run_frontend
+  extends: deploy_utoo_frontend_dev
 
 deploy_all_dev:
   extends: .utoo_windows_runner
   stage: deploy_all
-  # 不依赖前面单发是否点过，否则会一直卡在 deploy stage
   needs: []
-  only:
-    - dev
-  except:
-    - merge_requests
-  variables:
-    UTOO_DEPLOY_TARGET: dev
+  only: [dev]
+  except: [merge_requests]
   when: manual
+  timeout: 3h
   allow_failure: false
-  timeout: 2h
+  variables:
+    QD_MALL_DEPLOY_TARGET: dev
+    UTOO_DEPLOY_TARGET: dev
   script: *utoo_run_all
 
-# --- prod：中台五件套 when:never；gateway / frontend / all 仍可手动 ---
+# --- prod ---
 
 deploy_order_prod:
   extends: .utoo_windows_runner
   stage: deploy
-  only:
-    - prod
-  except:
-    - merge_requests
-  variables:
-    UTOO_DEPLOY_TARGET: prod
-    UTOO_DEPLOY_PHASE: service
-    UTOO_DEPLOY_SERVICE: order
+  only: [prod]
+  except: [merge_requests]
   when: never
-  allow_failure: false
+  allow_failure: true
+  variables:
+    QD_MALL_DEPLOY_TARGET: prod
+    UTOO_DEPLOY_TARGET: prod
+    QD_MALL_DEPLOY_PHASE: service
+    QD_MALL_DEPLOY_SERVICE: order
   script: *utoo_run_deploy
 
 deploy_identity_prod:
   extends: .utoo_windows_runner
   stage: deploy
-  only:
-    - prod
-  except:
-    - merge_requests
-  variables:
-    UTOO_DEPLOY_TARGET: prod
-    UTOO_DEPLOY_PHASE: service
-    UTOO_DEPLOY_SERVICE: identity
+  only: [prod]
+  except: [merge_requests]
   when: never
-  allow_failure: false
+  allow_failure: true
+  variables:
+    QD_MALL_DEPLOY_TARGET: prod
+    UTOO_DEPLOY_TARGET: prod
+    QD_MALL_DEPLOY_PHASE: service
+    QD_MALL_DEPLOY_SERVICE: identity
   script: *utoo_run_deploy
 
 deploy_payment_prod:
   extends: .utoo_windows_runner
   stage: deploy
-  only:
-    - prod
-  except:
-    - merge_requests
-  variables:
-    UTOO_DEPLOY_TARGET: prod
-    UTOO_DEPLOY_PHASE: service
-    UTOO_DEPLOY_SERVICE: payment
+  only: [prod]
+  except: [merge_requests]
   when: never
-  allow_failure: false
+  allow_failure: true
+  variables:
+    QD_MALL_DEPLOY_TARGET: prod
+    UTOO_DEPLOY_TARGET: prod
+    QD_MALL_DEPLOY_PHASE: service
+    QD_MALL_DEPLOY_SERVICE: payment
   script: *utoo_run_deploy
 
 deploy_admin_asset_prod:
   extends: .utoo_windows_runner
   stage: deploy
-  only:
-    - prod
-  except:
-    - merge_requests
-  variables:
-    UTOO_DEPLOY_TARGET: prod
-    UTOO_DEPLOY_PHASE: service
-    UTOO_DEPLOY_SERVICE: admin_asset
+  only: [prod]
+  except: [merge_requests]
   when: never
-  allow_failure: false
+  allow_failure: true
+  variables:
+    QD_MALL_DEPLOY_TARGET: prod
+    UTOO_DEPLOY_TARGET: prod
+    QD_MALL_DEPLOY_PHASE: service
+    QD_MALL_DEPLOY_SERVICE: admin_asset
   script: *utoo_run_deploy
 
 deploy_admin_platform_prod:
   extends: .utoo_windows_runner
   stage: deploy
-  only:
-    - prod
-  except:
-    - merge_requests
-  variables:
-    UTOO_DEPLOY_TARGET: prod
-    UTOO_DEPLOY_PHASE: service
-    UTOO_DEPLOY_SERVICE: admin_platform
+  only: [prod]
+  except: [merge_requests]
   when: never
-  allow_failure: false
+  allow_failure: true
+  variables:
+    QD_MALL_DEPLOY_TARGET: prod
+    UTOO_DEPLOY_TARGET: prod
+    QD_MALL_DEPLOY_PHASE: service
+    QD_MALL_DEPLOY_SERVICE: admin_platform
   script: *utoo_run_deploy
+
+deploy_utoo_biz_prod:
+  extends: .utoo_windows_runner
+  stage: deploy
+  only: [prod]
+  except: [merge_requests]
+  when: manual
+  allow_failure: false
+  variables:
+    QD_MALL_DEPLOY_TARGET: prod
+    UTOO_DEPLOY_TARGET: prod
+    QD_MALL_DEPLOY_PHASE: service
+    QD_MALL_DEPLOY_SERVICE: utoo_biz
+  script: *utoo_run_deploy
+
+deploy_utoo_gateway_prod:
+  extends: .utoo_windows_runner
+  stage: deploy
+  only: [prod]
+  except: [merge_requests]
+  when: manual
+  allow_failure: false
+  variables:
+    QD_MALL_DEPLOY_TARGET: prod
+    UTOO_DEPLOY_TARGET: prod
+    QD_MALL_DEPLOY_PHASE: utoo_gateway
+    QD_MALL_DEPLOY_SERVICE: utoo_gateway
+  script: *utoo_run_deploy
+
+deploy_utoo_frontend_prod:
+  extends: .utoo_windows_runner
+  stage: deploy
+  only: [prod]
+  except: [merge_requests]
+  when: manual
+  allow_failure: false
+  variables:
+    QD_MALL_DEPLOY_TARGET: prod
+    UTOO_DEPLOY_TARGET: prod
+  script: *utoo_run_frontend
 
 deploy_gateway_prod:
-  extends: .utoo_windows_runner
-  stage: deploy
-  only:
-    - prod
-  except:
-    - merge_requests
-  variables:
-    UTOO_DEPLOY_TARGET: prod
-    UTOO_DEPLOY_PHASE: gateway
-    UTOO_DEPLOY_SERVICE: gateway
-  when: manual
-  allow_failure: false
-  script: *utoo_run_deploy
+  extends: deploy_utoo_gateway_prod
 
 deploy_frontend_prod:
-  extends: .utoo_windows_runner
-  stage: deploy
-  only:
-    - prod
-  except:
-    - merge_requests
-  variables:
-    UTOO_DEPLOY_TARGET: prod
-    UTOO_DEPLOY_PHASE: static
-    UTOO_DEPLOY_SERVICE: frontend
-  when: manual
-  allow_failure: false
-  script: *utoo_run_frontend
+  extends: deploy_utoo_frontend_prod
 
 deploy_all_prod:
   extends: .utoo_windows_runner
   stage: deploy_all
   needs: []
-  only:
-    - prod
-  except:
-    - merge_requests
-  variables:
-    UTOO_DEPLOY_TARGET: prod
+  only: [prod]
+  except: [merge_requests]
   when: manual
+  timeout: 3h
   allow_failure: false
-  timeout: 2h
+  variables:
+    QD_MALL_DEPLOY_TARGET: prod
+    UTOO_DEPLOY_TARGET: prod
   script: *utoo_run_all

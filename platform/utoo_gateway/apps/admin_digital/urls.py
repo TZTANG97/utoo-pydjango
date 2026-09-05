@@ -1,0 +1,38 @@
+from django.urls import path
+
+from apps.admin_digital.views import digital as views
+
+urlpatterns = [
+    # 公共
+    path("digital/deptOptions.ajax", views.dept_options),
+    # 统计看板
+    path("testUserStats/overview.ajax", views.stats_overview),
+    path("testUserStats/selDateOverviewByYear.ajax", views.stats_date_overview),
+    path("testUserStats/selOrderManage.ajax", views.stats_order_manage),
+    path("testUserStats/board1.ajax", views.stats_board1),
+    path("testUserStats/board.ajax", views.stats_board),
+    path("testUserStats/queryAllDept.ajax", views.stats_test_depts),
+    path("testUserStats/queryUsersByDeptId.ajax", views.stats_users_by_dept),
+    path("sys/user/queryUsersByDeptId.ajax", views.stats_users_by_dept),
+    # 实验室人员产出计划
+    path("testUserPerformance/loadDpet.ajax", views.test_plan_depts),
+    path("testUserPerformance/loadDept.ajax", views.test_plan_depts),
+    path("testUserPerformance/queryUsers.ajax", views.test_user_list),
+    path("testUserPerformance/selAmountByYear.ajax", views.test_target_get),
+    path("testUserPerformance/setPerformance.ajax", views.test_target_save),
+    path("testUserPerformance/showByUserId.ajax", views.test_target_show),
+    # 销售人员产出计划
+    path("saleUserPerformance/loadDpet.ajax", views.sale_plan_depts),
+    path("saleUserPerformance/loadDept.ajax", views.sale_plan_depts),
+    path("saleUserPerformance/queryUsers.ajax", views.sale_user_list),
+    path("saleUserPerformance/selAmountByYear.ajax", views.sale_target_get),
+    path("saleUserPerformance/setPerformance.ajax", views.sale_target_save),
+    path("saleUserPerformance/showByUserId.ajax", views.sale_target_show),
+    # 实验室测试人员绩效
+    path("labPerformance/selByYear.ajax", views.lab_test_perf),
+    # 实验室销售人员绩效
+    path("labPerformanceSaleuser/selUsersByDeptId.ajax", views.lab_sale_users),
+    path("labPerformanceSaleuser/selByYear.ajax", views.lab_sale_perf),
+    path("labPerformanceSaleuser/expOrderList.ajax", views.lab_sale_order_list),
+    path("adminLabSale/expOrderList.ajax", views.lab_sale_order_list),
+]

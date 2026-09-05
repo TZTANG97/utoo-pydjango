@@ -1,0 +1,884 @@
+<script setup lang="ts">
+import { reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  fetchInvoiceList,
+  fetchInvoiceDetail,
+  fetchInvoiceOpenPreview,
+  agreeInvoice,
+  rejectInvoice,
+} from '@admin/api/billing'
+import { uploadExpBillFile } from '@admin/api/experiment'
+import {
+  INVOICE_STATUS,
+  INVOICE_TYPE,
+  INVOICE_MEDIA_TYPE,
+  formatDate,
+  formatMoney,
+} from '@admin/utils/billing-labels'
+import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
+
+const loading = ref(false)
+const rows = ref<Record<string, unknown>[]>([])
+const total = ref(0)
+const page = ref(1)
+const pageSize = ref(10)
+const detailVisible = ref(false)
+const detail = ref<Record<string, unknown> | null>(null)
+const detailFiles = ref<Record<string, unknown>[]>([])
+const detailInvoiceFiles = ref<Record<string, unknown>[]>([])
+const detailBills = ref<Record<string, unknown>[]>([])
+const detailOrders = ref<Record<string, unknown>[]>([])
+const detailLogs = ref<Record<string, unknown>[]>([])
+const openVisible = ref(false)
+const openLoading = ref(false)
+const openSaving = ref(false)
+const openLines = ref<Record<string, unknown>[]>([])
+const openMark = ref('')
+const openApplyId = ref('')
+
+const filters = reactive({
+  order_startime: '',
+  order_endtime: '',
+  status: '',
+})
+
+const STATUS_OPTIONS = [
+  { label: '开票中', value: '1', tag: 'warning' as const },
+  { label: '已作废', value: '3', tag: 'info' as const },
+  { label: '已开票', value: '4', tag: 'success' as const },
+  { label: '已驳回', value: '5', tag: 'danger' as const },
+]
+
+function statusTagType(status: unknown): 'warning' | 'success' | 'danger' | 'info' {
+  const key = Number(status)
+  if (key === 1) return 'warning'
+  if (key === 3) return 'info'
+  if (key === 4) return 'success'
+  if (key === 5) return 'danger'
+  return 'info'
+}
+
+function statusLabel(status: unknown) {
+  return INVOICE_STATUS[Number(status)] || String(status ?? '-')
+}
+
+function invoiceTypeLabel(type: unknown) {
+  return INVOICE_TYPE[Number(type)] || '-'
+}
+
+function invoiceMediaLabel(type: unknown) {
+  return INVOICE_MEDIA_TYPE[Number(type)] || '-'
+}
+
+function payLabel(v: unknown) {
+  if (Number(v) === 1) return '已回款'
+  if (Number(v) === 0) return '未回款'
+  return '-'
+}
+
+async function loadData() {
+  loading.value = true
+  try {
+    const result = await fetchInvoiceList({
+      start: (page.value - 1) * pageSize.value,
+      length: pageSize.value,
+      draw: page.value,
+      order_startime: filters.order_startime,
+      order_endtime: filters.order_endtime,
+      status: filters.status,
+    })
+    rows.value = result.data
+    total.value = result.recordsTotal
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+function handleSearch() {
+  page.value = 1
+  loadData()
+}
+
+function handleReset() {
+  filters.order_startime = ''
+  filters.order_endtime = ''
+  filters.status = ''
+  handleSearch()
+}
+
+async function openDetail(row: Record<string, unknown>) {
+  const res = await fetchInvoiceDetail(String(row.id))
+  if (!isAjaxOk(res)) {
+    ElMessage.error(ajaxErrorMessage(res, '加载详情失败'))
+    return
+  }
+  const payload = (res.obj || {}) as Record<string, unknown>
+  // 新结构 { obj, files, ofList, logs }；兼容旧扁平结构
+  const obj = (payload.obj && typeof payload.obj === 'object'
+    ? payload.obj
+    : payload) as Record<string, unknown>
+  detail.value = obj
+  detailFiles.value = Array.isArray(payload.files) ? (payload.files as Record<string, unknown>[]) : []
+  detailInvoiceFiles.value = Array.isArray(payload.invoiceFiles)
+    ? (payload.invoiceFiles as Record<string, unknown>[])
+    : []
+  detailBills.value = Array.isArray(payload.bills) ? (payload.bills as Record<string, unknown>[]) : []
+  detailOrders.value = Array.isArray(payload.ofList)
+    ? (payload.ofList as Record<string, unknown>[])
+    : []
+  detailLogs.value = Array.isArray(payload.logs) ? (payload.logs as Record<string, unknown>[]) : []
+  detailVisible.value = true
+}
+
+async function handleReject(row: Record<string, unknown>) {
+  await ElMessageBox.confirm('确认驳回该发票申请？', '提示', { type: 'warning' })
+  const res = await rejectInvoice(String(row.id))
+  if (!isAjaxOk(res)) {
+    ElMessage.error(ajaxErrorMessage(res, '驳回失败'))
+    return
+  }
+  ElMessage.success(res.resMsg || '驳回成功')
+  detailVisible.value = false
+  openVisible.value = false
+  loadData()
+}
+
+async function openInvoice(row: Record<string, unknown>) {
+  openApplyId.value = String(row.id)
+  openMark.value = ''
+  openLines.value = []
+  openVisible.value = true
+  openLoading.value = true
+  try {
+    const res = await fetchInvoiceOpenPreview(String(row.id))
+    if (!isAjaxOk(res) || !res.obj) {
+      ElMessage.error(ajaxErrorMessage(res, '加载开票信息失败'))
+      openVisible.value = false
+      return
+    }
+    const obj = res.obj as Record<string, unknown>
+    const lines = Array.isArray(obj.orderLines) ? (obj.orderLines as Record<string, unknown>[]) : []
+    openLines.value = lines.map((l) => ({
+      ...l,
+      amount: String(l.amount ?? ''),
+      mark: String(l.mark || ''),
+      accessoryId: l.accessoryId || '',
+      accessoryName: l.accessoryName || '',
+      uploading: false,
+    }))
+    if (!openLines.value.length) {
+      openLines.value = [
+        {
+          of_id: '',
+          orderNo: String(obj.order_id || '-'),
+          totalPrice: obj.invoice_money,
+          amount: String(obj.invoice_money || ''),
+          mark: '',
+        },
+      ]
+    }
+  } finally {
+    openLoading.value = false
+  }
+}
+
+async function submitInvoice() {
+  if (!openApplyId.value) return
+  const items = openLines.value
+    .filter((l) => l.of_id != null && String(l.of_id) !== '')
+    .map((l) => ({
+      of_id: Number(l.of_id),
+      amount: String(l.amount || '').trim(),
+      mark: String(l.mark || openMark.value || ''),
+      accessoryId: l.accessoryId ? Number(l.accessoryId) : undefined,
+    }))
+  if (!items.length) {
+    ElMessage.warning('没有可开票的订单行')
+    return
+  }
+  if (items.some((it) => !it.amount || Number(it.amount) <= 0)) {
+    ElMessage.warning('请填写有效开票金额')
+    return
+  }
+  openSaving.value = true
+  try {
+    const res = await agreeInvoice(openApplyId.value, items, openMark.value)
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '开票失败'))
+      return
+    }
+    ElMessage.success(res.resMsg || '开票成功')
+    openVisible.value = false
+    detailVisible.value = false
+    loadData()
+  } finally {
+    openSaving.value = false
+  }
+}
+
+async function onUploadInvoiceFile(row: Record<string, unknown>, options: { file: File }) {
+  const oid = String(row.of_id || '')
+  if (!oid) {
+    ElMessage.warning('缺少订单编号，无法上传')
+    return
+  }
+  const fd = new FormData()
+  fd.append('accfile', options.file)
+  fd.append('id', oid)
+  fd.append('ofId', oid)
+  fd.append('billType', '1')
+  row.uploading = true
+  try {
+    const res = await uploadExpBillFile(fd)
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '上传失败'))
+      return
+    }
+    const obj = (res.obj || {}) as { id?: number; info?: string; name?: string }
+    if (!obj.id) {
+      ElMessage.error('上传成功但未返回附件编号')
+      return
+    }
+    row.accessoryId = obj.id
+    row.accessoryName = obj.info || obj.name || options.file.name
+    ElMessage.success(String(res.resMsg || '上传成功'))
+  } finally {
+    row.uploading = false
+  }
+}
+
+loadData()
+</script>
+
+<template>
+  <div class="page-wrap">
+    <section class="filter-panel">
+      <el-form :inline="true" class="filter-form" @submit.prevent="handleSearch">
+        <el-form-item label="申请时间">
+          <div class="date-range">
+            <el-date-picker
+              v-model="filters.order_startime"
+              type="datetime"
+              value-format="YYYY-MM-DD HH:mm:ss"
+              placeholder="开始时间"
+              class="date-input"
+            />
+            <span class="range-sep">至</span>
+            <el-date-picker
+              v-model="filters.order_endtime"
+              type="datetime"
+              value-format="YYYY-MM-DD HH:mm:ss"
+              placeholder="结束时间"
+              class="date-input"
+            />
+          </div>
+        </el-form-item>
+        <el-form-item label="发票状态">
+          <el-select v-model="filters.status" clearable placeholder="全部状态" class="status-select">
+            <el-option
+              v-for="opt in STATUS_OPTIONS"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            >
+              <span class="status-option">
+                <el-tag :type="opt.tag" size="small" effect="light" round>{{ opt.label }}</el-tag>
+              </span>
+            </el-option>
+          </el-select>
+        </el-form-item>
+        <el-form-item class="filter-actions">
+          <el-button type="primary" @click="handleSearch">查询</el-button>
+          <el-button type="danger" class="btn-reset" @click="handleReset">重置</el-button>
+        </el-form-item>
+      </el-form>
+    </section>
+
+    <section class="table-panel">
+      <div class="table-toolbar">
+        <div class="toolbar-title">
+          <span class="title-text">发票申请列表</span>
+          <span class="title-meta">共 {{ total }} 条</span>
+        </div>
+        <div class="legend">
+          <span v-for="opt in STATUS_OPTIONS" :key="opt.value" class="legend-item">
+            <el-tag :type="opt.tag" size="small" effect="plain" round>{{ opt.label }}</el-tag>
+          </span>
+        </div>
+      </div>
+
+      <el-table
+        v-loading="loading"
+        :data="rows"
+        class="data-table"
+        stripe
+        :header-cell-style="{
+          background: '#f3f6fb',
+          color: '#3a4660',
+          fontWeight: 600,
+          borderBottom: '1px solid #e4ebf5',
+        }"
+        :row-class-name="({ row }) => (Number(row.status) === 1 ? 'row-pending' : '')"
+      >
+        <el-table-column type="index" width="56" label="#" align="center" />
+        <el-table-column label="申请时间" min-width="168">
+          <template #default="{ row }">
+            <span class="cell-muted">{{ formatDate(row.addTime) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="订单编号" min-width="160" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="cell-code">{{ row.order_id || '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="用户名" min-width="110" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="cell-strong">{{ row.userName || '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="电话" min-width="120">
+          <template #default="{ row }">
+            <span class="cell-muted">{{ row.mobile || '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="发票金额" min-width="120" align="right">
+          <template #default="{ row }">
+            <span class="money">¥ {{ formatMoney(row.invoice_money) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="发票类型" min-width="140" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" effect="plain" class="type-tag">
+              {{ invoiceTypeLabel(row.type) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="发票介质" min-width="120" align="center">
+          <template #default="{ row }">
+            <span class="cell-muted">{{ invoiceMediaLabel(row.invoice_type) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column
+          prop="invoice_title"
+          label="公司名称"
+          min-width="160"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">
+            <span class="cell-strong">{{ row.invoice_title || '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column
+          prop="credit_code"
+          label="信用代码"
+          min-width="160"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">
+            <span class="cell-muted">{{ row.credit_code || '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="是否回款" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag
+              :type="Number(row.is_pay) === 1 ? 'success' : 'info'"
+              size="small"
+              effect="plain"
+              round
+            >
+              {{ payLabel(row.is_pay) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="发票状态" min-width="110" align="center">
+          <template #default="{ row }">
+            <el-tag
+              :type="statusTagType(row.status)"
+              size="small"
+              effect="light"
+              round
+              class="status-tag"
+            >
+              {{ statusLabel(row.status) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="220" fixed="right" align="center">
+          <template #default="{ row }">
+            <div class="op-group">
+              <el-button link type="primary" @click="openDetail(row)">查看</el-button>
+              <el-button
+                v-if="Number(row.status) === 1"
+                link
+                type="warning"
+                @click="openInvoice(row)"
+              >
+                开票
+              </el-button>
+              <el-button
+                v-if="Number(row.status) === 1"
+                link
+                type="danger"
+                @click="handleReject(row)"
+              >
+                驳回
+              </el-button>
+            </div>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div class="pager">
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="pageSize"
+          :total="total"
+          :page-sizes="[10, 20, 50]"
+          background
+          layout="total, sizes, prev, pager, next"
+          @current-change="loadData"
+          @size-change="handleSearch"
+        />
+      </div>
+    </section>
+
+    <el-dialog
+      v-model="detailVisible"
+      title="发票申请详情"
+      width="900px"
+      destroy-on-close
+    >
+      <template v-if="detail">
+        <div class="detail-hero">
+          <div class="detail-hero-main">
+            <div class="detail-amount">¥ {{ formatMoney(detail.invoice_money) }}</div>
+            <div class="detail-user">
+              {{ detail.invoice_title || detail.userName || '-' }}
+              <span v-if="detail.mobile" class="detail-mobile">{{ detail.mobile }}</span>
+            </div>
+          </div>
+          <el-tag :type="statusTagType(detail.status)" size="large" effect="dark" round>
+            {{ statusLabel(detail.status) }}
+          </el-tag>
+        </div>
+
+        <el-descriptions :column="2" border class="detail-desc">
+          <el-descriptions-item label="申请日期">{{ formatDate(detail.addTime) }}</el-descriptions-item>
+          <el-descriptions-item label="申请人">{{ detail.userName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="电话">{{ detail.mobile || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="发票类型">{{ invoiceTypeLabel(detail.type) }}</el-descriptions-item>
+          <el-descriptions-item label="公司名称">{{ detail.invoice_title || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="信用代码">{{ detail.credit_code || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="发票金额">¥ {{ formatMoney(detail.invoice_money) }}</el-descriptions-item>
+          <el-descriptions-item label="发票介质">{{ invoiceMediaLabel(detail.invoice_type) }}</el-descriptions-item>
+          <el-descriptions-item v-if="Number(detail.invoice_type) === 2" label="邮寄地址" :span="2">
+            {{ detail.address_info || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="是否回款">{{ payLabel(detail.is_pay) }}</el-descriptions-item>
+          <el-descriptions-item label="邮箱">{{ detail.email || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="申请备注" :span="2">{{ detail.notes || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="订单资料" :span="2">
+            <div v-if="detailFiles.length" class="file-list">
+              <a
+                v-for="f in detailFiles"
+                :key="String(f.id)"
+                class="file-link"
+                :href="String(f.url || '#')"
+                target="_blank"
+                rel="noopener"
+              >
+                {{ f.displayName || f.info || f.name || '附件' }}
+              </a>
+            </div>
+            <span v-else class="cell-muted">暂无资料</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="开票附件" :span="2">
+            <div v-if="detailInvoiceFiles.length" class="file-list">
+              <a
+                v-for="f in detailInvoiceFiles"
+                :key="`kp-${String(f.id)}`"
+                class="file-link"
+                :href="String(f.url || '#')"
+                target="_blank"
+                rel="noopener"
+              >
+                {{ f.displayName || f.info || f.name || '附件' }}
+              </a>
+            </div>
+            <span v-else class="cell-muted">暂无开票附件</span>
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <div v-if="detailBills.length" class="section-title">开票记录</div>
+        <el-table
+          v-if="detailBills.length"
+          :data="detailBills"
+          border
+          stripe
+          size="small"
+          empty-text="暂无开票记录"
+          class="detail-bills"
+        >
+          <el-table-column label="开票时间" min-width="170">
+            <template #default="{ row }">{{ formatDate(row.addTime) }}</template>
+          </el-table-column>
+          <el-table-column label="开票金额" width="120" align="right">
+            <template #default="{ row }">
+              <span class="money">¥ {{ formatMoney(row.money) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作备注" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.mark || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="上传文件" min-width="160" show-overflow-tooltip>
+            <template #default="{ row }">
+              <a
+                v-if="row.url"
+                class="file-link"
+                :href="String(row.url)"
+                target="_blank"
+                rel="noopener"
+              >
+                {{ row.displayName || '附件' }}
+              </a>
+              <span v-else class="cell-muted">-</span>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <div class="section-title">关联订单</div>
+        <el-table :data="detailOrders" border stripe size="small" empty-text="暂无关联订单">
+          <el-table-column label="关联订单编号" min-width="160" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span class="cell-code">{{ row.orderId || row.order_id || '-' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="下单时间" min-width="160">
+            <template #default="{ row }">{{ formatDate(row.addTime) }}</template>
+          </el-table-column>
+          <el-table-column label="所属公司名称" min-width="160" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.companyName || row.company_name || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="状态" width="120">
+            <template #default="{ row }">{{ row.statusLabel || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="订单总价" width="120" align="right">
+            <template #default="{ row }">
+              <span class="money">¥ {{ formatMoney(row.totalPrice) }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <div class="section-title">操作记录</div>
+        <el-table :data="detailLogs" border stripe size="small" empty-text="暂无操作记录">
+          <el-table-column label="操作时间" min-width="170">
+            <template #default="{ row }">{{ formatDate(row.addTime) }}</template>
+          </el-table-column>
+          <el-table-column label="操作人员" min-width="120">
+            <template #default="{ row }">{{ row.addusername || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="操作" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.content || '-' }}</template>
+          </el-table-column>
+        </el-table>
+
+        <div v-if="Number(detail.status) === 1" class="detail-actions">
+          <el-button type="warning" @click="openInvoice(detail)">开票</el-button>
+          <el-button type="danger" @click="handleReject(detail)">驳回申请</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="openVisible" title="开票" width="960px" destroy-on-close>
+      <div v-loading="openLoading">
+        <el-table :data="openLines" border stripe>
+          <el-table-column prop="orderNo" label="订单编号" min-width="150" show-overflow-tooltip />
+          <el-table-column label="订单总额" width="120" align="right">
+            <template #default="{ row }">
+              <span class="money">¥ {{ formatMoney(row.totalPrice) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="开票金额" width="160">
+            <template #default="{ row }">
+              <el-input v-model="row.amount" placeholder="金额" clearable />
+            </template>
+          </el-table-column>
+          <el-table-column label="操作备注" min-width="160">
+            <template #default="{ row }">
+              <el-input v-model="row.mark" placeholder="可选" clearable />
+            </template>
+          </el-table-column>
+          <el-table-column label="上传文件" width="180">
+            <template #default="{ row }">
+              <el-upload :show-file-list="false" :http-request="(opt) => onUploadInvoiceFile(row, opt)">
+                <el-button type="primary" link :loading="Boolean(row.uploading)">上传</el-button>
+              </el-upload>
+              <div v-if="row.accessoryName" class="cell-muted">{{ row.accessoryName }}</div>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-form label-width="80px" style="margin-top: 14px">
+          <el-form-item label="统一备注">
+            <el-input v-model="openMark" type="textarea" :rows="2" placeholder="可选" />
+          </el-form-item>
+        </el-form>
+      </div>
+      <template #footer>
+        <el-button @click="openVisible = false">取消</el-button>
+        <el-button type="primary" :loading="openSaving" @click="submitInvoice">确认开票</el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<style scoped lang="scss">
+.page-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.filter-panel,
+.table-panel {
+  background: #fff;
+  border: 1px solid #e8eef6;
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(31, 45, 61, 0.04);
+}
+
+.filter-panel {
+  padding: 16px 18px 2px;
+  background: linear-gradient(180deg, #fbfcfe 0%, #ffffff 55%);
+}
+
+.filter-form {
+  :deep(.el-form-item) {
+    margin-right: 18px;
+    margin-bottom: 14px;
+  }
+
+  :deep(.el-form-item__label) {
+    color: #5b6780;
+    font-weight: 500;
+  }
+}
+
+.date-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.date-input {
+  width: 190px;
+}
+
+.range-sep {
+  color: #94a0b4;
+  font-size: 13px;
+}
+
+.status-select {
+  width: 150px;
+}
+
+.status-option {
+  display: inline-flex;
+  align-items: center;
+}
+
+.filter-actions {
+  :deep(.el-form-item__content) {
+    gap: 8px;
+  }
+}
+
+.btn-reset {
+  --el-button-bg-color: #f56c6c;
+  --el-button-border-color: #f56c6c;
+  --el-button-text-color: #fff;
+  --el-button-hover-bg-color: #f78989;
+  --el-button-hover-border-color: #f78989;
+  --el-button-hover-text-color: #fff;
+  --el-button-active-bg-color: #dd6161;
+  --el-button-active-border-color: #dd6161;
+  color: #fff !important;
+  background-color: #f56c6c !important;
+  border-color: #f56c6c !important;
+}
+
+.table-panel {
+  padding: 14px 16px 16px;
+}
+
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #eef2f8;
+}
+
+.toolbar-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.title-text {
+  font-size: 15px;
+  font-weight: 600;
+  color: #24324a;
+}
+
+.title-meta {
+  font-size: 12px;
+  color: #8a95a8;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.data-table {
+  --el-table-border-color: #eef2f8;
+  --el-table-row-hover-bg-color: #f5f9ff;
+
+  :deep(.el-table__inner-wrapper::before) {
+    display: none;
+  }
+
+  :deep(.el-table__row.row-pending > td.el-table__cell) {
+    background: #fffaf2;
+  }
+
+  :deep(.el-table__row.row-pending:hover > td.el-table__cell) {
+    background: #fff4e5 !important;
+  }
+}
+
+.cell-code {
+  color: #2f6fed;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.cell-strong {
+  color: #24324a;
+  font-weight: 550;
+}
+
+.cell-muted {
+  color: #6b768a;
+  font-size: 13px;
+}
+
+.money {
+  color: #e6a23c;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+}
+
+.type-tag {
+  --el-tag-bg-color: #f0f4fa;
+  --el-tag-border-color: #dce5f2;
+  --el-tag-text-color: #4d5d78;
+}
+
+.status-tag {
+  min-width: 68px;
+  justify-content: center;
+}
+
+.op-group {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.detail-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 16px 18px;
+  border-radius: 10px;
+  background: linear-gradient(120deg, #f4f8ff 0%, #fff8ef 100%);
+  border: 1px solid #e8eef6;
+}
+
+.detail-amount {
+  font-size: 26px;
+  font-weight: 700;
+  color: #d48806;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.detail-user {
+  margin-top: 6px;
+  color: #24324a;
+  font-size: 14px;
+  font-weight: 550;
+}
+
+.detail-mobile {
+  margin-left: 10px;
+  color: #8a95a8;
+  font-weight: 400;
+  font-size: 13px;
+}
+
+.detail-desc {
+  :deep(.el-descriptions__label) {
+    width: 96px;
+    color: #6b768a;
+    background: #f7f9fc;
+  }
+}
+
+.detail-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+.section-title {
+  margin: 18px 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #24324a;
+}
+
+.file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.file-link {
+  color: #2f6fed;
+  text-decoration: none;
+}
+
+.file-link:hover {
+  text-decoration: underline;
+}
+</style>
