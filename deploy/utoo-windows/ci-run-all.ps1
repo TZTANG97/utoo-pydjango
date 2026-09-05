@@ -1,6 +1,7 @@
-﻿# GitLab CI: one-click full deploy (optimized). ASCII-only for WinPS 5.1.
-# Backend: one libs_services (5 services synced + parallel remote pip/restart) -> gateway
-# Frontend: build + static sync via ci-run-frontend.ps1 (reliable under LocalSystem runner)
+﻿# GitLab CI: one-click deploy (P4 / scheme B). ASCII-only for WinPS 5.1.
+# P4: SKIP mid-tier qd_svc_* (identity/order/payment/admin_asset/admin_platform).
+# Mid-tier active deploy source = mall_qingdao_pydjango platform/* only.
+# This job only: gateway + frontend.
 $ErrorActionPreference = 'Stop'
 try {
 	[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
@@ -60,7 +61,7 @@ function Invoke-UtooDeployStep {
 
 $allStart = Get-Date
 
-Invoke-UtooDeployStep -Name 'libs_services' -Phase 'libs_services' -Service 'all' -ScriptPath $deployScript
+Write-Host '[all][P4] skip mid-tier libs_services (order/identity/payment/admin_asset/admin_platform) — deploy from mall_qingdao_pydjango platform/* only' -ForegroundColor Yellow
 Invoke-UtooDeployStep -Name 'gateway' -Phase 'gateway' -Service 'gateway' -ScriptPath $deployScript
 # ci-run-frontend.ps1 sets phase/static itself via env from caller — set before invoke
 $env:UTOO_DEPLOY_PHASE = 'static'

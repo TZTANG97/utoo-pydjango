@@ -1,9 +1,16 @@
 # .gitlab-ci.yml — Utoo 微服务红绿双实例发版（与 EMKU 无关）
 # Runner tag：utoo-windows（须为本项目单独注册，否则会 stuck）
 #
+# ========== P4 / 方案 B（强制，禁止回退）==========
+# 禁止再启用本仓 identity / order / payment / admin_asset / admin_platform（中台五件套）发版。
+# 活跃中台唯一发版源：大平台仓 mall_qingdao_pydjango 的 platform/*。
+# 过渡期仍可发 gateway / frontend（UTOO 业务入口）；禁止发第二套 qd_svc_* 式中台。
+# 对应 job 已 when: never；禁止改回 when: manual。
+# ==================================================
+#
 # 每个环境：
-# - stage deploy：7 个独立手动发布（order / identity / payment / admin_asset / admin_platform / gateway / frontend）
-# - stage deploy_all：1 个一键全发（写在单发后面，单独一列；needs:[] 不挡单发）
+# - stage deploy：gateway / frontend 手动发布（中台五件套 job 已停用）
+# - stage deploy_all：一键只发 gateway + frontend（跳过中台；见 ci-run-all.ps1）
 #
 # Runner 必须 shell=powershell（LocalSystem + bash = mkdir not found，发版必挂）。
 # 禁止把 C:\GitLab-Runner\config.toml 的 utoo-windows 改成 bash。
@@ -39,7 +46,7 @@ variables:
 .utoo_run_all: &utoo_run_all
   - cmd.exe /c "$CI_PROJECT_DIR\\deploy\\utoo-windows\\ci-entry-all.cmd"
 
-# --- dev：先 7 个单发，再一键全发 ---
+# --- P4 停发：中台五件套（保留 job 定义便于审计，when: never 禁止点选）---
 
 deploy_order_dev:
   extends: .utoo_windows_runner
@@ -52,7 +59,7 @@ deploy_order_dev:
     UTOO_DEPLOY_TARGET: dev
     UTOO_DEPLOY_PHASE: service
     UTOO_DEPLOY_SERVICE: order
-  when: manual
+  when: never
   allow_failure: false
   script: *utoo_run_deploy
 
@@ -67,7 +74,7 @@ deploy_identity_dev:
     UTOO_DEPLOY_TARGET: dev
     UTOO_DEPLOY_PHASE: service
     UTOO_DEPLOY_SERVICE: identity
-  when: manual
+  when: never
   allow_failure: false
   script: *utoo_run_deploy
 
@@ -82,7 +89,7 @@ deploy_payment_dev:
     UTOO_DEPLOY_TARGET: dev
     UTOO_DEPLOY_PHASE: service
     UTOO_DEPLOY_SERVICE: payment
-  when: manual
+  when: never
   allow_failure: false
   script: *utoo_run_deploy
 
@@ -97,7 +104,7 @@ deploy_admin_asset_dev:
     UTOO_DEPLOY_TARGET: dev
     UTOO_DEPLOY_PHASE: service
     UTOO_DEPLOY_SERVICE: admin_asset
-  when: manual
+  when: never
   allow_failure: false
   script: *utoo_run_deploy
 
@@ -112,7 +119,7 @@ deploy_admin_platform_dev:
     UTOO_DEPLOY_TARGET: dev
     UTOO_DEPLOY_PHASE: service
     UTOO_DEPLOY_SERVICE: admin_platform
-  when: manual
+  when: never
   allow_failure: false
   script: *utoo_run_deploy
 
@@ -162,7 +169,7 @@ deploy_all_dev:
   timeout: 2h
   script: *utoo_run_all
 
-# --- prod：先 7 个单发，再一键全发 ---
+# --- prod：中台五件套 when:never；gateway / frontend / all 仍可手动 ---
 
 deploy_order_prod:
   extends: .utoo_windows_runner
@@ -175,7 +182,7 @@ deploy_order_prod:
     UTOO_DEPLOY_TARGET: prod
     UTOO_DEPLOY_PHASE: service
     UTOO_DEPLOY_SERVICE: order
-  when: manual
+  when: never
   allow_failure: false
   script: *utoo_run_deploy
 
@@ -190,7 +197,7 @@ deploy_identity_prod:
     UTOO_DEPLOY_TARGET: prod
     UTOO_DEPLOY_PHASE: service
     UTOO_DEPLOY_SERVICE: identity
-  when: manual
+  when: never
   allow_failure: false
   script: *utoo_run_deploy
 
@@ -205,7 +212,7 @@ deploy_payment_prod:
     UTOO_DEPLOY_TARGET: prod
     UTOO_DEPLOY_PHASE: service
     UTOO_DEPLOY_SERVICE: payment
-  when: manual
+  when: never
   allow_failure: false
   script: *utoo_run_deploy
 
@@ -220,7 +227,7 @@ deploy_admin_asset_prod:
     UTOO_DEPLOY_TARGET: prod
     UTOO_DEPLOY_PHASE: service
     UTOO_DEPLOY_SERVICE: admin_asset
-  when: manual
+  when: never
   allow_failure: false
   script: *utoo_run_deploy
 
@@ -235,7 +242,7 @@ deploy_admin_platform_prod:
     UTOO_DEPLOY_TARGET: prod
     UTOO_DEPLOY_PHASE: service
     UTOO_DEPLOY_SERVICE: admin_platform
-  when: manual
+  when: never
   allow_failure: false
   script: *utoo_run_deploy
 

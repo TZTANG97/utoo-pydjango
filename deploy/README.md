@@ -2,7 +2,14 @@
 
 **本流水线专用于 Utoo 微服务 monorepo，与工厂 EMKU 发版完全分开**：独立 Runner tag（`utoo-windows`）、独立 Variables、独立服务器目录（`/opt/utoo-blue` / `/opt/utoo-green`）。**禁止**使用 `emku-windows`、`/opt/emku-*`、`emku-switch-*`、`emku_upstream_*` 或 8021/8023/8024/8027。
 
-机制：Windows Shell Runner + SSH → Linux **systemd 裸进程** + **Nginx upstream 独立切流**。每个上游服务只发布并切换自己的蓝绿实例；gateway 和前端也是独立发布入口。
+## P4 / 方案 B（强制）
+
+- **禁止**从本仓发第二套中台：`identity` / `order` / `payment` / `admin_asset` / `admin_platform`（`qd_svc_*`）。
+- 活跃中台唯一发版源：**大平台仓** `mall_qingdao_pydjango` 的 `platform/*`。
+- 过渡期本仓 CI **仍可**手动发 `gateway` / `frontend`；`deploy_all_*` 也只发这两项（跳过中台）。
+- 对应中台 job 已 `when: never`；脚本对 `libs_services` / 中台 `service` 会直接拒绝。
+
+机制：Windows Shell Runner + SSH → Linux **systemd 裸进程** + **Nginx upstream 独立切流**。gateway 和前端是独立发布入口。
 
 与本地一致：网关 `.env` 配置 `SVC_*_URL` 后，对应 upstream 不可用时该域 API 返回 **503**。
 
@@ -41,22 +48,23 @@
 ## 发布流程
 
 1. 推送到 `dev` 或 `prod`
-2. GitLab → **CI/CD → Pipelines**（应看到一个 `deploy` stage 和 **7 个手动按钮**）
+2. GitLab → **CI/CD → Pipelines**（`deploy`：**gateway / frontend** 手动按钮；中台五件套已停用）
 3. 按改动范围选择对应按钮；所有按钮互不自动触发。
 
-| Job | 发布内容 | 切换方式 |
-|-----|----------|----------|
-| `deploy_order_*` | `qd_svc_order` | :18082 ↔ :18182 |
-| `deploy_identity_*` | `qd_svc_identity`（密码登录中台） | :18081 ↔ :18181 |
-| `deploy_payment_*` | `qd_svc_payment`，含原微信代理 | :18084 ↔ :18184 |
-| `deploy_admin_asset_*` | `qd_svc_admin_asset` | :18090 ↔ :18190 |
-| `deploy_admin_platform_*` | `qd_svc_admin_platform`，含 entry/invoice | :18091 ↔ :18191 |
-| `deploy_gateway_*` | `qd_test_server_django` | :18083 ↔ :18183 |
-| `deploy_frontend_*` | 构建并发布统一 `qd_web_front` | 更新 `/var/www/utoo-web` |
+| Job | 状态 | 发布内容 |
+|-----|------|----------|
+| `deploy_order_*` | **P4 停用** `when: never` | 旧 `qd_svc_order` → 改走大平台 `platform/order` |
+| `deploy_identity_*` | **P4 停用** | 旧 `qd_svc_identity` → 改走大平台 `platform/identity` |
+| `deploy_payment_*` | **P4 停用** | 旧 `qd_svc_payment` → 改走大平台 `platform/payment` |
+| `deploy_admin_asset_*` | **P4 停用** | 旧 `qd_svc_admin_asset` → 改走大平台 `platform/asset` |
+| `deploy_admin_platform_*` | **P4 停用** | 旧 `qd_svc_admin_platform` → 改走大平台 `platform/platform` |
+| `deploy_gateway_*` | 过渡期可发 | `qd_test_server_django` :18083 ↔ :18183 |
+| `deploy_frontend_*` | 过渡期可发 | `qd_web_front` → `/var/www/utoo-web` |
+| `deploy_all_*` | 过渡期可发 | **仅** gateway + frontend（跳过中台） |
 
 若 Pipeline 显示 **stuck**：没有 tag=`utoo-windows` 的 Runner，先注册 Runner，不是 stages 少了。
 
-不发：`qd_svc_wx` / `qd_svc_entry` / `qd_svc_invoice`（已废弃）。旧 `qd_svc_auth` **已从仓库删除**，登录发 **`deploy_identity_*`**（端口 18081）。`qd_worker` 未进流水线。
+不发：`qd_svc_wx` / `qd_svc_entry` / `qd_svc_invoice`（已废弃）。旧 `qd_svc_auth` **已从仓库删除**。`qd_worker` 未进流水线。中台五件套 **禁止**从本仓再启用。
 
 ## 网关 SVC_*（每槽各自 `.env`）
 
@@ -100,7 +108,7 @@ sudo REPO=/opt/utoo-blue bash /opt/utoo-blue/deploy/identity-first-install.sh.ex
 
 回滚登录：清空 `SVC_IDENTITY_URL` 并重启当前网关。中台切槽：`sudo /usr/local/sbin/utoo-switch-service.sh identity 18081`。
 
-日常：只改登录中台 → 只点 `deploy_identity_*`；只改网关转发 → 只点 `deploy_gateway_*`；两边都改 → **先 identity 探活，再 gateway**。identity 进流水线前不要用全发当登录切流；补齐后 `deploy_all_*` 会带上 identity。
+日常（P4 后）：中台改动 → **只从大平台仓** `platform/*` 发版；本仓只改网关 → 点 `deploy_gateway_*`；只改前端 → 点 `deploy_frontend_*`。`deploy_all_*` **不再**带中台。历史「身份中台首次上线」步骤仅作档案，勿再点本仓 `deploy_identity_*`。
 
 ## GitLab / Runner 配置（独立于 EMKU）
 

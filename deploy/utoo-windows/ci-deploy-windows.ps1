@@ -140,6 +140,21 @@ if ($DeployPhase -eq 'static' -and $DeployService -notin @('frontend', 'all')) {
 	exit 1
 }
 
+# P4 / scheme B: refuse second mid-tier deploy from this repo (qd_svc_*).
+# Active mid-tier = mall_qingdao_pydjango platform/* only. Gateway/frontend still allowed.
+$midTierServices = @('order', 'identity', 'payment', 'admin_asset', 'admin_platform')
+if ($DeployPhase -eq 'libs_services') {
+	Write-Error 'P4: UTOO_DEPLOY_PHASE=libs_services disabled. Mid-tier deploy only from mall_qingdao_pydjango platform/*.'
+	exit 1
+}
+if ($DeployPhase -eq 'service' -and $DeployService -in $midTierServices) {
+	Write-Error ("P4: UTOO_DEPLOY_SERVICE={0} mid-tier deploy disabled. Use mall_qingdao_pydjango platform/*." -f $DeployService)
+	exit 1
+}
+if ($DeployPhase -eq 'all') {
+	Write-Host '[deploy][P4] phase=all: skipping mid-tier libs_services; only gateway (+ static if selected by caller)' -ForegroundColor Yellow
+}
+
 Write-Host ("[deploy] target={0} host={1}@{2} phase={3} service={4}" -f $deployTarget, $DeployUser, $deployHost, $DeployPhase, $DeployService)
 
 # --- SSH key / known_hosts ---
@@ -594,10 +609,14 @@ try {
 		Invoke-RemoteSudo $healthWait
 	}
 
-	$doLibsServices = ($DeployPhase -eq 'all' -or $DeployPhase -eq 'libs_services')
+	# P4: never sync/restart qd_svc_* mid-tier from this repo (even phase=all).
+	$doLibsServices = $false
 	$doGateway = ($DeployPhase -eq 'all' -or $DeployPhase -eq 'gateway')
 	$doSingleService = ($DeployPhase -eq 'service')
 	$doStatic = ($DeployPhase -eq 'all' -or $DeployPhase -eq 'static')
+	if ($DeployPhase -eq 'all') {
+		Write-Host '[deploy][P4] doLibsServices=false (mid-tier skipped)' -ForegroundColor Yellow
+	}
 	$script:StagedDistTar = $null
 
 	if ($doSingleService) {
