@@ -162,12 +162,32 @@ deploy_utoo_frontend_dev:
     UTOO_DEPLOY_TARGET: dev
   script: *utoo_run_frontend
 
-# 旧名兼容：gateway/frontend 指向新路径（勿再发 qd_test_server_django / qd_web_front）
+# 旧名兼容：与 utoo_gateway / utoo_frontend 同配置（勿再发 qd_test_server_django / qd_web_front）
 deploy_gateway_dev:
-  extends: deploy_utoo_gateway_dev
+  extends: .utoo_windows_runner
+  stage: deploy
+  only: [dev]
+  except: [merge_requests]
+  when: manual
+  allow_failure: false
+  variables:
+    QD_MALL_DEPLOY_TARGET: dev
+    UTOO_DEPLOY_TARGET: dev
+    QD_MALL_DEPLOY_PHASE: utoo_gateway
+    QD_MALL_DEPLOY_SERVICE: utoo_gateway
+  script: *utoo_run_deploy
 
 deploy_frontend_dev:
-  extends: deploy_utoo_frontend_dev
+  extends: .utoo_windows_runner
+  stage: deploy
+  only: [dev]
+  except: [merge_requests]
+  when: manual
+  allow_failure: false
+  variables:
+    QD_MALL_DEPLOY_TARGET: dev
+    UTOO_DEPLOY_TARGET: dev
+  script: *utoo_run_frontend
 
 deploy_all_dev:
   extends: .utoo_windows_runner
@@ -296,10 +316,30 @@ deploy_utoo_frontend_prod:
   script: *utoo_run_frontend
 
 deploy_gateway_prod:
-  extends: deploy_utoo_gateway_prod
+  extends: .utoo_windows_runner
+  stage: deploy
+  only: [prod]
+  except: [merge_requests]
+  when: manual
+  allow_failure: false
+  variables:
+    QD_MALL_DEPLOY_TARGET: prod
+    UTOO_DEPLOY_TARGET: prod
+    QD_MALL_DEPLOY_PHASE: utoo_gateway
+    QD_MALL_DEPLOY_SERVICE: utoo_gateway
+  script: *utoo_run_deploy
 
 deploy_frontend_prod:
-  extends: deploy_utoo_frontend_prod
+  extends: .utoo_windows_runner
+  stage: deploy
+  only: [prod]
+  except: [merge_requests]
+  when: manual
+  allow_failure: false
+  variables:
+    QD_MALL_DEPLOY_TARGET: prod
+    UTOO_DEPLOY_TARGET: prod
+  script: *utoo_run_frontend
 
 deploy_all_prod:
   extends: .utoo_windows_runner
