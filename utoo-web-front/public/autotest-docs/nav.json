@@ -1,0 +1,90 @@
+{
+  "title": "SolarAutoTest 台架操作手册",
+  "subtitle": "内网文档 · 设备连接 + 试验步骤",
+  "sections": [
+    {
+      "id": "home",
+      "label": "首页总览",
+      "file": "pages/home.html"
+    },
+    {
+      "id": "connect",
+      "label": "一、起始连接方式（通用）",
+      "children": [
+        { "id": "connect-guide", "label": "IP / SCPI 怎么选", "file": "pages/connect-guide.html" },
+        { "id": "connect-ac-chroma-serial", "label": "交流 · Chroma 串口/SCPI", "file": "pages/connect-ac-chroma-serial.html" },
+        { "id": "connect-ac-chroma-ip", "label": "交流 · Chroma IP", "file": "pages/connect-ac-chroma-ip.html" },
+        { "id": "connect-ac-itech", "label": "交流 · 爱科 IP/Modbus", "file": "pages/connect-ac-itech.html" },
+        { "id": "connect-dc-chroma", "label": "直流 · Chroma", "file": "pages/connect-dc-chroma.html" },
+        { "id": "connect-dc-bluesight", "label": "直流 · 蓝电（模式+参数）", "file": "pages/connect-dc-bluesight.html" },
+        { "id": "connect-dl850", "label": "示波器 · DL850", "file": "pages/connect-dl850.html" },
+        { "id": "connect-dewetron", "label": "功率分析仪 · 德威创（连接+接线）", "file": "pages/connect-dewetron.html" },
+        { "id": "connect-wt", "label": "功率分析仪 · WT3000（设备连接）", "file": "pages/connect-wt.html" },
+        { "id": "connect-checklist", "label": "设备就绪检查", "file": "pages/connect-checklist.html" }
+      ]
+    },
+    {
+      "id": "fill",
+      "label": "二、试验条件怎么填（通用）",
+      "children": [
+        { "id": "common-test-fill", "label": "单相/三相 · 直流勾选 · 时序 · 分析仪", "file": "pages/common-test-fill.html" }
+      ]
+    },
+    {
+      "id": "tests",
+      "label": "三、试验项目（Auto_Test）",
+      "children": [
+        {
+          "id": "cat-pq",
+          "label": "电能质量",
+          "children": [
+            { "id": "test-flicker", "label": "电压闪变", "file": "pages/test-flicker.html", "ready": true },
+            { "id": "test-harmonic", "label": "谐波电流", "file": "pages/test-harmonic.html", "ready": true },
+            { "id": "test-overload", "label": "过载能力测试", "file": "pages/test-overload.html", "ready": true },
+            { "id": "test-dcinj", "label": "直流分量", "file": "pages/test-dcinj.html", "ready": true },
+            { "id": "test-fixedpf", "label": "固定 PF=1", "file": "pages/test-fixedpf.html", "ready": true }
+          ]
+        },
+        {
+          "id": "cat-protect",
+          "label": "保护与重连",
+          "children": [
+            { "id": "test-reconnect", "label": "重连", "file": "pages/test-reconnect.html", "ready": true },
+            { "id": "test-ovuf", "label": "过欠压_过欠频", "file": "pages/test-ovuf.html", "ready": true },
+            { "id": "test-overfreq", "label": "过频降载", "file": "pages/test-overfreq.html", "ready": true },
+            { "id": "test-underfreq", "label": "欠频升载", "file": "pages/test-underfreq.html", "ready": true },
+            { "id": "test-volt10min", "label": "10min过压保护", "file": "pages/test-volt10min.html", "ready": true },
+            { "id": "test-rocof", "label": "ROCOF保护", "file": "pages/test-rocof.html", "ready": true },
+            { "id": "test-immun", "label": "巴西过欠频稳定性（免疫）", "file": "pages/test-immun.html", "ready": true }
+          ]
+        },
+        {
+          "id": "cat-pq-ctrl",
+          "label": "有功 / 无功控制",
+          "children": [
+            { "id": "test-active-p", "label": "有功调度", "file": "pages/test-active-p.html", "ready": true },
+            { "id": "test-qcap", "label": "无功能力范围", "file": "pages/test-qcap.html", "ready": true },
+            { "id": "test-fixed-q", "label": "定无功", "file": "pages/test-fixed-q.html", "ready": true },
+            { "id": "test-qin", "label": "无功注入", "file": "pages/test-qin.html", "ready": true },
+            { "id": "test-qacc", "label": "无功精度", "file": "pages/test-qacc.html", "ready": true },
+            { "id": "test-static-cos", "label": "静态Cos(φ)", "file": "pages/test-static-cos.html", "ready": true },
+            { "id": "test-dyn-cos", "label": "动态Cos(φ)", "file": "pages/test-dyn-cos.html", "ready": true },
+            { "id": "test-static-qu", "label": "静态QU", "file": "pages/test-static-qu.html", "ready": true },
+            { "id": "test-dyn-qu", "label": "动态QU", "file": "pages/test-dyn-qu.html", "ready": true },
+            { "id": "test-pu", "label": "Test_PU", "file": "pages/test-pu.html", "ready": true }
+          ]
+        },
+        {
+          "id": "cat-adapt",
+          "label": "适应性与 MPPT",
+          "children": [
+            { "id": "test-freq-adapt", "label": "频率适应性", "file": "pages/test-freq-adapt.html", "ready": true },
+            { "id": "test-volt-adapt", "label": "电压适应性", "file": "pages/test-volt-adapt.html", "ready": true },
+            { "id": "test-rapid-volt", "label": "快速电压变化", "file": "pages/test-rapid-volt.html", "ready": true },
+            { "id": "test-static-mppt", "label": "静态MPPT测试", "file": "pages/test-static-mppt.html", "ready": true }
+          ]
+        }
+      ]
+    }
+  ]
+}

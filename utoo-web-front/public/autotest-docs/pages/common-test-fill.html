@@ -1,0 +1,103 @@
+<h1>试验条件怎么填（通用）</h1>
+<p class="muted">各试验对话框第一步大多相似。本页讲清：单相/三相、直流勾几个、等待时间与启机时间、功率分析仪怎么选。具体试验还有专属参数，见左侧对应试验页的「示例一套」。</p>
+
+<div class="callout ok">
+  默认电网示例一律按 <strong>230 V、50 Hz</strong> 写。若现场额定是 220 V / 60 Hz 等，把数字改成现场值即可，填法不变。
+</div>
+
+<h2>一、交流 · 单相怎么填</h2>
+<ol>
+  <li>「交流电源」选 <strong>开启</strong>。</li>
+  <li>「相位」选 <strong>单相</strong>。</li>
+  <li><strong>交流电压1</strong> 填 <strong>230</strong>（单位 V）。</li>
+  <li><strong>频率</strong> 填 <strong>50</strong>（单位 Hz）。</li>
+  <li>电压2、电压3：单相时一般不用管（可保持界面默认）。</li>
+</ol>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>项目</th><th>示例填写</th></tr></thead>
+  <tbody>
+    <tr><td>交流电源</td><td>开启</td></tr>
+    <tr><td>相位</td><td>单相</td></tr>
+    <tr><td>交流电压1</td><td>230 V</td></tr>
+    <tr><td>频率</td><td>50 Hz</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>二、交流 · 三相怎么填</h2>
+<ol>
+  <li>「交流电源」选 <strong>开启</strong>。</li>
+  <li>「相位」选 <strong>三相</strong>。</li>
+  <li><strong>交流电压1、2、3</strong> 都填 <strong>230</strong>（三相平衡的常用默认）。</li>
+  <li><strong>频率</strong> 填 <strong>50</strong>。</li>
+  <li>需要故意做不平衡时，再按试验规程改某一相电压；日常并网试验多数三角相等。</li>
+</ol>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>项目</th><th>示例填写</th></tr></thead>
+  <tbody>
+    <tr><td>交流电源</td><td>开启</td></tr>
+    <tr><td>相位</td><td>三相</td></tr>
+    <tr><td>交流电压1 / 2 / 3</td><td>230 / 230 / 230 V</td></tr>
+    <tr><td>频率</td><td>50 Hz</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>三、直流电源 · 勾一个还是多个</h2>
+<ul>
+  <li><strong>勾选</strong>某一路「直流电源1～4」= 软件会给这一路下曲线并控制开关。</li>
+  <li><strong>不勾</strong> = 这一路不参与本次试验命令。</li>
+  <li><strong>勾几个</strong>：看逆变器实际接了几路直流源。只接了 DC1 → <strong>只勾直流电源1</strong>；接了两路就勾 1 和 2，以此类推。</li>
+  <li>第一次练手 / 短冒烟：建议 <strong>只勾 DC1</strong>，其它取消勾选，避免空通道报错。</li>
+  <li>每路右侧「开启/关闭」：要出功率选 <strong>开启</strong>。</li>
+</ul>
+<p>常见 IV 示例（界面默认，可按组件/SAS 曲线改）：</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Vmp(V)</th><th>Imp(A)</th><th>Voc(V)</th><th>Isc(A)</th><th>功率(%)</th></tr></thead>
+  <tbody>
+    <tr><td>220</td><td>10</td><td>220</td><td>10</td><td>100</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>四、等待时间 和 启机时间 是什么意思</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>名称</th><th>简单理解</th><th>常见示例</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>等待时间</strong></td>
+      <td>交流源「开输出」之后，先等这么久，让电压/频率站稳，再继续开直流等后续动作。</td>
+      <td>3 秒</td>
+    </tr>
+    <tr>
+      <td><strong>启机时间</strong></td>
+      <td>交流和直流都按设定开完后，再等这么久，让逆变器并上电网、功率起来，然后才进入录波或试验本体。</td>
+      <td>5 分钟（短冒烟可改成 30～60 秒）</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+<div class="callout">
+  两者都是「等多久」，但时机不同：<strong>等待</strong>偏「电网刚开出后稳住」；<strong>启机</strong>偏「整机起来后再测」。单位下拉里选「秒 / 分钟 / 毫秒」，数字和单位要匹配。
+</div>
+
+<h2>五、功率分析仪怎么选择和配置</h2>
+<p>试验对话框「功率分析仪」步骤顶部一般有两档，必须先选对：</p>
+<ul>
+  <li><strong>功率分析仪 (WT)</strong>：台架用横河 WT 时选这项，再选 WT3000 等型号。</li>
+  <li><strong>DEWETRON</strong>（德威创）：台架用德威创时点选这项，下方会换成德威创配置页。</li>
+</ul>
+<div class="callout">选哪边必须与设备管理里已连接的仪器一致。连了德威创却留在 WT，录不到德威创数据。</div>
+<ol>
+  <li>先在<strong>设备管理</strong>把 WT 或德威创连上（见左侧连接章节）。</li>
+  <li>打开试验 → 进入「功率分析仪」步骤。</li>
+  <li><strong>用 WT</strong>：点「功率分析仪 (WT)」→ 选型号 → 设路径/文件名/连续录或分开录。</li>
+  <li><strong>用德威创</strong>：点 <strong>DEWETRON</strong> → 刷新电力组/导出字段 → 勾导出项 → 点「测试生效/应用」。</li>
+  <li>全部填完后点 <strong>测试追加</strong>。改参数后要重新追加。</li>
+</ol>
+
+<p class="muted">各试验的专属条件请打开左侧对应试验页，对照该步截图填写。</p>

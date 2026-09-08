@@ -1,0 +1,45 @@
+<h1>IP / SCPI 怎么选</h1>
+<p>不同厂家设备，软件「设备管理」里填的不是同一种东西。先对照下表，再进对应子页看截图。</p>
+
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>设备</th><th>常用连接</th><th>软件里填什么</th><th>注意</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Chroma 交流/直流</td>
+      <td>串口（VISA/SCPI）或 IP（TCP/SCPI）</td>
+      <td>串口资源名，或 IP+端口</td>
+      <td>串口页与 IP 页分开；别和爱科/蓝电混用同一套字段习惯</td>
+    </tr>
+    <tr>
+      <td>爱科交流</td>
+      <td>IP（Modbus TCP）</td>
+      <td>IP + 端口</td>
+      <td>主要用 IP，不要去找 Chroma 那种长串口资源名</td>
+    </tr>
+    <tr>
+      <td>蓝电直流</td>
+      <td>IP（Modbus）</td>
+      <td>IP + 端口 → 再选工作模式并下发参数</td>
+      <td>不止连上 IP；还要「应用模式」+ SAS/原始负载参数 + 开输出</td>
+    </tr>
+    <tr>
+      <td>DL850 / 德威创 / WT</td>
+      <td>厂家协议（多为 IP/专用）</td>
+      <td>按各页字段</td>
+      <td>试验前确认已勾选本试验要用的录波仪</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="callout">
+  「设备管理」是几乎所有试验的标准开头：电源与录波仪连好、状态就绪后，再进 Auto_Test 菜单打开具体试验。
+</div>
+
+<figure>
+  <img src="media/D01_device_ac.png" alt="设备管理-交流" />
+  <figcaption>设备管理 · 交流电源入口示意</figcaption>
+</figure>

@@ -1,0 +1,62 @@
+<h1>功率分析仪 · WT3000E</h1>
+<p class="muted">入口：主界面左侧 →「WT3000」。本页只负责<strong>把仪器连上软件</strong>。测量勾选、保存路径、录波时长等，在<strong>各试验对话框</strong>的「功率分析仪」步骤里配置，不要和本页混淆。</p>
+
+<div class="callout">
+  以前若看到标题是「WT3000 参数配置 / 追加测试」的大窗，那是<strong>试验参数页</strong>，不是设备管理连接页。连仪器请以本页为准。
+</div>
+
+<h2>一、怎么进</h2>
+<ol>
+  <li>打开 SolarAutoTest 主界面。</li>
+  <li>左侧设备列表点 <strong>WT3000</strong>（首页设备卡片也可点进）。</li>
+  <li>按下面「网口」或「串口」方式连接。</li>
+</ol>
+
+<figure>
+  <img src="media/D05_device_wt3000e.png" alt="WT3000 设备管理连接页" />
+  <figcaption>设备管理 · WT3000：IP/端口、波特率、连接、测试命令</figcaption>
+</figure>
+
+<h2>二、网口连接（台架常用）</h2>
+<ol>
+  <li>确认电脑与 WT 同一网段，设备面板上的 IP 已知（例：192.168.40.19）。</li>
+  <li>在 <strong>IP地址</strong> 框填写 IP；<strong>端口</strong> 常见为 <strong>5025</strong>（现场以设备/厂家说明为准）。</li>
+  <li>点 <strong>「连接设备」</strong>。</li>
+  <li>成功后按钮变为 <strong>「取消连接」</strong>；失败时检查网线、IP、端口，以及是否被其它程序占用。</li>
+</ol>
+<p>页面顶部蓝底提示也写了：<strong>网口请填 IP 再连</strong>。</p>
+
+<h2>三、串口连接</h2>
+<ol>
+  <li><strong>IP 地址留空</strong>（重要）。</li>
+  <li>在 <strong>波特率</strong> 下拉框选与仪器一致的波特率（常见 9600 等）。</li>
+  <li>在 <strong>接口</strong> 下拉框选串口/VISA 资源（如 ASRL3::INSTR）。</li>
+  <li>点 <strong>「连接设备」</strong>。</li>
+</ol>
+<p>也可点绿色 <strong>「设定WT3000」</strong> 打开波特率小窗，改完点确认：</p>
+<figure>
+  <img src="media/D05b_wt3000_baud.png" alt="WT3000 波特率设定" />
+  <figcaption>「设定WT3000」：核对波特率后确认</figcaption>
+</figure>
+
+<h2>四、连接成功后可做什么</h2>
+<ul>
+  <li><strong>切换闪变页面</strong>：已连接时可发测试命令，让仪器显示切到闪变相关页面（用于确认通信正常；不是每个试验都必须点）。</li>
+  <li>需要断开时点 <strong>「取消连接」</strong>。</li>
+</ul>
+
+<h2>五、和试验里「功率分析仪」步骤的关系</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>位置</th><th>做什么</th></tr></thead>
+  <tbody>
+    <tr><td>本页（设备管理 · WT3000）</td><td>填 IP/串口 → 连接 → 确认通了</td></tr>
+    <tr><td>试验对话框 · 功率分析仪步骤</td><td>选 WT 型号、勾测量量、保存路径、停表时间、追加命令等</td></tr>
+  </tbody>
+</table>
+</div>
+<p>顺序建议：先在本页连上 WT → 再打开过载等试验 → 在试验里配录波参数 → 测试追加 → 运行。</p>
+
+<div class="callout ok">
+  就绪标志：本页已「取消连接」状态（表示连着）；试验对话框里选了 WT3000 且参数填完。若试验一直录不到数，先回本页确认是否真的连上。
+</div>

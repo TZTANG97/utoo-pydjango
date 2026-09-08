@@ -1,0 +1,73 @@
+<h1>功率分析仪 · 德威创（DEWETRON）</h1>
+<p class="muted">入口：主界面左侧 →「德威创」。本页负责<strong>连上仪器</strong>、<strong>选接线方式</strong>、<strong>绑定电压/电流通道</strong>并<strong>保存配置</strong>。</p>
+
+<div class="callout">
+  试验对话框里若选「德威创模式」，前提是本页已经连接成功且通道绑定正确。OXYGEN 远程桌面占着连接时，软件往往连不上（通常只允许 1 个客户端）。
+</div>
+
+<h2>一、连接设备（先做）</h2>
+<ol>
+  <li>确认电脑与德威创在同一网段，能 ping 通设备 IP。</li>
+  <li>若本机开着 OXYGEN / 远程桌面客户端连着同一台德威创，先退出，再在本软件连接。</li>
+  <li>在页面上方填写 <strong>IP地址</strong>（例：192.168.40.21）和 <strong>端口</strong>（常见 <strong>10001</strong>）。</li>
+  <li>点 <strong>「连接设备」</strong>。成功后按钮会变为「取消连接」，下方日志会提示已连接。</li>
+</ol>
+
+<figure>
+  <img src="media/D03_device_dewetron.png" alt="德威创设备页总览" />
+  <figcaption>设备管理 · 德威创：上方 IP 连接 + 下方接线/参数整页示意</figcaption>
+</figure>
+
+<h2>二、选择接线类型</h2>
+<p>顶部五个按钮对应不同电力接线，按台架实际接线选一个（选错会导致通道槽位数量不对）：</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>按钮</th><th>含义</th><th>常见场景</th></tr></thead>
+  <tbody>
+    <tr><td>1P2W</td><td>1 相 2 线</td><td>单相 L-N</td></tr>
+    <tr><td>1P3W</td><td>1 相 3 线</td><td>单相带中线扩展</td></tr>
+    <tr><td>2V2A</td><td>3 相 3 线（两表法）</td><td>三相无中线部分工况</td></tr>
+    <tr><td>3P3W</td><td>3 相 3 线</td><td>三相三线</td></tr>
+    <tr><td>3P4W</td><td>3 相 4 线</td><td>三相四线（常见并网逆变器）</td></tr>
+  </tbody>
+</table>
+</div>
+<p>中间「接线图」会随类型切换；下方「组1 / 组2 / …」槽位数量也会变。先选对类型，再绑通道。</p>
+
+<figure>
+  <img src="media/D03b_dewetron_1p2w.png" alt="1P2W 接线" />
+  <figcaption>接线类型 1P2W：组1 需要绑定 U1、I1</figcaption>
+</figure>
+<figure>
+  <img src="media/D03c_dewetron_3p4w.png" alt="3P4W 接线" />
+  <figcaption>接线类型 3P4W：多组 U/I 槽位，按相序依次绑定</figcaption>
+</figure>
+
+<h2>三、绑定通道（必做）</h2>
+<p>左侧「通道列表」里是仪器实际电压/电流通道（如 AI 1/U1、AI 1/l1）。把它们填进下方组槽位，软件才知道哪路电压对应哪相。</p>
+<ul>
+  <li><strong>双击</strong>左侧某个电压或电流通道：按顺序自动填入组1 → 组2 → 组3…</li>
+  <li><strong>右键</strong>通道：可指定加到某一组。</li>
+  <li><strong>双击</strong>下方已填好的输入框：取消该槽位绑定。</li>
+  <li>电压通道只能绑到 U 槽，电流通道只能绑到 I 槽。</li>
+</ul>
+<p>底部「对应关系」会显示当前绑定结果（如 U1: AI 1/U1）。有空槽位时点保存会提示未填全。</p>
+
+<h2>四、右侧设备参数</h2>
+<ul>
+  <li><strong>设备 IP / 端口</strong>：与上方连接一致，便于核对。</li>
+  <li><strong>输入通道</strong>：频率等参考通道，一般跟组1 的电压通道（如 AI 1/U1）。</li>
+  <li><strong>最大刷新率</strong>：常用 Default；有特殊采样要求时再改。</li>
+  <li><strong>通道二次采样</strong>：常用 Auto。</li>
+</ul>
+
+<h2>五、保存与测试界面</h2>
+<ol>
+  <li>通道都绑好后，点绿色 <strong>「保存」</strong>：把接线/采样配置应用到德威创。未连接时保存会失败。</li>
+  <li><strong>「加载配置文件」</strong>：可加载以前存过的配置，少重复绑通道。</li>
+  <li><strong>「测试界面构造」</strong>：按当前设备状态构造测试页（需已连接）；日常试验多数只需连接 + 绑通道 + 保存即可。</li>
+</ol>
+
+<div class="callout ok">
+  就绪标志：已连接；接线类型正确；对应关系里 U/I 都有通道名；「保存」成功。然后再去开具体试验，并在试验里选「德威创模式」（若该试验支持）。
+</div>

@@ -1,0 +1,247 @@
+:root {
+  --bg: #f1f5f9;
+  --panel: #ffffff;
+  --ink: #0f172a;
+  --muted: #64748b;
+  --line: #e2e8f0;
+  --accent: #2563eb;
+  --accent-soft: #dbeafe;
+  --ok: #166534;
+  --warn: #92400e;
+  --side-w: 300px;
+  --font: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: var(--font); }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.layout { display: flex; min-height: 100%; }
+.sidebar {
+  width: var(--side-w);
+  flex: 0 0 var(--side-w);
+  background: #0f172a;
+  color: #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: auto;
+  transition: width .2s ease, margin .2s ease, opacity .2s ease;
+}
+body.sidebar-collapsed .sidebar {
+  width: 0;
+  flex-basis: 0;
+  margin: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.brand { padding: 18px 16px 12px; border-bottom: 1px solid #1e293b; }
+.brand-title { font-size: 16px; font-weight: 700; }
+.brand-sub { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+
+.side-tools { padding: 10px 10px 0; }
+.side-tools input {
+  width: 100%;
+  border: 1px solid #334155;
+  background: #1e293b;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  outline: none;
+}
+.side-tools input::placeholder { color: #64748b; }
+.side-tools input:focus { border-color: var(--accent); }
+
+.nav { padding: 10px 8px 24px; flex: 1; }
+.nav-section, .nav-cat {
+  margin: 6px 0;
+  border: none;
+}
+.nav-section > summary,
+.nav-cat > summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  color: #94a3b8;
+  font-size: 11px;
+  letter-spacing: .04em;
+  padding: 8px 10px 4px;
+}
+.nav-cat > summary {
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+.nav-cat > summary:hover { background: #1e293b; color: #fff; }
+.nav-section > summary::-webkit-details-marker,
+.nav-cat > summary::-webkit-details-marker { display: none; }
+.nav-section > summary::before,
+.nav-cat > summary::before {
+  content: "▾ ";
+  display: inline-block;
+  width: 1em;
+}
+.nav-section:not([open]) > summary::before,
+.nav-cat:not([open]) > summary::before { content: "▸ "; }
+.nav-children { padding-left: 4px; }
+.nav-cat .nav-children { padding-left: 8px; border-left: 1px solid #1e293b; margin-left: 10px; }
+
+.nav a {
+  display: block;
+  color: #cbd5e1;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.35;
+  text-decoration: none;
+}
+.nav a:hover { background: #1e293b; color: #fff; }
+.nav a.active { background: var(--accent); color: #fff; }
+.nav a.todo { opacity: .55; }
+.sidebar-foot { padding: 12px 16px; font-size: 11px; color: #64748b; border-top: 1px solid #1e293b; }
+
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 18px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.topbar-left, .topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.crumb { font-size: 13px; color: var(--muted); }
+.top-link { font-size: 13px; }
+.btn {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.btn:hover { filter: brightness(1.05); }
+.btn.ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--line);
+}
+.btn.ghost:hover { background: #f8fafc; }
+
+.content {
+  padding: 18px 22px 40px;
+  max-width: 980px;
+}
+.content h1 { font-size: 22px; margin: 0 0 10px; }
+.content h2 { font-size: 17px; margin: 22px 0 8px; color: #1e3a8a; }
+.content h2.step-anchor { scroll-margin-top: 64px; }
+.content h3 { font-size: 15px; margin: 16px 0 6px; }
+.content p, .content li { font-size: 14px; line-height: 1.65; }
+.content ul, .content ol { padding-left: 1.2em; margin: 6px 0 12px; }
+a.step-jump {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px dashed #93c5fd;
+}
+a.step-jump:hover { border-bottom-style: solid; }
+.muted { color: var(--muted); font-size: 13px; }
+.callout {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 10px 0 14px;
+  font-size: 13px;
+  color: var(--warn);
+}
+.callout.ok {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: var(--ok);
+}
+.table-wrap { overflow: auto; margin: 10px 0 16px; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--panel);
+  font-size: 13px;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+th { background: var(--accent-soft); }
+figure {
+  margin: 10px 0 18px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  break-inside: avoid;
+}
+figure img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+figcaption {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #166534;
+  margin-left: 6px;
+}
+.badge.wait {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+@media (max-width: 860px) {
+  .layout { flex-direction: column; }
+  .sidebar { width: 100%; height: auto; position: relative; }
+  body.sidebar-collapsed .sidebar { display: none; }
+}
+
+/* 打印 / 另存 PDF：只出正文 */
+@media print {
+  body { background: #fff; }
+  .no-print, .sidebar, .topbar { display: none !important; }
+  .main { width: 100%; }
+  .content {
+    max-width: none;
+    padding: 0;
+  }
+  a.step-jump { color: inherit; border: none; font-weight: 600; }
+  figure { border: 1px solid #ccc; }
+  .content h2 { break-after: avoid; }
+}

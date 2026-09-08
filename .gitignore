@@ -29,6 +29,9 @@ Thumbs.db
 # Django
 staticfiles/
 media/
+# SolarAutoTest 台架手册截图（静态站，非 Django media）
+!utoo-web-front/public/autotest-docs/media/
+!utoo-web-front/public/autotest-docs/media/**
 
 # Frontend
 node_modules/

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SolarAutoTest 台架操作手册</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-title">SolarAutoTest</div>
+        <div class="brand-sub">台架操作手册</div>
+      </div>
+      <div class="side-tools no-print">
+        <input id="nav-search" type="search" placeholder="搜索试验名称…" autocomplete="off" />
+      </div>
+      <nav id="nav" class="nav" aria-label="目录"></nav>
+      <div class="sidebar-foot">公司内网 · 随 UTOO 前端发布</div>
+    </aside>
+    <main class="main">
+      <header class="topbar no-print">
+        <div class="topbar-left">
+          <button type="button" id="btn-sidebar" class="btn ghost" title="收起/展开左侧目录">☰ 目录</button>
+          <div id="crumb" class="crumb">首页</div>
+        </div>
+        <div class="topbar-right">
+          <button type="button" id="btn-pdf" class="btn" hidden>下载 PDF</button>
+          <a class="top-link" href="#home">回首页</a>
+        </div>
+      </header>
+      <article id="content" class="content">
+        <p class="muted">加载中…</p>
+      </article>
+    </main>
+  </div>
+  <script src="./lib/html2pdf.bundle.min.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
