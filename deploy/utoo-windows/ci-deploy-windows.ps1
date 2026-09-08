@@ -531,6 +531,16 @@ try {
 			Write-Host ("[deploy] seed gateway .env from peer if idle slot missing: {0}" -f $gwEnv)
 			Invoke-RemoteSudo ("mkdir -p {0}/gateway && if [ ! -f {1} ] && [ -f {2} ]; then cp -a {2} {1} && chown deploy:deploy {1} && chmod 600 {1}; fi" -f $SlotRoot, $gwEnv, $peerEnv)
 		}
+		if ($dir -eq 'platform/utoo_gateway' -or $dir -eq 'services/utoo_biz') {
+			$peerRoot = if ($SlotRoot -match 'green$') { '/opt/qd-mall-blue' } else { '/opt/qd-mall-green' }
+			$kind = if ($dir -eq 'platform/utoo_gateway') { 'utoo_gateway' } else { 'utoo_biz' }
+			Write-Host ("[deploy] seed {0} .env (VIP map / peer) on {1}" -f $kind, $SlotRoot) -ForegroundColor Cyan
+			Invoke-RemoteBashScript -LocalScriptPath (Join-Path $PSScriptRoot 'ci-remote-seed-utoo-env.sh') -Replacements @{
+				'__SLOT_ROOT__' = $SlotRoot
+				'__PEER_SLOT_ROOT__' = $peerRoot
+				'__KIND__' = $kind
+			}
+		}
 		Invoke-RemoteSudo ("systemctl stop {0} || true" -f $svc)
 		Sync-DirToRemote `
 			-LocalDir $localDir `
@@ -577,6 +587,12 @@ try {
 		}
 		Write-Host ("[deploy] systemctl restart {0}" -f $svc)
 		Invoke-RemoteSudo ("systemctl restart {0}" -f $svc)
+		if ($dir -eq 'platform/utoo_gateway') {
+			Invoke-UtooUnitPostDeployEnv -SlotRoot $SlotRoot -UnitName $svc -RelEnvPath 'platform/utoo_gateway/.env'
+		}
+		if ($dir -eq 'services/utoo_biz') {
+			Invoke-UtooUnitPostDeployEnv -SlotRoot $SlotRoot -UnitName $svc -RelEnvPath 'services/utoo_biz/.env'
+		}
 		$healthWait = ('j=1; while [ $j -le 60 ]; do if curl -sf "{0}" >/dev/null || curl -sf "{0}/" >/dev/null; then echo deploy_health_ok:{1}; exit 0; fi; sleep 1; j=$((j+1)); done; echo deploy_health_fail:{1} >&2; systemctl --no-pager status {1} -l || true; journalctl -u {1} -n 80 --no-pager || true; exit 1' -f $healthUrl, $svc)
 		Invoke-RemoteSudo $healthWait
 		if ($dir -eq 'services/mall') {
@@ -609,6 +625,22 @@ try {
 		$unitFile = "/etc/systemd/system/{0}.service" -f $GwUnit
 		Write-Host ("[deploy] post-gateway systemd EnvironmentFile ({0})..." -f $GwUnit) -ForegroundColor Cyan
 		Invoke-RemoteSudo ("if [ -f {0} ] && [ -f {1} ] && ! grep -q 'EnvironmentFile=-{0}' {1}; then sed -i '/^WorkingDirectory=/a EnvironmentFile=-{0}' {1}; systemctl daemon-reload; systemctl restart {2}; fi" -f $gwEnv, $unitFile, $GwUnit)
+	}
+
+	function Invoke-UtooUnitPostDeployEnv {
+		param(
+			[Parameter(Mandatory)][string]$SlotRoot,
+			[Parameter(Mandatory)][string]$UnitName,
+			[Parameter(Mandatory)][string]$RelEnvPath
+		)
+		$envFile = "{0}/{1}" -f $SlotRoot, $RelEnvPath
+		$unitFile = "/etc/systemd/system/{0}.service" -f $UnitName
+		Write-Host ("[deploy] post-utoo systemd EnvironmentFile ({0} -> {1})..." -f $UnitName, $envFile) -ForegroundColor Cyan
+		Invoke-RemoteBashScript -LocalScriptPath (Join-Path $PSScriptRoot 'ci-remote-unit-envfile.sh') -Replacements @{
+			'__UNIT_FILE__' = $unitFile
+			'__ENV_FILE__' = $envFile
+			'__UNIT_NAME__' = $UnitName
+		}
 	}
 
 	$doLibs = ($DeployPhase -in @('all', 'libs_services'))

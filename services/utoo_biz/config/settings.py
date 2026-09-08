@@ -13,6 +13,33 @@ if str(REPO_ROOT) not in sys.path:
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+# Load slot shared-database.env (+ optional local .env) before database_settings().
+_slot_root = BASE_DIR.parents[1]  # .../services/utoo_biz -> slot root
+_shared_db = _slot_root / "config" / "shared-database.env"
+_env_file = BASE_DIR / ".env"
+_local_env = BASE_DIR / ".env.local"
+
+
+def _load_env_file(path: Path, *, override: bool = False) -> None:
+    if not path.is_file():
+        return
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        key = key.strip()
+        if not key:
+            continue
+        if (not override) and key in os.environ and os.environ.get(key, "") != "":
+            continue
+        os.environ[key] = val.strip().strip('"').strip("'")
+
+
+_load_env_file(_shared_db, override=False)
+_load_env_file(_env_file, override=True)
+_load_env_file(_local_env, override=True)
+
 from shared.django_db import database_settings
 
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "development-only-change-me")

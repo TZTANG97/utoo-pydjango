@@ -35,7 +35,9 @@ SECRET_KEY = env("DJANGO_SECRET_KEY", default=env("JWT_SECRET_KEY", default="cha
 ALLOWED_HOSTS = ["*"]
 
 # 须在 INSTALLED_APPS 之前：P3 twin 条件卸载与 svc_utoo_biz_enabled() 同判据
-UTOO_BIZ_SERVICE_URL = env("UTOO_BIZ_SERVICE_URL", default="http://127.0.0.1:18103").rstrip("/")
+# 默认空：禁止静默落到本机 :18103（现网无监听，会导致全站 503 Connection refused）。
+# 本机联调写 .env/.env.local → http://127.0.0.1:18103；现网 VIP → http://127.0.0.1:19093
+UTOO_BIZ_SERVICE_URL = env("UTOO_BIZ_SERVICE_URL", default="").rstrip("/")
 _SVC_UTOO_BIZ_ENABLED = bool(UTOO_BIZ_SERVICE_URL)
 
 from config.twin_install import twin_apps_for_installed  # noqa: E402

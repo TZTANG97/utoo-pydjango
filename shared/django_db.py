@@ -7,16 +7,31 @@ from pathlib import Path
 
 
 def resolve_db_engine() -> str:
-    """Map any MySQL engine to the shared 5.6/5.7-compatible backend."""
-    engine = os.getenv("DB_ENGINE", "django.db.backends.sqlite3").strip()
+    """Map any MySQL engine to the shared 5.6/5.7-compatible backend.
+
+    If DB_ENGINE is unset but DB_HOST is set, use legacy MySQL.
+    Do not keep the historical sqlite default when a MySQL host is configured
+    (that caused prod utoo_biz to query an empty sqlite and 500 on sy_users).
+    """
+    engine = (os.getenv("DB_ENGINE") or "").strip()
+    host = (os.getenv("DB_HOST") or "").strip()
+    legacy = os.getenv("DB_LEGACY_MYSQL", "true").lower() in {"1", "true", "yes"}
+
+    if not engine:
+        if host:
+            return "shared.db_backends.legacy_mysql"
+        return "django.db.backends.sqlite3"
+
     if "legacy_mysql" in engine:
         return engine
     if "sqlite" in engine.lower():
+        # Explicit sqlite only when no MySQL host is configured
+        if host and legacy:
+            return "shared.db_backends.legacy_mysql"
         return engine
     if "mysql" in engine.lower():
         return "shared.db_backends.legacy_mysql"
-    # Host set but engine left as default mysql string variants
-    if os.getenv("DB_HOST") and os.getenv("DB_LEGACY_MYSQL", "true").lower() in {"1", "true", "yes"}:
+    if host and legacy:
         return "shared.db_backends.legacy_mysql"
     return engine
 

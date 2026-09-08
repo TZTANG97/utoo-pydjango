@@ -6,9 +6,7 @@
 
 - 仓库：`utoo-pydjango`
 - 目录：`utoo-web-front/public/autotest-docs/`
-- 访问（前端发布后）：`/autotest-docs/`  
-  例：`https://uat.utoo.laide.tech/autotest-docs/`  
-  （若挂在 `uat.utoodev.laide.tech`，路径相同）
+- 访问（前端发布后）：`https://uat.utoodev.laide.tech/autotest-docs/`
 
 ## 本地预览
 
@@ -56,7 +54,7 @@ location /autotest-docs/ {
 |------|------|
 | 内容进仓 | `utoo-web-front/public/autotest-docs/` |
 | 随发版 | 前端构建把 `public/` 原样打进静态资源 |
-| 访问地址 | 例 `https://uat.utoo.laide.tech/autotest-docs/` |
+| 访问地址 | `https://uat.utoodev.laide.tech/autotest-docs/` |
 | 谁能进 | 与 UTOO 站点本身一致（公司内网 / VPN / 现有登录与网关策略） |
 | 可选 nginx | 仅当 SPA `try_files` 误吞路径时加一次 `location /autotest-docs/`（见上） |
 
