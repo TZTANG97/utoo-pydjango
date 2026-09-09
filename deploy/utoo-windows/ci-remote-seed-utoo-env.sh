@@ -41,14 +41,16 @@ else
   # Bootstrap from Qingdao gateway VIP map (same host /opt/qd-mall-*)
   : > "$DEST"
   if [ -f "$QD_GW" ]; then
-    # copy safe URL + secret keys only
-    grep -E "^(DJANGO_SECRET_KEY|JWT_SECRET_KEY|JWT_SECRET|MALL_JWT_SECRET|UTOO_JWT_SECRET_KEY|OSS_|WEIXIN_|SMS_|IMAGE_WEB_SERVER|CORS_HTTPS)=" "$QD_GW" >> "$DEST" || true
+    # copy safe URL + JWT/OSS only — NEVER copy WEIXIN_* from Qingdao gateway
+    # (UTOO 公众号 wxab3aa… 与青岛 wxde3a… 不是同一个号；误拷会导致扫码 40164)
+    grep -E "^(DJANGO_SECRET_KEY|JWT_SECRET_KEY|JWT_SECRET|MALL_JWT_SECRET|UTOO_JWT_SECRET_KEY|OSS_|SMS_|IMAGE_WEB_SERVER|CORS_HTTPS)=" "$QD_GW" >> "$DEST" || true
   fi
   if [ "$KIND" = "utoo_gateway" ]; then
     ensure_key "$DEST" UTOO_BIZ_SERVICE_URL "http://127.0.0.1:19093"
     ensure_key "$DEST" SVC_IDENTITY_URL "http://127.0.0.1:19081"
     ensure_key "$DEST" SVC_ORDER_URL "http://127.0.0.1:19082"
     ensure_key "$DEST" SVC_PAYMENT_URL "http://127.0.0.1:19084"
+    # 预约/反馈等仍可转 payment；扫码登录在网关本地（见 apps/wx/views.py）
     ensure_key "$DEST" SVC_WX_URL "http://127.0.0.1:19084"
     ensure_key "$DEST" SVC_ADMIN_ASSET_URL "http://127.0.0.1:19090"
     ensure_key "$DEST" SVC_ADMIN_PLATFORM_URL "http://127.0.0.1:19091"

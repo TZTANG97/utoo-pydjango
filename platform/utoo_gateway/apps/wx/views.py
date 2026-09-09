@@ -31,7 +31,8 @@ def _legacy_ajax(res: bool, res_msg: str, obj) -> dict:
     }
 
 
-@forward_wx_first
+# PC 扫码登录必须与 wechatconfig 同进程（同 Redis ticket），且用 UTOO 公众号凭证；
+# 禁止转发到中台 payment（payment 常被误种成青岛 GZH）。
 @api_view(["GET"])
 @authentication_classes([])
 @permission_classes([AllowAny])
@@ -45,7 +46,6 @@ def wechat_qr_generator(request: Request):
     return JsonResponse(data)
 
 
-@forward_wx_first
 @api_view(["GET"])
 @authentication_classes([])
 @permission_classes([AllowAny])
