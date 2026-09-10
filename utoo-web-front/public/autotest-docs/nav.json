@@ -63,6 +63,7 @@
           "label": "有功 / 无功控制",
           "children": [
             { "id": "test-active-p", "label": "有功调度", "file": "pages/test-active-p.html", "ready": true },
+            { "id": "test-antibackflow", "label": "防逆流测试", "file": "pages/test-antibackflow.html", "ready": true },
             { "id": "test-qcap", "label": "无功能力范围", "file": "pages/test-qcap.html", "ready": true },
             { "id": "test-fixed-q", "label": "定无功", "file": "pages/test-fixed-q.html", "ready": true },
             { "id": "test-qin", "label": "无功注入", "file": "pages/test-qin.html", "ready": true },

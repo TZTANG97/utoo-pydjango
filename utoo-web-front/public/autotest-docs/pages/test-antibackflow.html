@@ -1,0 +1,109 @@
+<h1>防逆流测试 <span class="badge">已就绪</span></h1>
+<p class="muted">菜单：Auto_Test → 防逆流测试。对应西班牙零馈网（UNE 217001 / anti-vertido）。先完成设备连接，再按「截图 + 说明」填写。</p>
+<div class="callout ok">前置：交流源、直流源、功率分析仪（WT 或德威创）已在设备管理连好。本试验上位机只控电源与录波；切负荷 / 断开防逆流通讯在「人工操作等待」里由试验员现场完成。</div>
+
+<h2>步骤一览</h2>
+<ol>
+<li>① AC/DC 电源</li>
+<li>② 功率分析仪</li>
+<li>③ 防逆流工况</li>
+<li>④ 关机设置</li>
+</ol>
+
+<h2>台架组合怎么选（交叉对照）</h2>
+<p>设备管理里连什么，试验里就选什么；不要混用。</p>
+<div class="table-wrap"><table><thead><tr><th>设备角色</th><th>常见型号 / 品牌</th><th>本试验怎么选</th></tr></thead><tbody>
+<tr><td>交流电源</td><td>Chroma 串口/IP、爱科 IP</td><td>先按左侧「起始连接」连好；本页「①」填电压频率</td></tr>
+<tr><td>直流电源</td><td>Chroma、爱科、蓝电</td><td>设备管理按品牌连接；① 勾实际接线的 DC 路并填 IV</td></tr>
+<tr><td>功率分析仪 · WT</td><td>WT3000 / WT1800 / WT1806E / WT5000</td><td>② 选「功率分析仪 (WT)」再选对应型号</td></tr>
+<tr><td>功率分析仪 · 德威创</td><td>DEWETRON</td><td>② 必须点选 <strong>DEWETRON</strong>，刷新字段 → 勾导出 → 测试生效</td></tr>
+<tr><td>示波器 DL850</td><td>可选，防逆流主测录波一般用 WT/德威创</td><td>本试验对话框不强制配置 DL850</td></tr>
+</tbody></table></div>
+<div class="callout">短冒烟建议：只勾「5.1 稳态」、驻留改成几秒、只勾 DC1、分析仪与台架一致；确认命令与录波文件名正常后再开 5.2～5.4 全段。</div>
+
+<h2>① AC/DC 电源</h2>
+<figure>
+  <img src="media/T_antibackflow_01_step.png" alt="① AC/DC 电源" />
+  <figcaption>① AC/DC 电源</figcaption>
+</figure>
+<p>本步填交流、直流和时序。通章说明见左侧「试验条件怎么填」。</p>
+<h3>交流 · 单相（示例）</h3>
+<div class="table-wrap"><table><thead><tr><th>项</th><th>填写</th></tr></thead><tbody>
+<tr><td>交流电源</td><td>开启</td></tr>
+<tr><td>相位</td><td><strong>单相</strong></td></tr>
+<tr><td>交流电压1</td><td><strong>230</strong> V</td></tr>
+<tr><td>频率</td><td><strong>50</strong> Hz</td></tr>
+</tbody></table></div>
+<h3>交流 · 三相（示例）</h3>
+<div class="table-wrap"><table><thead><tr><th>项</th><th>填写</th></tr></thead><tbody>
+<tr><td>相位</td><td><strong>三相</strong></td></tr>
+<tr><td>电压1/2/3</td><td><strong>230 / 230 / 230</strong> V</td></tr>
+<tr><td>频率</td><td><strong>50</strong> Hz</td></tr>
+</tbody></table></div>
+<h3>直流 · 勾几个</h3>
+<ul>
+<li>入门只勾 <strong>直流电源1</strong>，开关「开启」；IV 示例 Vmp400 Imp10 Voc450 Isc12 功率100%（现场按 SAS/组件曲线改）。</li>
+<li>接几路勾几路；空接不要勾。工况页「工况时更新的直流通道」需与这里同时勾上。</li>
+</ul>
+<h3>等待时间 / 启机时间</h3>
+<div class="table-wrap"><table><thead><tr><th>名称</th><th>含义</th><th>本试验示例</th></tr></thead><tbody>
+<tr><td>等待时间</td><td>交流开出后先站稳</td><td><strong>3</strong> 秒（短冒烟）/ 现场可 5 秒</td></tr>
+<tr><td>启机时间</td><td>交直流开完后再等并网</td><td><strong>5</strong> 分钟（短冒烟可改 30 秒）</td></tr>
+</tbody></table></div>
+
+<h2>② 功率分析仪</h2>
+<figure>
+  <img src="media/T_antibackflow_02_step.png" alt="② 功率分析仪 · WT" />
+  <figcaption>② 功率分析仪 · 功率分析仪 (WT)</figcaption>
+</figure>
+<figure>
+  <img src="media/T_antibackflow_02b_dewetron.png" alt="② 功率分析仪 · DEWETRON" />
+  <figcaption>② 功率分析仪 · 点选 DEWETRON（德威创）后的界面</figcaption>
+</figure>
+<p>本步顶部两档，须与设备管理已连接仪器一致：</p>
+<ul>
+<li><strong>功率分析仪 (WT)</strong>：再选 WT3000 / WT1800 / WT1806E / WT5000。</li>
+<li><strong>DEWETRON</strong>：刷新电力组 → 勾导出 → <strong>测试生效 / 应用</strong>。</li>
+</ul>
+<h3>录波建议</h3>
+<ul>
+<li>正式试验：优先 <strong>一条线连续录</strong>，文件名 <strong>AntiBackflow_BR</strong>。</li>
+<li>分开录时按工况段生成 <code>AntiBF_…</code> 文件名（软件自动推荐）。</li>
+</ul>
+
+<h2>③ 防逆流工况</h2>
+<figure>
+  <img src="media/T_antibackflow_03_step.png" alt="③ 防逆流工况" />
+  <figcaption>③ 防逆流工况（UNE 217001）</figcaption>
+</figure>
+<div class="table-wrap"><table><thead><tr><th>勾选段</th><th>上位机做什么</th><th>试验员现场做什么</th></tr></thead><tbody>
+<tr><td><strong>5.1 稳态</strong></td><td>DC 按 100/70/20/0 %Pn，每档驻留（默认 2 分钟）</td><td>负荷保持与该档匹配的消费功率</td></tr>
+<tr><td><strong>5.2 切负荷</strong></td><td>前后各半窗驻留 + 人工等待窗口</td><td>在等待窗口内按表切换负荷（90→60/30/0 等）</td></tr>
+<tr><td><strong>5.3 一次能源突增</strong></td><td>DC 45% → 90%</td><td>负荷保持约 60～70%Pn</td></tr>
+<tr><td><strong>5.4 通讯丢失</strong></td><td>人工等待 + 短测窗</td><td>断开防逆流通讯，观察限时停发（通常 ≤2 s）</td></tr>
+</tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>项</th><th>示例</th></tr></thead><tbody>
+<tr><td>稳态/半窗驻留</td><td><strong>2</strong> 分钟（标准窗约 2 min；冒烟可改秒）</td></tr>
+<tr><td>人工操作等待</td><td><strong>30</strong> 秒（切负荷 / 断通讯够用即可）</td></tr>
+<tr><td>录波方式</td><td>一条线连续录 · AntiBackflow_BR</td></tr>
+</tbody></table></div>
+<div class="callout">判定看 PCC 馈网功率是否超出零馈网限值；修正超时一般 ≤2 s。软件不改逆变器内部防逆流参数，机侧须事先按规程启用防逆流。</div>
+
+<h2>④ 关机设置</h2>
+<figure>
+  <img src="media/T_antibackflow_04_step.png" alt="④ 关机设置" />
+  <figcaption>④ 关机设置</figcaption>
+</figure>
+<p>勾选关机步。习惯：先关直流，稍等，再关交流。填完点<strong>测试追加</strong>再运行；改参数须重新追加。</p>
+
+<h2>操作顺序（照做）</h2>
+<ol>
+<li>设备管理：连好 AC、DC（对应品牌）、WT 或德威创。</li>
+<li>Auto_Test → 防逆流测试 → 按①②③④填写。</li>
+<li>② 分析仪型号 / 德威创模式与真实仪器一致。</li>
+<li>点<strong>测试追加</strong> → 开始试验。</li>
+<li>跑到 5.2 / 5.4 时注意界面等待窗口，及时切负荷或断通讯。</li>
+<li>结束后检查录波文件 AntiBackflow_BR（或分段文件）。</li>
+</ol>
+
+<div class="callout ok"><strong>示例一套汇总</strong>：三相 230/50；DC1；等待 3 秒、启机 5 分钟；勾 5.1～5.4；驻留 2 分钟；人工等待 30 秒；WT 或德威创连续录 AntiBackflow_BR。</div>
