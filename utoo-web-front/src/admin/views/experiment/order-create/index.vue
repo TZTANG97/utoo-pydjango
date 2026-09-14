@@ -1442,6 +1442,9 @@ watch(
 .save-bar {
   margin-top: 32px;
   text-align: center;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
 }
 .dlg-filter {
   margin-bottom: 8px;
