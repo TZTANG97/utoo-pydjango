@@ -713,11 +713,13 @@ def list_orders(
         r["companyName"] = r.get("customerName") or "-"
         r["customerName"] = r.get("customerName") or ""
         r["supplierName"] = r.get("supplierName") or ""
-        r["saleManager"] = str(r.get("managerName") or r.get("managerTrueName") or "").strip()
-        r["saleUser"] = str(r.get("saleUserName") or r.get("saleUserTrueName") or "").strip()
+        # BUG-ORD-05: 优先显示真实姓名而非编码
+        r["saleManager"] = str(r.get("managerTrueName") or r.get("managerName") or "").strip()
+        r["saleUser"] = str(r.get("saleUserTrueName") or r.get("saleUserName") or "").strip()
         r["invoiceLabel"] = "是" if str(r.get("invoiceType") or "") == "1" else "否"
+        # BUG-ORD-03: 保留完整日期时间，避免截断导致时区相关的日期偏移
         ot = r.get("orderTime") or r.get("addTime")
-        r["orderTime"] = str(ot)[:10] if ot else ""
+        r["orderTime"] = str(ot)[:19] if ot else ""
         at = r.get("addTime")
         r["addTime"] = str(at)[:19] if at else ""
     if str(order_type) == "8":
@@ -898,17 +900,19 @@ def list_sub_orders(
             pt = str(r.get("purchaseType") or "")
             parent = "自主发起" if pt == "1" else ("自主发起配件采购" if pt == "2" else "")
         r["parentOrderId"] = parent or ""
-        r["saleManager"] = str(r.get("managerName") or r.get("managerTrueName") or "").strip()
-        r["saleUser"] = str(r.get("saleUserName") or r.get("saleUserTrueName") or "").strip()
-        r["testName"] = str(r.get("testName") or r.get("testTrueName") or "").strip()
+        # 优先显示真实姓名而非编码
+        r["saleManager"] = str(r.get("managerTrueName") or r.get("managerName") or "").strip()
+        r["saleUser"] = str(r.get("saleUserTrueName") or r.get("saleUserName") or "").strip()
+        r["testName"] = str(r.get("testTrueName") or r.get("testName") or "").strip()
         conf = r.get("isConfirm")
         try:
             conf_i = int(conf) if conf is not None else 0
         except (TypeError, ValueError):
             conf_i = 0
         r["confirmLabel"] = "已确认" if conf_i == 1 else "未确认"
+        # BUG-SUB-02: 保留完整日期时间，避免截断导致时区相关的日期偏移
         otm = r.get("orderTime") or r.get("addTime")
-        r["orderTime"] = str(otm)[:10] if otm else ""
+        r["orderTime"] = str(otm)[:19] if otm else ""
     return rows, total
 
 
@@ -1313,6 +1317,11 @@ def list_grab_orders(
         r["parentOrderId"] = r.get("parentOrderId") or (
             "自主发起" if str(r.get("purchaseType") or "") == "1" else r.get("parentOrderId")
         )
+        # BUG-GRAB-02: 保留完整日期时间，避免截断导致时区相关的日期偏移
+        at = r.get("addTime")
+        r["addTime"] = str(at)[:19] if at else ""
+        ot = r.get("orderTime")
+        r["orderTime"] = str(ot)[:19] if ot else ""
     return rows, total
 
 
@@ -2867,8 +2876,9 @@ def list_linked_child_orders(parent_id: int, *, child_order_type: str) -> list[d
         r["confirmLabel"] = "已确认" if conf_i == 1 else "未确认"
         add_t = r.get("addTime")
         r["addTime"] = str(add_t)[:19] if add_t else ""
+        # BUG-SUB-02: 保留完整日期时间，避免截断导致时区相关的日期偏移
         otm = r.get("orderTime") or add_t
-        r["orderTime"] = str(otm)[:10] if otm else ""
+        r["orderTime"] = str(otm)[:19] if otm else ""
     return rows
 
 

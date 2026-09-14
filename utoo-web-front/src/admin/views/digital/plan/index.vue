@@ -262,8 +262,8 @@ function handleClear() {
   } else {
     filters.deptId = ''
   }
-  pagination.page = 1
-  return reload()
+  // BUG-04: 清空筛选后自动重新查询
+  return handleSearch()
 }
 
 function handlePageSizeChange() {
