@@ -268,7 +268,7 @@ def inventory_summary() -> dict[str, Any]:
         """
         SELECT id, line_num AS lineNum
         FROM experiment_line
-        WHERE IFNULL(deleteStatus, 0) = 0 AND status = 1
+        WHERE IFNULL(deleteStatus, 0) = 0 AND IFNULL(status, 1) = 1
         ORDER BY line_num ASC
         LIMIT 500
         """
@@ -276,7 +276,7 @@ def inventory_summary() -> dict[str, Any]:
     return {
         "inventorynum": ut_count,
         "leaseOptions": [r.get("name") for r in lease_options if r.get("name")],
-        "expLines": lines,
+        "expLines": lines if lines is not None else [],
         "statusOptions": [{"value": k, "label": v} for k, v in sorted(GI_STATUS_LABELS.items())],
     }
 
