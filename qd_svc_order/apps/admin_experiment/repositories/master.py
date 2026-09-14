@@ -62,7 +62,8 @@ def list_manages(
         LEFT JOIN experiment_manage p1 ON p.parent_id = p1.id
         LEFT JOIN pt_type pt ON t.pt_type = pt.id
         {where}
-        ORDER BY t.sequence ASC, t.id DESC
+        ORDER BY CASE WHEN IFNULL(t.sequence, 0) = 0 THEN 1 ELSE 0 END,
+                 t.sequence ASC, t.id DESC
         {clause}
         """,
         {**params, **page_params},

@@ -38,13 +38,19 @@
 
     <el-table v-loading="loading" :data="rows" border stripe>
       <el-table-column type="index" width="55" label="#" align="center" />
-      <el-table-column prop="sequence" label="排序序号" width="90" align="center" />
+      <el-table-column prop="sequence" label="排序序号" width="90" align="center">
+        <template #default="{ row }">
+          {{ Number(row.sequence) > 0 ? row.sequence : '-' }}
+        </template>
+      </el-table-column>
       <el-table-column prop="name" :label="type === 1 ? '名称' : '分类名称'" min-width="140" show-overflow-tooltip />
       <el-table-column v-if="type === 1" prop="ptName" label="所属平台" min-width="120" />
       <el-table-column v-if="type === 2" prop="parentName" label="一级类型" min-width="120" />
       <el-table-column v-if="type === 3" prop="firstName" label="一级类型" min-width="120" />
       <el-table-column v-if="type === 3" prop="parentName" label="二级类型" min-width="120" />
-      <el-table-column prop="enname" label="英文代码" width="100" />
+      <el-table-column prop="enname" label="英文代码" width="100">
+        <template #default="{ row }">{{ row.enname || '-' }}</template>
+      </el-table-column>
       <el-table-column prop="addTime" label="创建时间" width="170" />
       <el-table-column label="操作" width="160" fixed="right">
         <template #default="{ row }">
