@@ -3,10 +3,11 @@
     <!-- 二手 / 租赁：图片配置 -->
     <template v-if="isImageSetting">
       <el-form label-width="110px" class="setting-form">
-        <el-form-item label="图片地址" required>
+        <el-form-item label="图片地址">
           <el-input
             v-model="content"
-            placeholder="填写图片完整 URL，或相对路径（如 goods/xxx.jpg）"
+            clearable
+            placeholder="填写图片完整 URL，或相对路径（如 goods/xxx.jpg）；可留空清除"
           />
         </el-form-item>
         <el-form-item label="预览">
@@ -50,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AdminPageCard from '@admin/components/AdminPageCard.vue'
@@ -96,17 +97,17 @@ async function fetchSetting() {
 }
 
 onMounted(fetchSetting)
+onActivated(fetchSetting)
 watch(settingType, fetchSetting)
 
 async function handleSave() {
-  if (isImageSetting.value && !content.value.trim()) {
-    ElMessage.warning('请填写图片地址')
-    return
-  }
+  // 租赁/二手图片地址允许为空（与后端 set_update 一致；设备/产品/商业富文本同理不强制非空）
   saving.value = true
   try {
-    const res = await saveOpsSetting(settingType.value, content.value)
+    const payload = isImageSetting.value ? content.value.trim() : content.value
+    const res = await saveOpsSetting(settingType.value, payload)
     if (isAjaxOk(res)) {
+      content.value = payload
       ElMessage.success('保存成功')
       return
     }
