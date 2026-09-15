@@ -919,6 +919,16 @@ async function handleSubmit() {
       relationGoods: relationList.value.map((r) => r.id).join(','),
     }
     if (!isLite.value || editType.value === '2') {
+      // skus 以 JSON 字符串提交，避免部分网关对嵌套数组解析挂起/丢参
+      const skusPayload = form.skus.map((s) => ({
+        skuName: s.skuName,
+        specpids: s.specpids,
+        stocks: Number(s.stocks) || 0,
+        price: Number(s.price) || 0,
+        skuCode: s.skuCode,
+        yzjzj: Number(s.yzjzj) || 0,
+        yzscj: Number(s.yzscj) || 0,
+      }))
       Object.assign(payload, {
         enName: form.enName.trim(),
         goodsSerial: form.goodsSerial.trim(),
@@ -939,17 +949,25 @@ async function handleSubmit() {
         zdqzr: form.zdqzr,
         goodsChoiceType: form.goodsChoiceType,
         inventoryType: form.skus.length > 1 ? 'spec' : form.inventoryType || 'all',
-        skus: form.skus,
+        skus: JSON.stringify(skusPayload),
       })
     }
     const res = await saveGoods(payload)
     if (isAjaxOk(res)) {
       ElMessage.success(editType.value === '2' ? '复制成功' : '保存成功')
       dialogVisible.value = false
+      saving.value = false
+      // 列表刷新与按钮 loading 解耦，避免 reload 慢/挂起时按钮一直转圈
       await reload()
-    } else {
-      ElMessage.error(ajaxErrorMessage(res, '保存失败'))
+      return
     }
+    ElMessage.error(ajaxErrorMessage(res, '保存失败'))
+  } catch (err: unknown) {
+    const msg =
+      err && typeof err === 'object' && 'message' in err
+        ? String((err as { message?: string }).message || '')
+        : ''
+    ElMessage.error(msg || '保存失败，请稍后重试')
   } finally {
     saving.value = false
   }

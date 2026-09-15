@@ -120,7 +120,8 @@ export default {
         sample_name: [{ required: true, message: "请输入名称/类型" }],
         is_magnetic: [{ required: true, message: "请选择是否含磁" }],
       },
-      yyObj: {}
+      yyObj: {},
+      attributeManageList: [],
     };
   },
   computed: {
@@ -138,18 +139,22 @@ export default {
         }
         this.dialog = !!this.openDialog.show;
         if (this.dialog) {
+          this.resetSampleForms();
           sampleattributemanageList({ special_id: this.special_type }).then(
             (res) => {
-              if (res.obj == null) {
-                this.attributeManageList = [];
-              } else {
-                res.obj.attributeManageList.forEach((item, index) => {
-                  item.attributeManageList.map((a) => {
-                    a.checked = false;
-                  });
-                  this.sampleInformationList[0].data.push(item);
+              const raw = (res.obj && res.obj.attributeManageList) || [];
+              // 深拷贝，避免多次打开/多样品共享同一引用
+              const cloned = JSON.parse(JSON.stringify(raw));
+              cloned.forEach((item) => {
+                (item.attributeManageList || []).forEach((a) => {
+                  a.checked = false;
                 });
-                this.attributeManageList = res.obj.attributeManageList;
+              });
+              this.attributeManageList = cloned;
+              if (this.sampleInformationList[0]) {
+                this.sampleInformationList[0].data = JSON.parse(
+                  JSON.stringify(cloned)
+                );
               }
             }
           );
@@ -160,109 +165,105 @@ export default {
   },
   methods: {
 
-    // 确定预约接口
-    okFn() {
-      // 数据校验
-      let arr = [];
-      this.sampleInformationList.forEach((e, i) => {
-        this.$refs["subForm"][i].validate((valid) => {
-          arr.push(valid);
-        });
-      });
-      const status = arr.find((e) => e == false);
-      if (status == false) {
-        // 校验失败
-        this.$message.error("请完善信息！");
-      } else {
-        // 校验成功
-        const {
-          name,
-          mobileNumber,
-          companyName,
-          mark,
-          testId,
-          address,
-          recycle,
-          addresseeName,
-          addresseeMobile,
-          remote_video,
-          list,
-          is_arrive,
-          is_on
-        } = this.yyObj;
-        for (let i = 0; i < this.sampleInformationList.length; i++) {
-          for (let j = 0; j < this.sampleInformationList[i].data.length; j++) {
-            if (
-              this.sampleInformationList[i].data[j].attributeManageList.length >
-              1
-            ) {
-              const status = this.sampleInformationList[i].data[
-                j
-                ].attributeManageList.find((e) => e.checked == true);
-              if (status) {
-              } else {
-                return this.$message.error("请完善信息！");
-              }
-            }
+    // 确定预约接口（L-03：异步校验 + 仅校验可见属性 + 明确错误定位）
+    async okFn() {
+      const forms = this.$refs["subForm"];
+      const formList = Array.isArray(forms) ? forms : forms ? [forms] : [];
+      try {
+        await Promise.all(formList.map((f) => f.validate()));
+      } catch (e) {
+        this.$message.error("请完善样品信息：请检查样品数量、名称/类型、是否含磁");
+        return;
+      }
 
-            for (
-              let k = 0;
-              k <
-              this.sampleInformationList[i].data[j].attributeManageList.length;
-              k++
-            ) {
-              if (
-                this.sampleInformationList[i].data[j].attributeManageList[k]
-                  .checked == true
-              ) {
-                this.sampleInformationList[
-                  i
-                  ].attribute_id += `${this.sampleInformationList[i].data[j].attributeManageList[k].parent_id}:${this.sampleInformationList[i].data[j].attributeManageList[k].id};`;
-              }
+      const {
+        name,
+        mobileNumber,
+        companyName,
+        mark,
+        testId,
+        address,
+        recycle,
+        addresseeName,
+        addresseeMobile,
+        remote_video,
+        list,
+        is_arrive,
+        is_on,
+      } = this.yyObj;
+
+      // 仅校验界面上展示的属性（selection=1/2），避免隐藏属性误拦
+      for (let i = 0; i < this.sampleInformationList.length; i++) {
+        const sample = this.sampleInformationList[i];
+        const attrs = sample.data || [];
+        for (let j = 0; j < attrs.length; j++) {
+          const attr = attrs[j];
+          const options = attr.attributeManageList || [];
+          const visible =
+            (attr.selection == 1 || attr.selection == 2) && options.length > 0;
+          if (!visible) continue;
+          const picked = options.some((e) => e.checked === true);
+          if (!picked) {
+            const label = attr.name || "样品属性";
+            this.$message.error(
+              `请完善样品信息：请选择「${label}」（样品${i + 1}）`
+            );
+            return;
+          }
+        }
+      }
+
+      // 组装提交数据（深拷贝，避免删 data 影响再次打开）
+      const payloadSamples = JSON.parse(
+        JSON.stringify(this.sampleInformationList)
+      );
+      for (let i = 0; i < payloadSamples.length; i++) {
+        const sample = payloadSamples[i];
+        sample.attribute_id = sample.attribute_id || "";
+        const attrs = sample.data || [];
+        for (let j = 0; j < attrs.length; j++) {
+          const options = attrs[j].attributeManageList || [];
+          for (let k = 0; k < options.length; k++) {
+            if (options[k].checked === true) {
+              sample.attribute_id += `${options[k].parent_id}:${options[k].id};`;
             }
           }
         }
-        this.sampleInformationList.forEach((item) => {
-          item.attribute_id = this.mergeData(item.attribute_id);
-          item.is_gold_spraying = item.gold_desc ? 1 : 0;
-          delete item.data;
-        });
-        // 数据转码
-        let obj = {
-          sampleInformationList: this.sampleInformationList,
-        };
-        let str = JSON.stringify(obj);
-        let codeStr = encodeURIComponent(str);
-
-        // 接口
-        subTestApi({
-          sampleInformationList: codeStr,
-          userName: name,
-          mobile: mobileNumber,
-          company_name: companyName,
-          content: mark,
-          class_id: testId,
-          address,
-          recycle,
-          addresseeName,
-          addresseeMobile,
-          order_list: list.map((item) => item.id).join(),
-          is_video: remote_video,
-          is_arrive: is_arrive ? is_arrive : false,
-          is_on: is_on ? is_on : false,
-        }).then((res) => {
-          if (res.res) {
-            this.closeDialog(false);
-          }
-          this.$notify({
-            title: "提示",
-            message: res.res
-              ? "预约成功，稍后专属业务员会向您致电，敬请接听！"
-              : res.resMsg,
-            type: res.res ? "success" : "error",
-          });
-        });
+        sample.attribute_id = this.mergeData(sample.attribute_id);
+        sample.is_gold_spraying = sample.gold_desc ? 1 : 0;
+        delete sample.data;
       }
+
+      let obj = { sampleInformationList: payloadSamples };
+      let codeStr = encodeURIComponent(JSON.stringify(obj));
+
+      subTestApi({
+        sampleInformationList: codeStr,
+        userName: name,
+        mobile: mobileNumber,
+        company_name: companyName,
+        content: mark,
+        class_id: testId,
+        address,
+        recycle,
+        addresseeName,
+        addresseeMobile,
+        order_list: (list || []).map((item) => item.id).join(),
+        is_video: remote_video,
+        is_arrive: is_arrive ? is_arrive : false,
+        is_on: is_on ? is_on : false,
+      }).then((res) => {
+        if (res.res) {
+          this.closeDialog(false);
+        }
+        this.$notify({
+          title: "提示",
+          message: res.res
+            ? "预约成功，稍后专属业务员会向您致电，敬请接听！"
+            : res.resMsg,
+          type: res.res ? "success" : "error",
+        });
+      });
     },
     // 数据处理
     mergeData(str) {
@@ -457,11 +458,8 @@ export default {
     },
 
     // 关闭dialog表单
-    closeDialog() {
-      // 清空
-      this.$refs["sub-form"].resetFields();
-      this.file_list = [];
-      this.video_list = [];
+
+    resetSampleForms() {
       this.sampleInformationList = [
         {
           data: [],
@@ -471,8 +469,19 @@ export default {
           is_magnetic: 1,
           is_gold_spraying: 1,
           attribute_id: "",
-        }
-      ]
+          gold_desc: "",
+        },
+      ];
+      this.attributeManageList = [];
+    },
+    closeDialog() {
+      // 清空
+      if (this.$refs["sub-form"]) {
+        this.$refs["sub-form"].resetFields();
+      }
+      this.file_list = [];
+      this.video_list = [];
+      this.resetSampleForms();
       this.resetInput();
       this.dialog = false;
       this.$emit("openDialogClose");
@@ -610,7 +619,7 @@ export default {
       obj.list = this.file_list;
       obj.testId = this.testId;
       this.yyObj = obj;
-      this.okFn()
+      return this.okFn()
 
     },
   },
@@ -804,7 +813,7 @@ export default {
               </el-form-item>
               <div v-for="(a, b) in item.data" :key="b">
                 <el-form-item
-                  :label="a.name"
+                  :label="(a.name || '') + '（必选）'"
                   v-if="a.selection == 1 && a.attributeManageList.length > 0"
                 >
                   <div class="syxBtnBox">
@@ -825,7 +834,7 @@ export default {
                   </div>
                 </el-form-item>
                 <el-form-item
-                  :label="a.name"
+                  :label="(a.name || '') + '（必选）'"
                   v-if="a.selection == 2 && a.attributeManageList.length > 0"
                 >
                   <div class="syxBtnBox">
