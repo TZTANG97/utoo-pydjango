@@ -35,3 +35,21 @@ AFTER_SALE_EXTRA = """
           AND eoc.order_status IN (39, 41)
     )
 """
+
+WAITING_EXPERIMENT_EXTRA = """
+    AND EXISTS (
+        SELECT 1 FROM experiment_order po
+        WHERE po.parent_id = t.id
+          AND po.order_status >= 35
+          AND po.order_status < 38
+    )
+"""
+
+EXPERIMENTING_EXTRA = """
+    AND EXISTS (
+        SELECT 1 FROM experiment_order po
+        WHERE po.parent_id = t.id
+          AND po.order_status >= 37
+          AND po.order_status <= 42
+    )
+"""

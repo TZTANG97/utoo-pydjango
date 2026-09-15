@@ -53,6 +53,10 @@ def my_experiment_order_list(
     if t == "1":
         extra = sale_list_repo.RECEIVE_PLAN_PC_EXTRA
         join_sql = sale_list_repo.RECEIVE_PLAN_PC_JOINS
+    elif t == "2":
+        extra = sale_list_repo.WAITING_EXPERIMENT_EXTRA
+    elif t == "3":
+        extra = sale_list_repo.EXPERIMENTING_EXTRA
     elif t == "5":
         extra = sale_list_repo.BILLABLE_EXTRA
     elif t == "4":
