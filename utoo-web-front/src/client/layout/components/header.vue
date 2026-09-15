@@ -1,6 +1,6 @@
 <script>
 import {mapGetters} from "vuex";
-import { defaultAvatarUrl } from "@client/utils/oss-image";
+import { defaultAvatarUrl, resolveCatalogImage, onCatalogImgError } from "@client/utils/oss-image";
 
 export default {
   name: "Header",
@@ -36,6 +36,8 @@ export default {
     Object.values(this._popupCloseTimers || {}).forEach((t) => clearTimeout(t))
   },
   methods: {
+    resolveCatalogImage,
+    onCatalogImgError,
     onAvatarError(e) {
       if (e?.target) e.target.src = defaultAvatarUrl()
     },
@@ -136,6 +138,14 @@ export default {
       }).catch(() => {})
     },
 
+    /** C-04：顶部「测试预约」跳转分类/预约入口 */
+    goTestBooking() {
+      this.showCate = false
+      this.level1_idx = 0
+      if (this.$route.path === '/cate') return
+      this.$router.push({ path: '/cate' }).catch(() => {})
+    },
+
     // 进入实验详情
     viewTestDetail(id) {
       this.showCate = false
@@ -169,8 +179,10 @@ export default {
       <div
         class="test-pro nav-chip"
         :class="{ 'is-active': topMenuKey === 'cate' }"
-        v-if="cateList.length" @mouseleave="showCate = false"
-           @mouseenter="showCate = true, openCateDialog()">测试预约
+        @click="goTestBooking"
+        @mouseleave="showCate = false"
+        @mouseenter="cateList.length && (showCate = true, openCateDialog())"
+      >测试预约
       </div>
       <div class="test-pro nav-chip" :class="{ 'is-active': topMenuKey === 'company' }">
         <router-link
@@ -235,7 +247,7 @@ export default {
                 <!--查看实验详情-->
                 <div class="level-3-item" v-for="(level3, idx2) in (item['childList'] || item['tList'] || [])" :key="idx2">
 <!--                  <span>{{ level3['name'] }}</span>-->
-                  <img style="width: 100%;" :src="level3.main_photo" />
+                  <img style="width: 100%;" :src="resolveCatalogImage(level3.main_photo)" @error="onCatalogImgError" alt="" />
                   <div class="mask">
                     <el-button type="primary" @click="viewTestDetail(level3['id'])">立即预约</el-button>
                   </div>
@@ -253,7 +265,7 @@ export default {
                 <!--查看实验详情-->
                 <div class="level-3-item" v-for="(level3, idx2) in (item['childList'] || item['tList'] || [])" :key="idx2">
 <!--                  <span>{{ level3['name'] }}</span>-->
-                  <img style="width: 100%;" :src="level3.main_photo" />
+                  <img style="width: 100%;" :src="resolveCatalogImage(level3.main_photo)" @error="onCatalogImgError" alt="" />
                   <div class="mask">
                     <el-button type="primary" @click="viewTestDetail(level3['id'])">立即预约</el-button>
                   </div>
@@ -271,7 +283,7 @@ export default {
                 <!--查看实验详情-->
                 <div class="level-3-item" v-for="(level3, idx2) in (item['childList'] || item['tList'] || [])" :key="idx2">
 <!--                  <span>{{ level3['name'] }}</span>-->
-                  <img style="width: 100%;" :src="level3.main_photo" />
+                  <img style="width: 100%;" :src="resolveCatalogImage(level3.main_photo)" @error="onCatalogImgError" alt="" />
                   <div class="mask">
                     <el-button type="primary" @click="viewTestDetail(level3['id'])">立即预约</el-button>
                   </div>
@@ -289,7 +301,7 @@ export default {
                 <!--查看实验详情-->
                 <div class="level-3-item" v-for="(level3, idx2) in (item['childList'] || item['tList'] || [])" :key="idx2">
 <!--                  <span>{{ level3['name'] }}</span>-->
-                  <img style="width: 100%;" :src="level3.main_photo" />
+                  <img style="width: 100%;" :src="resolveCatalogImage(level3.main_photo)" @error="onCatalogImgError" alt="" />
                   <div class="mask">
                     <el-button type="primary" @click="viewTestDetail(level3['id'])">立即预约</el-button>
                   </div>

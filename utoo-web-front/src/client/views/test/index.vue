@@ -12,6 +12,7 @@ import { mapGetters } from "vuex";
 import {alterTime} from '@client/utils/index'
 import eventBus from "@client/utils/event-bus";
 import { loadAMap } from "@client/utils/loadScript";
+import { resolveCatalogImage, onCatalogImgError, isLikelyImageUrl } from "@client/utils/oss-image";
 
 export default {
   name: "Test",
@@ -86,6 +87,8 @@ export default {
   },
 
   methods: {
+    resolveCatalogImage,
+    onCatalogImgError,
     bindHomeScroll() {
       if (!this.app) {
         this.app = document.querySelector("#app");
@@ -225,11 +228,14 @@ export default {
       }
     },
 
-    // 获取轮播图列表
+    // 获取轮播图列表（过滤非图片资源，避免 .pdf 当 img）
     getSwiperList() {
       getSwiperListApi().then((res) => {
         if (res.res) {
-          this.swiperList = res.obj;
+          const list = Array.isArray(res.obj) ? res.obj : [];
+          this.swiperList = list.filter((item) =>
+            isLikelyImageUrl(item.picUrl || item.pic_url)
+          );
         }
       });
     },
@@ -387,7 +393,8 @@ export default {
         >
           <img
             style="width: 100%; height: 100%; cursor: pointer"
-            :src="item.picUrl"
+            :src="resolveCatalogImage(item.picUrl)"
+            @error="onCatalogImgError"
             alt=""
           />
 <!--          <div-->
@@ -430,7 +437,7 @@ export default {
 <!--          </div>-->
         </el-carousel-item>
       </el-carousel>
-      <div class="direction-icon" v-if="!scroll_num">
+      <div class="direction-icon" v-if="!scroll_num && swiperList.length > 1">
         <svg-icon
           @click="cutSwiper('prev')"
           icon-class="swiper-left"
@@ -486,7 +493,11 @@ export default {
             >
               <span class="test-name">{{ level2.name }}</span>
               <div class="cover">
-                <img :src="level2['main_photo']" :alt="level2.name" />
+                <img
+                  :src="resolveCatalogImage(level2['main_photo'])"
+                  :alt="level2.name"
+                  @error="onCatalogImgError"
+                />
                 <div
                   class="bottom-popup"
                   :class="{
@@ -630,7 +641,11 @@ export default {
     >
       <div class="cate-content">
         <div class="cate-main-img">
-          <img :src="dialog_content['main_photo']" alt="" />
+          <img
+            :src="resolveCatalogImage(dialog_content['main_photo'])"
+            @error="onCatalogImgError"
+            alt=""
+          />
         </div>
         <div class="jj">简介：{{ dialog_content["intro"] }}</div>
         <div class="project-desc">

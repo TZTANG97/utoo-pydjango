@@ -35,12 +35,12 @@
     </el-form>
 
     <el-table v-loading="loading" :data="rows" border stripe>
-      <el-table-column prop="storeNum" label="仓库编号" min-width="120" />
-      <el-table-column prop="storeName" label="仓库名称" min-width="140" />
-      <el-table-column prop="trueName" label="负责人" min-width="100">
+      <el-table-column prop="storeNum" label="仓库编号" width="120" />
+      <el-table-column prop="storeName" label="仓库名称" width="140" />
+      <el-table-column prop="trueName" label="负责人" width="100">
         <template #default="{ row }">{{ row.trueName || row.userName || '-' }}</template>
       </el-table-column>
-      <el-table-column prop="moblie" label="手机" min-width="120" />
+      <el-table-column prop="moblie" label="手机" width="120" />
       <el-table-column prop="address" label="地址" min-width="180" show-overflow-tooltip />
       <el-table-column label="状态" width="90">
         <template #default="{ row }">
@@ -49,7 +49,7 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="addTime" label="创建时间" min-width="160" />
+      <el-table-column prop="addTime" label="创建时间" width="160" />
       <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>

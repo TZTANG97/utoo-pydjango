@@ -235,15 +235,21 @@ export default {
         for (let i = 0; i < this.sampleInformationList.length; i++) {
           for (let j = 0; j < this.sampleInformationList[i].data.length; j++) {
             if (
+              (this.sampleInformationList[i].data[j].selection == 1 ||
+                this.sampleInformationList[i].data[j].selection == 2) &&
               this.sampleInformationList[i].data[j].attributeManageList.length >
-              1
+                0
             ) {
               const status = this.sampleInformationList[i].data[
                 j
               ].attributeManageList.find((e) => e.checked == true);
               if (status) {
               } else {
-                return this.$message.error("请完善信息！");
+                const label =
+                  this.sampleInformationList[i].data[j].name || "样品属性";
+                return this.$message.error(
+                  `请完善样品信息：请选择「${label}」`
+                );
               }
             }
 

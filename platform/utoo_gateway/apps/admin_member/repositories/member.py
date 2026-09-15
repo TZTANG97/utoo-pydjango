@@ -205,6 +205,18 @@ def unbind_member(user_id: int) -> None:
     )
 
 
+def soft_delete_member(user_id: int) -> None:
+    """个人会员软删除/回收：deleteStatus=1，列表默认不再展示。"""
+    execute(
+        """
+        UPDATE exp_user
+        SET deleteStatus = 1
+        WHERE id = %(id)s AND IFNULL(deleteStatus, 0) = 0
+        """,
+        {"id": user_id},
+    )
+
+
 def bind_member(*, user_id: int, parent_id: int, company_name: str) -> None:
     execute(
         """

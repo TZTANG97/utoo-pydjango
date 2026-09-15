@@ -658,9 +658,14 @@ function taxLabel(t: Record<string, unknown>) {
 
 function goBack() {
   if (saleOrderId) {
-    router.push({ name: 'ExperimentOrderDetail', params: { id: saleOrderId } })
+    router.push({
+      name: 'ExperimentOrderDetail',
+      params: { id: saleOrderId },
+      query: { from: 'subcontract-orders' },
+    })
   } else {
-    router.push('/experiment/subcontract-orders')
+    // 无来源主单时回到分包订单列表（勿用缺 /admin 前缀的错误 path）
+    router.push({ name: 'ExperimentSubcontractOrders' })
   }
 }
 

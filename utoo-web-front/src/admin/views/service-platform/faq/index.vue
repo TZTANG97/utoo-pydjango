@@ -60,7 +60,13 @@
       />
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑常见问题' : '创建常见问题'" width="640px">
+    <el-dialog
+      v-model="dialogVisible"
+      :title="isEdit ? '编辑常见问题' : '创建常见问题'"
+      width="640px"
+      append-to-body
+      destroy-on-close
+    >
       <el-form label-width="100px">
         <el-form-item label="常见问题" required>
           <el-input v-model="form.problemDescription" placeholder="请输入常见问题" />
@@ -91,7 +97,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onActivated, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminPageCard from '@admin/components/AdminPageCard.vue'
 import { deleteFaq, editFaq, fetchFaqList, submitFaq } from '@admin/api/service-platform'
@@ -156,33 +162,36 @@ async function handleSubmit() {
     ElMessage.warning('关键字不能为空')
     return
   }
-  if (form.hits === null || form.hits === undefined || Number.isNaN(form.hits)) {
+  if (form.hits === null || form.hits === undefined || Number.isNaN(Number(form.hits))) {
     ElMessage.warning('点击量不能为空或填写错误')
     return
   }
   saving.value = true
   try {
-    // 对齐 Java 表单字段名：name / enname / sequence / project_details
+    // 对齐 Java 表单字段名 + 新站 camelCase，确保网关 form/JSON 都能取到
     const payload = {
       name: form.problemDescription.trim(),
       enname: form.keywords.trim(),
       sequence: form.hits,
-      project_details: form.problemAnswer,
+      project_details: form.problemAnswer || '',
       problemDescription: form.problemDescription.trim(),
       keywords: form.keywords.trim(),
       hits: form.hits,
-      problemAnswer: form.problemAnswer,
+      problemAnswer: form.problemAnswer || '',
     }
     const res = isEdit.value
       ? await editFaq({ id: form.id, ...payload })
       : await submitFaq(payload)
-    if (isAjaxOk(res)) {
-      ElMessage.success(isEdit.value ? '修改成功' : '保存成功')
-      dialogVisible.value = false
-      await load({ ...filters })
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '保存失败'))
       return
     }
-    ElMessage.error(ajaxErrorMessage(res, '保存失败'))
+    dialogVisible.value = false
+    ElMessage.success(isEdit.value ? '修改成功' : '保存成功')
+    pagination.page = 1
+    await load({ ...filters })
+  } catch {
+    // 网络异常由 request 拦截器提示
   } finally {
     saving.value = false
   }
@@ -190,14 +199,22 @@ async function handleSubmit() {
 
 async function handleDelete(row: Record<string, unknown>) {
   await ElMessageBox.confirm('请确认是否删除？', '提示', { type: 'warning' })
-  const res = await deleteFaq(String(row.id))
-  if (isAjaxOk(res)) {
+  try {
+    const res = await deleteFaq(String(row.id))
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '删除失败'))
+      return
+    }
     ElMessage.success('删除成功')
     await load({ ...filters })
-  } else {
-    ElMessage.error(ajaxErrorMessage(res, '删除失败'))
+  } catch {
+    // 网络异常由 request 拦截器提示
   }
 }
+
+onActivated(() => {
+  load({ ...filters })
+})
 </script>
 
 <style scoped lang="scss">

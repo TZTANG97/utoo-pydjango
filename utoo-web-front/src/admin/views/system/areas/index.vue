@@ -10,7 +10,7 @@
     </el-form>
 
     <el-table v-loading="loading" :data="rows" border stripe>
-      <el-table-column type="index" width="60" label="#" />
+      <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="areaName" label="区域名称" min-width="200" />
       <el-table-column prop="addTime" label="添加时间" min-width="160" />
       <el-table-column label="操作" width="220" fixed="right">
@@ -31,7 +31,7 @@
       />
     </div>
 
-    <el-dialog v-model="editVisible" title="修改区域" width="420px">
+    <el-dialog v-model="editVisible" title="修改区域" width="420px" destroy-on-close>
       <el-form label-width="90px">
         <el-form-item label="区域名称">
           <el-input v-model="editForm.areaName" />
@@ -51,7 +51,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminPageCard from '@admin/components/AdminPageCard.vue'
 import { deleteArea, fetchAreaList, submitArea, updateArea } from '@admin/api/system'
 import { useDataTable } from '@admin/composables/useDataTable'
-import { isAjaxOk } from '@admin/utils/request'
+import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
 const { loading, rows, total, pagination, load } = useDataTable(fetchAreaList)
 const saving = ref(false)
@@ -70,12 +70,13 @@ async function handleAdd() {
   try {
     const res = await submitArea({ areaName: form.areaName.trim() })
     if (isAjaxOk(res)) {
-      ElMessage.success('添加成功')
+      ElMessage.success(res.resMsg || '添加成功')
       form.areaName = ''
+      pagination.page = 1
       await load()
       return
     }
-    ElMessage.error('名称已存在或保存失败')
+    ElMessage.error(ajaxErrorMessage(res, '区域名称已存在，请勿重复添加'))
   } finally {
     saving.value = false
   }
@@ -96,12 +97,12 @@ async function handleUpdate() {
   try {
     const res = await updateArea({ id: editForm.id, areaName: editForm.areaName.trim() })
     if (isAjaxOk(res)) {
-      ElMessage.success('修改成功')
+      ElMessage.success(res.resMsg || '修改成功')
       editVisible.value = false
       await load()
       return
     }
-    ElMessage.error('修改失败')
+    ElMessage.error(ajaxErrorMessage(res, '区域名称已存在，请更换名称'))
   } finally {
     saving.value = false
   }
@@ -111,10 +112,10 @@ async function handleDelete(row: Record<string, unknown>) {
   await ElMessageBox.confirm('确定删除该区域吗？', '提示', { type: 'warning' })
   const res = await deleteArea(String(row.id))
   if (isAjaxOk(res)) {
-    ElMessage.success('删除成功')
+    ElMessage.success(res.resMsg || '删除成功')
     await load()
   } else {
-    ElMessage.error('删除失败')
+    ElMessage.error(ajaxErrorMessage(res, '删除失败'))
   }
 }
 </script>

@@ -170,9 +170,9 @@ def paytype_submit(request: Request, user=None):
     data = _payload(request)
     name = (data.get("name") or "").strip()
     if not name:
-        return Response(False)
+        return Response(ajax_fail("请填写收付款名称"))
     if paytype_repo.find_by_name(name):
-        return Response(False)
+        return Response(ajax_fail("收付款名称已存在，请勿重复添加"))
     pay_type = int(data.get("payType") or data.get("pay_type") or 1)
     nums = int(data.get("nums") or data.get("nums1") or data.get("nums2") or 0)
     scale_val = (data.get("scaleVal") or data.get("scale_val") or "").strip()
@@ -190,7 +190,7 @@ def paytype_submit(request: Request, user=None):
             "memo": data.get("memo"),
         }
     )
-    return Response(True)
+    return Response(ajax_ok(res_msg="添加成功"))
 
 
 @api_view(["POST"])
@@ -206,6 +206,19 @@ def paytype_update_status(request: Request, user=None):
     disabled = status == "1"
     paytype_repo.update_paytype_status(paytype_id=int(paytype_id), disabled=disabled)
     return ajax_response(True, res_msg="操作成功")
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def paytype_delete(request: Request, user=None):
+    data = _payload(request)
+    paytype_id = data.get("id")
+    if not paytype_id:
+        return Response(ajax_fail("操作失败!"))
+    paytype_repo.delete_paytype(int(paytype_id))
+    return Response(ajax_ok(res_msg="删除成功"))
 
 
 # ---------- 出项/进项发票 ----------
@@ -248,13 +261,13 @@ def billtype_submit(request: Request, user=None):
     name = (data.get("name") or "").strip()
     bill_type = int(data.get("type") or 1)
     if not name:
-        return Response(False)
+        return Response(ajax_fail("请填写名称"))
     if bill_repo.find_by_name_and_type(name=name, bill_type=bill_type):
-        return Response(False)
+        return Response(ajax_fail("名称已存在，请勿重复添加"))
     bill_repo.insert_bill_type(
         name=name, bill_type=bill_type, user_id=_staff_id(user)
     )
-    return Response(True)
+    return Response(ajax_ok(res_msg="添加成功"))
 
 
 @api_view(["GET", "POST"])
@@ -294,12 +307,25 @@ def billtype_update_status(request: Request, user=None):
     bill_id = data.get("id")
     status = str(data.get("status") or "")
     if not bill_id or status not in {"1", "2"}:
-        return Response(False)
+        return Response(ajax_fail("操作失败"))
     disabled = status == "2"
     bill_repo.update_bill_type_status(
         bill_id=int(bill_id), disabled=disabled, user_id=_staff_id(user)
     )
-    return Response(True)
+    return Response(ajax_ok(res_msg="操作成功"))
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@admin_ajax_view()
+def billtype_delete(request: Request, user=None):
+    data = _payload(request)
+    bill_id = data.get("id")
+    if not bill_id:
+        return Response(ajax_fail("操作失败!"))
+    bill_repo.delete_bill_type(int(bill_id))
+    return Response(ajax_ok(res_msg="删除成功"))
 
 
 # ---------- 订单类型 ----------

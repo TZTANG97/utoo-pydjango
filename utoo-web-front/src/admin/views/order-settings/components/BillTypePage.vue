@@ -19,16 +19,17 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
           <el-button
             link
-            :type="row.deleteStatus ? 'success' : 'danger'"
+            :type="row.deleteStatus ? 'success' : 'warning'"
             @click="toggleStatus(row)"
           >
             {{ row.deleteStatus ? '开启' : '禁用' }}
           </el-button>
+          <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -55,9 +56,10 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminPageCard from '@admin/components/AdminPageCard.vue'
 import {
+  deleteBillType,
   fetchBillTypeList,
   submitBillType,
   updateBillType,
@@ -91,14 +93,16 @@ async function handleAdd() {
   }
   saving.value = true
   try {
-    const ok = await submitBillType({ name: form.name.trim(), type: props.billType })
-    if (ok) {
-      ElMessage.success('添加成功')
+    const res = await submitBillType({ name: form.name.trim(), type: props.billType })
+    if (isAjaxOk(res)) {
+      ElMessage.success(res.resMsg || '添加成功')
       form.name = ''
       await reload()
       return
     }
-    ElMessage.error('名称已存在或保存失败')
+    ElMessage.error(ajaxErrorMessage(res, '名称已存在或保存失败'))
+  } catch {
+    // 网络异常由 request 拦截器提示
   } finally {
     saving.value = false
   }
@@ -123,6 +127,22 @@ async function handleUpdate() {
     ElMessage.error(String((res as { obj?: unknown }).obj || ajaxErrorMessage(res, '修改失败')))
   } finally {
     saving.value = false
+  }
+}
+
+
+async function handleDelete(row: Record<string, unknown>) {
+  await ElMessageBox.confirm('确定删除该发票类型吗？删除后不可恢复。', '提示', { type: 'warning' })
+  try {
+    const res = await deleteBillType(String(row.id))
+    if (isAjaxOk(res)) {
+      ElMessage.success(res.resMsg || '删除成功')
+      await reload()
+      return
+    }
+    ElMessage.error(ajaxErrorMessage(res, '删除失败'))
+  } catch {
+    // 取消确认或网络异常
   }
 }
 

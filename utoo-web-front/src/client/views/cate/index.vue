@@ -1,6 +1,7 @@
 <script>
 import {mapGetters} from "vuex";
 import {getTestListAPi} from '@client/api/test'
+import { resolveCatalogImage, onCatalogImgError } from "@client/utils/oss-image";
 
 export default {
   name: "Cate",
@@ -16,7 +17,7 @@ export default {
       page: 1,
       isRefresh: true,
       classId: '',
-      scroll: false
+      scroll: false,
     }
   },
   computed: {
@@ -57,6 +58,13 @@ export default {
   },
 
   methods: {
+    resolveCatalogImage,
+    onCatalogImgError,
+    sliceIntro(intro) {
+      if (!intro) return ''
+      if (intro.length <= 46) return intro
+      return intro.slice(0, 46) + '...'
+    },
 
     // 监听滚动
     listenScroll() {
@@ -235,32 +243,37 @@ export default {
 
 
     <!--实验列表-->
-    <div class="test-list">
+    <div class="test-list" v-if="testList.length">
       <el-tooltip class="item" effect="light" :content="item['name']" placement="right-start"
                   v-for="(item, idx) in testList" :key="idx">
         <div class="test-item" @click="viewTestDetail(item['id'])">
           <img class="test-main-img"
-               :src="item['main_photo']" alt="">
+               :src="resolveCatalogImage(item['main_photo'])"
+               @error="onCatalogImgError"
+               alt="">
           <div class="test-name">
             {{ item['name'] }}
           </div>
           <div class="test-desc">
-            {{ item['intro'] | sliceIntro }}
+            {{ sliceIntro(item['intro']) }}
           </div>
         </div>
       </el-tooltip>
     </div>
 
 
-    <div class="empty" v-if="!testList.length && !isRefresh">
-      暂无数据
+    <div class="empty" v-if="!loading && !testList.length && !isRefresh">
+      当前分类暂无实验，请切换分类或稍后再试
+    </div>
+    <div class="empty empty--loading" v-else-if="loading && !testList.length">
+      正在加载实验列表…
     </div>
 
 
     <!-- 底部加载-->
     <div class="loading-data">
       <span v-if="!isRefresh && testList.length">没有更多数据了~</span>
-      <span v-if="loading">拼命加载中...</span>
+      <span v-if="loading && testList.length">拼命加载中...</span>
     </div>
 
 
@@ -270,6 +283,9 @@ export default {
     </div>
 
   </div>
+  <div class="cate cate--pending" v-else>
+    <div class="empty">分类菜单加载中，请稍候…</div>
+  </div>
 </template>
 
 <style scoped lang="scss">
@@ -278,6 +294,15 @@ export default {
   padding: 50px;
   color: #959595;
   font-size: 30px;
+}
+
+.cate--pending {
+  min-height: 40vh;
+  padding-top: 80px;
+}
+
+.empty--loading {
+  font-size: 22px;
 }
 
 .loading-data {

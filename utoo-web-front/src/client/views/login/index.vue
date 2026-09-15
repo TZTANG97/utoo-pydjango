@@ -6,14 +6,16 @@
         @click="changeLoginWay(false)"
         class="qrcode-login"
         src="@client/static/qrcode.png"
-        alt=""
+        title="微信扫码登录"
+        alt="切换到微信扫码登录"
       />
       <img
         v-else
         @click="changeLoginWay(true)"
         class="account-login"
         src="@client/static/form-login.png"
-        alt=""
+        title="账号密码登录"
+        alt="切换到账号密码登录"
       />
 
       <div class="input-login" v-if="login_way">
@@ -149,6 +151,12 @@
           </div>
         </div>
         <div class="tip">打开手机 <span>微信</span> 扫描二维码登录或注册</div>
+        <div class="login-switch">
+          <button type="button" class="login-switch-btn" @click="changeLoginWay(true)">账号密码登录</button>
+        </div>
+      </div>
+      <div class="login-switch" v-if="login_way">
+        <button type="button" class="login-switch-btn" @click="changeLoginWay(false)">微信扫码登录</button>
       </div>
     </div>
   </div>
@@ -253,7 +261,7 @@ export default {
         SCANNED: "扫码成功",
         NOT_SCAN: "未扫码",
         EXPIRED: "二维码已过期",
-        ERROR: "加载失败，请刷新",
+        ERROR: "加载失败，请点击刷新",
       },
     };
   },
@@ -348,8 +356,8 @@ export default {
         });
     },
 
-    // 获取二维码
-    getQrcode() {
+    // 获取二维码（首次失败自动短重试，避免偶发时序失败）
+    getQrcode(retryLeft = 2) {
       this.loadingQrcode = true;
       this.qrcodeStatus = "NOT_SCAN";
       if (this.checkTimer) {
@@ -369,16 +377,24 @@ export default {
             }, 2000);
             return;
           }
+          if (retryLeft > 0) {
+            setTimeout(() => this.getQrcode(retryLeft - 1), 800);
+            return;
+          }
           this.loadingQrcode = false;
           this.qrcodeStatus = "ERROR";
           const msg =
-            res?.resMsg || res?.message || "二维码加载失败，请稍后重试";
+            res?.resMsg || res?.message || "二维码加载失败，请点击刷新重试";
           this.$message.error(msg);
         })
         .catch(() => {
+          if (retryLeft > 0) {
+            setTimeout(() => this.getQrcode(retryLeft - 1), 800);
+            return;
+          }
           this.loadingQrcode = false;
           this.qrcodeStatus = "ERROR";
-          this.$message.error("二维码加载失败，请检查网络或联系管理员");
+          this.$message.error("二维码加载失败，请点击刷新重试");
         });
     },
 
@@ -390,12 +406,9 @@ export default {
         clearInterval(this.checkTimer);
         this.ticket = "";
         this.qrcodeStatus = "NOT_SCAN";
+        this.optionIndex = 0;
+        this.restoreRememberedLogin();
       } else {
-        this.form.code = "";
-        this.form.pwd = "";
-        this.form.nick_name = "";
-        this.form.mobile = "";
-        this.form.confirm_pwd = "";
         this.optionIndex = 0;
         this.getQrcode();
       }
@@ -810,6 +823,23 @@ export default {
   width: 60px;
   height: 60px;
   cursor: pointer;
+  z-index: 5;
+}
+
+.login-switch {
+  display: flex;
+  justify-content: center;
+  margin-top: 14px;
+}
+
+.login-switch-btn {
+  border: none;
+  background: transparent;
+  color: var(--mainColor);
+  cursor: pointer;
+  font-size: 14px;
+  text-decoration: underline;
+  padding: 0;
 }
 
 .operation-panel {
@@ -820,7 +850,8 @@ export default {
   background-color: #fff;
   border-radius: 24px;
   box-shadow: 0 0 10px #e1e1e1;
-  overflow: hidden;
+  overflow: visible;
+  padding-bottom: 8px;
 }
 </style>
 

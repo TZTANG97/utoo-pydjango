@@ -472,9 +472,34 @@ function relatedOrderText(row: Record<string, unknown>) {
   return String(row.czNum || row.orderNum || '').trim()
 }
 
+/** 资金模块自有流水类型：关联单号是资金单（CZ/JD 等），不应跳实验订单 */
+const FUND_NATIVE_ACC_TYPES = new Set([1, 2, 10, 11, 12, 14, 17, 20])
+
+function isFundNativeSlip(row: Record<string, unknown>, orderNo: string) {
+  const accType = Number(row.accType)
+  if (FUND_NATIVE_ACC_TYPES.has(accType)) return true
+  // 单号前缀兜底：充值 CZ / 借贷 JD / 提现 TX / 转账 ZZ / 扣款 KK 等
+  return /^(CZ|JD|TX|ZZ|KK|QD|JK)/i.test(orderNo)
+}
+
 function openRelatedOrder(row: Record<string, unknown>) {
   const orderNo = relatedOrderText(row)
   if (!orderNo) return
+
+  // FUND-002：借贷/充值等资金单留在资金管理，勿误进实验订单
+  if (isFundNativeSlip(row, orderNo)) {
+    const accType = String(row.accType || filters.accType || '1')
+    router.push({
+      name: 'FundManagement',
+      query: {
+        accType: FUND_NATIVE_ACC_TYPES.has(Number(accType)) ? accType : '12',
+        czNum: orderNo,
+        from: 'fund-account',
+      },
+    })
+    return
+  }
+
   const pk = String(row.orderId || '').trim()
   if (pk && pk !== '0') {
     router.push({

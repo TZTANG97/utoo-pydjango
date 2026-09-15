@@ -18,6 +18,18 @@ async function postAjax(
   return (await request.post(url, data, config)) as unknown as AjaxBody
 }
 
+/** 旧站 jQuery $.post 同款 form 提交，避免 JSON 经网关转发后上游取不到字段 */
+async function postFormAjax(url: string, data: Record<string, unknown>) {
+  const body = new URLSearchParams()
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined || value === null) continue
+    body.set(key, String(value))
+  }
+  return (await request.post(url, body, {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+  })) as unknown as AjaxBody
+}
+
 async function fetchDatatable<T>(
   url: string,
   params: Record<string, unknown>
@@ -106,15 +118,15 @@ export function fetchFaqList(params: Record<string, unknown>) {
 }
 
 export function submitFaq(data: Record<string, unknown>) {
-  return postAjax('/records/submitproblem.ajax', data)
+  return postFormAjax('/records/submitproblem.ajax', data)
 }
 
 export function editFaq(data: Record<string, unknown>) {
-  return postAjax('/records/editproblem.ajax', data)
+  return postFormAjax('/records/editproblem.ajax', data)
 }
 
 export function deleteFaq(id: string | number) {
-  return postAjax('/records/deleteproblem.ajax', { id })
+  return postFormAjax('/records/deleteproblem.ajax', { id })
 }
 
 // --- records ---
@@ -158,9 +170,9 @@ export function fetchOpenidList(params: Record<string, unknown>) {
 }
 
 export function submitOpenid(data: Record<string, unknown>) {
-  return postAjax('/expOpenid/submitOpenid.ajax', data)
+  return postFormAjax('/expOpenid/submitOpenid.ajax', data)
 }
 
 export function deleteOpenid(id: string | number) {
-  return postAjax('/expOpenid/del.ajax', { id })
+  return postFormAjax('/expOpenid/del.ajax', { id })
 }

@@ -17,7 +17,8 @@ const MENU_ROUTE_MAP: Record<string, string> = {
   'sys/role/load.do': '/system/roles',
   'logs/list.htm': '/system/ops-logs',
   'userCompany/usercompany.htm': '/member/enterprise',
-  'supplier/supplierList.htm': '/system/companies',
+  'supplier/supplierList.htm': '/member/companies',
+  'supplier/supplierlist.htm': '/member/companies',
   'member/memberPage.htm': '/member/personal',
   'applyVip/ListPage.htm': '/member/apply',
   'integral/set_integral.htm': '/member/integral',
@@ -160,8 +161,12 @@ export function mapLegacyMenuUrl(raw: string): string {
   if (normalized.includes('usercompany') || normalized.includes('userCompany')) {
     return '/member/enterprise'
   }
-  if (normalized.includes('supplier/supplierList') || normalized.includes('supplierList')) {
-    return '/system/companies'
+  if (
+    normalized.includes('supplier/supplierList') ||
+    normalized.includes('supplierList') ||
+    normalized.includes('supplier/supplier_list')
+  ) {
+    return '/member/companies'
   }
   if (normalized.includes('member/memberPage') || normalized.includes('memberPage.htm')) {
     return '/member/personal'
@@ -433,7 +438,15 @@ function withAdminPrefix(path: string): string {
 
 export function resolveMenuPath(item: AdminMenuItem): string {
   const raw = (item.menu_url || '').trim()
-  if (!raw || raw.startsWith('http')) return ''
+  const title = (item.menu_name || '').trim()
+
+  // 侧栏「所属公司管理」偶发 menu_url 为空/非标准：按标题兜底，避免仅显示不可点文字
+  if (!raw || raw.startsWith('http')) {
+    if (title.includes('所属公司')) {
+      return withAdminPrefix('/member/companies')
+    }
+    return ''
+  }
 
   if (raw.startsWith('#')) {
     const hashPath = raw.slice(1) || '/admin/dashboard'
@@ -442,6 +455,10 @@ export function resolveMenuPath(item: AdminMenuItem): string {
 
   const legacy = mapLegacyMenuUrl(raw)
   if (legacy) return withAdminPrefix(legacy)
+
+  if (title.includes('所属公司')) {
+    return withAdminPrefix('/member/companies')
+  }
 
   const id = String(item.id || '')
   if (!id) return ''

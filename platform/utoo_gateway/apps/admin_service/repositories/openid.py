@@ -32,13 +32,13 @@ def list_openids(
     return normalize_rows(rows), total
 
 
-def insert_openid(openid: str) -> int:
+def insert_openid(openid: str, remark: str = "") -> int:
     return execute_insert(
         """
-        INSERT INTO exp_openid (addTime, deleteStatus, openid)
-        VALUES (NOW(), 0, %(openid)s)
+        INSERT INTO exp_openid (addTime, deleteStatus, openid, remark)
+        VALUES (NOW(), 0, %(openid)s, %(remark)s)
         """,
-        {"openid": openid},
+        {"openid": openid, "remark": remark or ""},
     )
 
 

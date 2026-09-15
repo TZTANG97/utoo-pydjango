@@ -7,12 +7,13 @@
       </div>
       <el-scrollbar class="menu-scroll">
         <el-menu
+          :key="activeMenu"
           :default-active="activeMenu"
           :collapse="collapsed"
           background-color="#1f2937"
           text-color="#cbd5e1"
           active-text-color="#ffffff"
-          router
+          @select="onMenuSelect"
         >
           <el-menu-item index="/admin/dashboard">
             <el-icon><HomeFilled /></el-icon>
@@ -71,12 +72,12 @@
       <tags-view />
 
       <main class="app-main">
-        <router-view v-slot="{ Component, route: currentRoute }">
+        <router-view v-slot="{ Component }">
           <keep-alive :max="30">
             <component
               :is="Component"
               v-if="Component"
-              :key="tagsViewStore.viewKey(currentRoute)"
+              :key="contentViewKey"
             />
           </keep-alive>
         </router-view>
@@ -113,6 +114,18 @@ const activeMenu = computed(() => {
   if (q.includes('?')) return q.startsWith('/') ? q : `/${q}`
   return route.path
 })
+/** 用 useRoute() 计算 key，避免 router-view slot 的 route 短暂滞后导致 keep-alive 仍显示旧页 */
+const contentViewKey = computed(() => tagsViewStore.viewKey(route))
+
+async function onMenuSelect(index: string) {
+  if (!index || index.startsWith('menu-')) return
+  const targetPath = index.split('?')[0]
+  if (route.fullPath !== index && route.path !== index) {
+    await router.push(index)
+  }
+  // 用目标 path 刷新 keep-alive key，避免 push 后 route 未同步时仍刷到旧页
+  tagsViewStore.refreshView(targetPath)
+}
 const currentTitle = computed(() => {
   if (route.name === 'LegacyPending') {
     const menuId = String(route.params.menuId || '')

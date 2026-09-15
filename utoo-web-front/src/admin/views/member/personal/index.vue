@@ -69,6 +69,7 @@
       <el-button type="primary" @click="openCreate">新增个人信息</el-button>
       <el-button type="primary" :disabled="!selectedId" @click="focusDetail">查看明细</el-button>
       <el-button type="primary" :disabled="!selectedId" @click="openEditSelected">编辑</el-button>
+      <el-button type="danger" :disabled="!selectedId" @click="handleDeleteSelected">删除</el-button>
     </div>
 
     <el-table
@@ -289,10 +290,11 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminPageCard from '@admin/components/AdminPageCard.vue'
 import {
   addMember,
+  deleteMember,
   editMember,
   fetchDistrictOptions,
   fetchMemberList,
@@ -486,6 +488,30 @@ function openCreate() {
   dialogVisible.value = true
 }
 
+async function handleDeleteSelected() {
+  if (!selectedId.value) {
+    ElMessage.warning('请先选择会员')
+    return
+  }
+  await ElMessageBox.confirm(
+    '删除后该个人会员将从列表中回收（软删除），确定继续？',
+    '提示',
+    { type: 'warning', confirmButtonText: '确定删除', cancelButtonText: '取消' },
+  )
+  const res = await deleteMember(selectedId.value)
+  if (isAjaxOk(res)) {
+    ElMessage.success('删除成功')
+    selectedId.value = ''
+    selectedMobile.value = ''
+    Object.keys(basicInfo).forEach((k) => delete basicInfo[k])
+    detailRows.value = []
+    detailTotal.value = 0
+    await reload()
+  } else {
+    ElMessage.error(ajaxErrorMessage(res, '删除失败'))
+  }
+}
+
 async function openEditSelected() {
   if (!selectedId.value) {
     ElMessage.warning('请先选择会员')
@@ -523,6 +549,10 @@ async function openEditSelected() {
 async function handleSubmit() {
   if (!form.trueName.trim() || !form.mobile.trim()) {
     ElMessage.warning('请填写姓名和手机号')
+    return
+  }
+  if (!/^1\d{10}$/.test(form.mobile.trim())) {
+    ElMessage.warning('手机号格式不正确，请输入 11 位手机号')
     return
   }
   saving.value = true

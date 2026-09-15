@@ -26,9 +26,15 @@
       />
     </div>
 
-    <el-dialog v-model="dialogVisible" title="新增 OpenID" width="480px">
+    <el-dialog
+      v-model="dialogVisible"
+      title="新增 OpenID"
+      width="480px"
+      append-to-body
+      destroy-on-close
+    >
       <el-form label-width="80px">
-        <el-form-item label="OpenID">
+        <el-form-item label="OpenID" required>
           <el-input v-model="form.openid" placeholder="请输入 OpenID" />
         </el-form-item>
         <el-form-item label="备注">
@@ -44,7 +50,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onActivated, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminPageCard from '@admin/components/AdminPageCard.vue'
 import { deleteOpenid, fetchOpenidList, submitOpenid } from '@admin/api/service-platform'
@@ -78,13 +84,16 @@ async function handleSubmit() {
       openid: form.openid.trim(),
       remark: form.remark.trim(),
     })
-    if (isAjaxOk(res)) {
-      ElMessage.success('添加成功')
-      dialogVisible.value = false
-      await load()
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '添加失败'))
       return
     }
-    ElMessage.error(ajaxErrorMessage(res, '添加失败'))
+    dialogVisible.value = false
+    ElMessage.success('添加成功')
+    pagination.page = 1
+    await load()
+  } catch {
+    // 网络异常由 request 拦截器提示
   } finally {
     saving.value = false
   }
@@ -92,14 +101,22 @@ async function handleSubmit() {
 
 async function handleDelete(row: Record<string, unknown>) {
   await ElMessageBox.confirm('确定删除该 OpenID 吗？', '提示', { type: 'warning' })
-  const res = await deleteOpenid(String(row.id))
-  if (isAjaxOk(res)) {
+  try {
+    const res = await deleteOpenid(String(row.id))
+    if (!isAjaxOk(res)) {
+      ElMessage.error(ajaxErrorMessage(res, '删除失败'))
+      return
+    }
     ElMessage.success('删除成功')
     await load()
-  } else {
-    ElMessage.error(ajaxErrorMessage(res, '删除失败'))
+  } catch {
+    // 网络异常由 request 拦截器提示
   }
 }
+
+onActivated(() => {
+  load()
+})
 </script>
 
 <style scoped lang="scss">

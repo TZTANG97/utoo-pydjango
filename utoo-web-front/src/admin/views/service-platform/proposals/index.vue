@@ -185,7 +185,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onActivated, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminPageCard from '@admin/components/AdminPageCard.vue'
 import { fetchProposalList, getProposalDetail, updateProposalImprove } from '@admin/api/service-platform'
@@ -217,6 +217,10 @@ const CONFIRMED_MAP: Record<string, string> = {
 }
 
 onMounted(() => reload())
+
+onActivated(() => {
+  reload()
+})
 
 function confirmedLabel(val: unknown) {
   return CONFIRMED_MAP[String(val)] || String(val ?? '-')

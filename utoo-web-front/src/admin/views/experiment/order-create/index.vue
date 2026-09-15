@@ -405,6 +405,7 @@
     </section>
 
     <div class="save-bar">
+      <el-button size="large" @click="goBack">取消</el-button>
       <el-button type="warning" size="large" :loading="saving" @click="onSave">保存</el-button>
     </div>
 
@@ -677,7 +678,10 @@ const projectDlg = reactive({
 })
 
 function goBack() {
-  router.push({ name: 'ExperimentOrders' })
+  // BUG-SO-01: 分包订单新增/取消应回到分包列表，不能误回普通实验订单
+  router.push({
+    name: isSubcontractCreate.value ? 'ExperimentSubcontractOrders' : 'ExperimentOrders',
+  })
 }
 
 function openAddCustomer() {
@@ -1438,6 +1442,9 @@ watch(
 .save-bar {
   margin-top: 32px;
   text-align: center;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
 }
 .dlg-filter {
   margin-bottom: 8px;

@@ -57,7 +57,15 @@
       <el-table-column type="index" width="55" align="center" label="#" />
       <el-table-column :label="orderLabel" min-width="160">
         <template #default="{ row }">
-          <span class="linkish">{{ row.czNum || '-' }}</span>
+          <el-button
+            v-if="row.czNum"
+            link
+            type="primary"
+            @click="openLogDetail(row)"
+          >
+            {{ row.czNum }}
+          </el-button>
+          <span v-else>-</span>
         </template>
       </el-table-column>
       <el-table-column label="创建时间" min-width="150">
@@ -100,6 +108,23 @@
         @current-change="() => load(listParams())"
       />
     </div>
+
+    <el-dialog v-model="detailVisible" title="资金记录详情" width="520px" destroy-on-close>
+      <el-descriptions v-if="detailRow" :column="1" border>
+        <el-descriptions-item :label="orderLabel">{{ detailRow.czNum || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="创建时间">{{ formatTime(detailRow.addTime) }}</el-descriptions-item>
+        <el-descriptions-item :label="userLabel">{{ detailRow.userName || '-' }}</el-descriptions-item>
+        <el-descriptions-item v-if="showInUser" label="转入用户">
+          {{ detailRow.inUserName || '-' }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="amountLabel">{{ money(detailRow.logAmount) }}</el-descriptions-item>
+        <el-descriptions-item label="状态">{{ statusLabel(detailRow.logStatus) }}</el-descriptions-item>
+        <el-descriptions-item label="备注">{{ detailRow.pdLogInfo || '-' }}</el-descriptions-item>
+      </el-descriptions>
+      <template #footer>
+        <el-button type="primary" @click="detailVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="480px" destroy-on-close>
       <el-form label-width="100px">
@@ -176,6 +201,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminPageCard from '@admin/components/AdminPageCard.vue'
 import {
@@ -192,6 +218,8 @@ import { useDataTable } from '@admin/composables/useDataTable'
 import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
 type DialogKind = 'recharge' | 'withdraw' | 'chargeback' | 'transfer' | 'loan' | 'loanClear'
+
+const route = useRoute()
 
 const typeTabs = [
   { value: '1', label: '充值记录' },
@@ -214,6 +242,8 @@ const filters = reactive({
 })
 
 const dialogVisible = ref(false)
+const detailVisible = ref(false)
+const detailRow = ref<Record<string, unknown> | null>(null)
 const saving = ref(false)
 const dialogKind = ref<DialogKind>('recharge')
 const userLoading = ref(false)
@@ -427,7 +457,29 @@ function onUploadVoucher(row: Record<string, unknown>) {
   ElMessage.info(`凭证上传功能迁移中（单号：${row.czNum || row.id}）`)
 }
 
-onMounted(() => reload())
+function openLogDetail(row: Record<string, unknown>) {
+  detailRow.value = row
+  detailVisible.value = true
+}
+
+function applyRouteQuery() {
+  const q = route.query
+  const accType = String(q.accType || '').trim()
+  if (accType && typeTabs.some((t) => t.value === accType)) {
+    filters.accType = accType
+  }
+  const czNum = String(q.czNum || '').trim()
+  if (czNum) filters.czNum = czNum
+  const accountType = String(q.accountType || '').trim()
+  if (accountType === '1' || accountType === '2') {
+    filters.accountType = accountType
+  }
+}
+
+onMounted(() => {
+  applyRouteQuery()
+  reload()
+})
 </script>
 
 <style scoped>
@@ -452,10 +504,6 @@ onMounted(() => reload())
 }
 .filter-form {
   margin-bottom: 12px;
-}
-.linkish {
-  color: #409eff;
-  cursor: default;
 }
 .pager {
   margin-top: 12px;

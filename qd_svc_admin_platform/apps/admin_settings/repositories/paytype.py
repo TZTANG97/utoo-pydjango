@@ -51,10 +51,18 @@ def get_paytype(paytype_id: int) -> dict[str, Any] | None:
 
 
 def find_by_name(name: str) -> list[dict[str, Any]]:
+    """仅未禁用记录同名查重，避免禁用探活行阻挡再次新增。"""
     return fetch_all(
-        "SELECT id FROM qd_consume_paytype WHERE name = %(name)s",
+        """
+        SELECT id FROM qd_consume_paytype
+        WHERE name = %(name)s AND IFNULL(del_status, 0) = 0
+        """,
         {"name": name},
     )
+
+
+def delete_paytype(paytype_id: int) -> None:
+    execute("DELETE FROM qd_consume_paytype WHERE id = %(id)s", {"id": paytype_id})
 
 
 def insert_paytype(data: dict[str, Any]) -> int:

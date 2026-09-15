@@ -25,16 +25,18 @@ def list_areas(*, page: int, page_size: int) -> tuple[list[dict[str, Any]], int]
     return [_normalize_area(row) for row in rows], int(total)
 
 
-def find_by_name(area_name: str) -> dict[str, Any] | None:
-    # 对齐 Java queryAreaName：level=0 的业务区域名唯一
-    return fetch_one(
-        """
+def find_by_name(area_name: str, *, exclude_id: int | None = None) -> dict[str, Any] | None:
+    # 对齐 Java queryAreaName：未删除的一级业务区域名唯一
+    sql = f"""
         SELECT id FROM trans_area
-        WHERE areaName = %(name)s AND deleteStatus = 0 AND level = 0
-        LIMIT 1
-        """,
-        {"name": area_name},
-    )
+        WHERE areaName = %(name)s AND {_TOP_LEVEL_WHERE}
+    """
+    params: dict[str, Any] = {"name": area_name}
+    if exclude_id is not None:
+        sql += " AND id <> %(exclude_id)s"
+        params["exclude_id"] = int(exclude_id)
+    sql += " LIMIT 1"
+    return fetch_one(sql, params)
 
 
 def insert_area(area_name: str) -> int:
@@ -63,7 +65,11 @@ def soft_delete_area(area_id: int) -> None:
 
 def list_area_options() -> list[dict[str, Any]]:
     rows = fetch_all(
-        f"SELECT id, areaName FROM trans_area WHERE {_TOP_LEVEL_WHERE} ORDER BY areaName ASC"
+        f"""
+        SELECT id, areaName FROM trans_area
+        WHERE {_TOP_LEVEL_WHERE}
+        ORDER BY areaName ASC, id ASC
+        """
     )
     return [{"id": r["id"], "areaName": r.get("areaName")} for r in rows]
 
