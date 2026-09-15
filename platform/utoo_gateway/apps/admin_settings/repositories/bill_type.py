@@ -55,13 +55,18 @@ def get_bill_type(bill_id: int) -> dict[str, Any] | None:
 
 
 def find_by_name_and_type(*, name: str, bill_type: int) -> list[dict[str, Any]]:
+    """仅未禁用记录同名查重，避免禁用探活行阻挡再次新增。"""
     return fetch_all(
         """
         SELECT id FROM bill_type
-        WHERE name = %(name)s AND type = %(type)s
+        WHERE name = %(name)s AND type = %(type)s AND IFNULL(delete_status, 0) = 0
         """,
         {"name": name, "type": bill_type},
     )
+
+
+def delete_bill_type(bill_id: int) -> None:
+    execute("DELETE FROM bill_type WHERE id = %(id)s", {"id": bill_id})
 
 
 def insert_bill_type(*, name: str, bill_type: int, user_id: str | None) -> int:

@@ -23,15 +23,16 @@
           <span v-else>-</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="120" fixed="right">
+      <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
           <el-button
             link
-            :type="row.delStatus ? 'success' : 'danger'"
+            :type="row.delStatus ? 'success' : 'warning'"
             @click="toggleStatus(row)"
           >
             {{ row.delStatus ? '启用' : '禁用' }}
           </el-button>
+          <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -85,11 +86,11 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminPageCard from '@admin/components/AdminPageCard.vue'
-import { fetchPaytypeList, submitPaytype, updatePaytypeStatus } from '@admin/api/order-settings'
+import { deletePaytype, fetchPaytypeList, submitPaytype, updatePaytypeStatus } from '@admin/api/order-settings'
 import { useDataTable } from '@admin/composables/useDataTable'
-import { isAjaxOk } from '@admin/utils/request'
+import { ajaxErrorMessage, isAjaxOk } from '@admin/utils/request'
 
 const { loading, rows, total, pagination, load } = useDataTable(fetchPaytypeList)
 const dialogVisible = ref(false)
@@ -118,17 +119,35 @@ async function handleSubmit() {
   }
   saving.value = true
   try {
-    const ok = await submitPaytype({ ...form, name: form.name.trim() })
-    if (ok) {
-      ElMessage.success('添加成功')
+    const res = await submitPaytype({ ...form, name: form.name.trim() })
+    if (isAjaxOk(res)) {
+      ElMessage.success(res.resMsg || '添加成功')
       dialogVisible.value = false
       form.name = ''
       await load()
       return
     }
-    ElMessage.error('名称已存在或保存失败')
+    ElMessage.error(ajaxErrorMessage(res, '名称已存在或保存失败'))
+  } catch {
+    // 网络异常由 request 拦截器提示
   } finally {
     saving.value = false
+  }
+}
+
+
+async function handleDelete(row: Record<string, unknown>) {
+  await ElMessageBox.confirm('确定删除该收付款方式吗？删除后不可恢复。', '提示', { type: 'warning' })
+  try {
+    const res = await deletePaytype(String(row.id))
+    if (isAjaxOk(res)) {
+      ElMessage.success(res.resMsg || '删除成功')
+      await load()
+      return
+    }
+    ElMessage.error(ajaxErrorMessage(res, '删除失败'))
+  } catch {
+    // 取消确认或网络异常
   }
 }
 

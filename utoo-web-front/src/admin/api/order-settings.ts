@@ -57,21 +57,23 @@ export function fetchPaytypeList(params: Record<string, unknown>) {
 }
 
 export async function submitPaytype(data: Record<string, unknown>) {
-  const res = await postAjax('/consumePaytype/submitPayment.ajax', data)
-  return isAjaxOk(res)
+  return postAjax('/consumePaytype/submitPayment.ajax', data)
 }
 
 export function updatePaytypeStatus(id: number | string, status: '0' | '1') {
   return postAjax('/consumePaytype/updateDelStatus.ajax', { id, status })
 }
 
+export function deletePaytype(id: number | string) {
+  return postAjax('/consumePaytype/del.ajax', { id })
+}
+
 export function fetchBillTypeList(params: Record<string, unknown>) {
   return fetchDatatable('/billtype/getBillByType.ajax', params)
 }
 
-export async function submitBillType(data: { name: string; type: number }) {
-  const res = await postAjax('/billtype/submitBillType.ajax', data)
-  return isAjaxOk(res)
+export function submitBillType(data: { name: string; type: number }) {
+  return postAjax('/billtype/submitBillType.ajax', data)
 }
 
 export function updateBillType(data: { id: number | string; name: string }) {
@@ -81,6 +83,10 @@ export function updateBillType(data: { id: number | string; name: string }) {
 export async function updateBillTypeStatus(id: number | string, status: '1' | '2') {
   const res = await postAjax('/billtype/updateStatus.ajax', { id, status })
   return isAjaxOk(res)
+}
+
+export function deleteBillType(id: number | string) {
+  return postAjax('/billtype/del.ajax', { id })
 }
 
 export function fetchOrderTypeList(params: Record<string, unknown>) {
