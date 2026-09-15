@@ -214,12 +214,11 @@ export default {
             <img src="@client/static/1.png" alt="愉兔检测" />
           </router-link>
           <a
-            v-if="cateList.length"
             class="nav-link"
             href="#/cate"
             @click.prevent="goTestBooking"
             @mouseleave="showCate = false"
-            @mouseenter="(showCate = true), openCateDialog()"
+            @mouseenter="cateList.length && ((showCate = true), openCateDialog())"
           >
             测试预约
           </a>

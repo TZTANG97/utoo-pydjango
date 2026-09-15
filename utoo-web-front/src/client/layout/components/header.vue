@@ -179,10 +179,9 @@ export default {
       <div
         class="test-pro nav-chip"
         :class="{ 'is-active': topMenuKey === 'cate' }"
-        v-if="cateList.length"
         @click="goTestBooking"
         @mouseleave="showCate = false"
-        @mouseenter="showCate = true, openCateDialog()"
+        @mouseenter="cateList.length && (showCate = true, openCateDialog())"
       >测试预约
       </div>
       <div class="test-pro nav-chip" :class="{ 'is-active': topMenuKey === 'company' }">
