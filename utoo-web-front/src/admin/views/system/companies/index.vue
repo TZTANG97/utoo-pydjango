@@ -22,7 +22,7 @@
           <el-option
             v-for="item in areaOptions"
             :key="String(item.id)"
-            :label="String(item.areaName || item.id)"
+            :label="areaOptionLabel(item)"
             :value="String(item.id)"
           />
         </el-select>
@@ -72,7 +72,7 @@
             <el-option
               v-for="item in areaOptions"
               :key="String(item.id)"
-              :label="String(item.areaName || item.id)"
+              :label="areaOptionLabel(item)"
               :value="String(item.id)"
             />
           </el-select>
@@ -218,6 +218,16 @@ const form = reactive({
 })
 
 const dialogTitle = computed(() => (editingId.value ? '编辑所属公司' : '新增所属公司'))
+
+/** 重名区域在下拉中附带 ID，避免「华东」等重复选项无法区分 */
+function areaOptionLabel(item: Record<string, unknown>) {
+  const name = String(item.areaName || item.id || '')
+  const id = String(item.id ?? '')
+  const dup =
+    !!name &&
+    areaOptions.value.filter((o) => String(o.areaName || '') === name).length > 1
+  return dup && id ? `${name}（ID: ${id}）` : name
+}
 
 onMounted(async () => {
   areaOptions.value = await fetchAreaOptions()
