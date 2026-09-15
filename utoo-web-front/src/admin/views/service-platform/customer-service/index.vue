@@ -12,7 +12,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onActivated, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import AdminPageCard from '@admin/components/AdminPageCard.vue'
 import { getIshowSetting, saveIshowSetting } from '@admin/api/service-platform'
@@ -23,12 +23,20 @@ const form = reactive({
   is_show: 0,
 })
 
-onMounted(async () => {
+async function loadSetting() {
   const res = await getIshowSetting()
   if (isAjaxOk(res) && res.obj && typeof res.obj === 'object') {
     const data = res.obj as Record<string, unknown>
     form.is_show = Number(data.is_show ?? 0)
   }
+}
+
+onMounted(() => {
+  void loadSetting()
+})
+
+onActivated(() => {
+  void loadSetting()
 })
 
 async function handleSave() {

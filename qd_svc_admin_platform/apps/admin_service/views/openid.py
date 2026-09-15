@@ -36,10 +36,11 @@ def submit_openid(request: Request, user=None):
     del user
     data = merge_payload(request)
     openid = (data.get("openid") or "").strip()
+    remark = (data.get("remark") or "").strip()
     if not openid:
         return Response(ajax_fail("保存失败,没有数据，请确认!"))
-    new_id = openid_repo.insert_openid(openid)
-    return Response(ajax_ok(res_msg=str(new_id)))
+    openid_repo.insert_openid(openid, remark=remark)
+    return Response(ajax_ok(res_msg="添加成功"))
 
 
 @api_view(["POST"])

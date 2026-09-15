@@ -119,11 +119,12 @@ const contentViewKey = computed(() => tagsViewStore.viewKey(route))
 
 async function onMenuSelect(index: string) {
   if (!index || index.startsWith('menu-')) return
+  const targetPath = index.split('?')[0]
   if (route.fullPath !== index && route.path !== index) {
     await router.push(index)
   }
-  // 侧栏跳转后强制内容区与当前路由对齐（修复 hash 已变仍显示旧 tab 内容）
-  tagsViewStore.refreshView(route.path)
+  // 用目标 path 刷新 keep-alive key，避免 push 后 route 未同步时仍刷到旧页
+  tagsViewStore.refreshView(targetPath)
 }
 const currentTitle = computed(() => {
   if (route.name === 'LegacyPending') {
