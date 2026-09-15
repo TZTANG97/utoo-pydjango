@@ -159,11 +159,16 @@ def member_edit(request: Request, user=None):
 @permission_classes([AllowAny])
 @admin_ajax_view()
 def member_update_status(request: Request, user=None):
+    """status=0 解绑企业联系人；status=2 个人会员软删除；兼容仅传 id 的旧解绑调用。"""
     del user
     data = merge_payload(request)
     user_id = _to_int(data.get("id"))
     if not user_id:
         return Response(ajax_fail("参数错误"))
+    status = str(data.get("status") if data.get("status") is not None else "").strip()
+    if status == "2":
+        member_repo.soft_delete_member(user_id)
+        return Response(ajax_ok(res_msg="删除成功"))
     member_repo.unbind_member(user_id)
     return Response(ajax_ok(res_msg="解绑成功"))
 

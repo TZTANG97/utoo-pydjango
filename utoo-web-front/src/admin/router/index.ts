@@ -653,6 +653,12 @@ export const constantRoutes: RouteRecordRaw[] = [
         meta: { title: '个人会员管理' },
       },
       {
+        path: 'member/companies',
+        name: 'MemberCompanies',
+        component: () => import('@admin/views/system/companies/index.vue'),
+        meta: { title: '所属公司管理' },
+      },
+      {
         path: 'member/apply',
         name: 'MemberApply',
         component: () => import('@admin/views/member/apply/index.vue'),

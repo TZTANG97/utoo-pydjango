@@ -159,7 +159,12 @@ export function editMember(data: Record<string, unknown>) {
 }
 
 export function unbindMember(id: string | number) {
-  return postAjax('/member/updateStatus.ajax', { id })
+  return postAjax('/member/updateStatus.ajax', { id, status: 0 })
+}
+
+/** 个人会员软删除/回收（status=2 → deleteStatus=1），需二次确认后调用 */
+export function deleteMember(id: string | number) {
+  return postAjax('/member/updateStatus.ajax', { id, status: 2 })
 }
 
 export function fetchUserInvoices(params: Record<string, unknown>) {
