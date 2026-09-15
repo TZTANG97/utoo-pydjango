@@ -26,6 +26,7 @@ export function getPDFInfoApi(id) {
 export function getQrcodeApi() {
   return request({
     url: '/wx/WeChatQRCodeGenerator.ajax',
+    silentError: true,
   })
 }
 

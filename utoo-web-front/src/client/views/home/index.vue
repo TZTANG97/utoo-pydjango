@@ -1,4 +1,6 @@
 <script>
+import { resolveCatalogImage, onCatalogImgError } from "@client/utils/oss-image"
+
 import { mapGetters } from "vuex";
 import EventBus from "@client/utils/event-bus";
 import { getToken } from "@client/utils/auth";
@@ -87,6 +89,9 @@ export default {
       this.level1_idx = idx;
     },
 
+    resolveCatalogImage,
+    onCatalogImgError,
+
     //   拿着一级id进入详情
     enterCateDetail(parentIdx, childIdx = -1) {
       this.showCate = false;
@@ -105,6 +110,16 @@ export default {
           query: { parent_idx: parentIdx, child_idx: childIdx },
         });
       }
+    },
+
+    /** C-04：顶部「测试预约」跳转分类/预约入口 */
+    goTestBooking() {
+      this.showCate = false;
+      this.level1_idx = 0;
+      this.menuIdx = 3;
+      localStorage.setItem("menuIdx", 3);
+      if (this.$route.path === "/cate" || this.$route.name === "Cate") return;
+      this.$router.push({ path: "/cate" });
     },
 
     // 进入实验详情
@@ -201,6 +216,8 @@ export default {
           <a
             v-if="cateList.length"
             class="nav-link"
+            href="#/cate"
+            @click.prevent="goTestBooking"
             @mouseleave="showCate = false"
             @mouseenter="(showCate = true), openCateDialog()"
           >
@@ -280,7 +297,7 @@ export default {
                   :key="idx2"
                 >
 <!--                  <span>{{ level3["name"] }}</span>-->
-                  <img style="width: 100%;" :src="level3.main_photo" />
+                  <img style="width: 100%;" :src="resolveCatalogImage(level3.main_photo)" @error="onCatalogImgError" alt="" />
                   <div class="mask">
                     <el-button type="primary" @click="viewTestDetail(level3['id'])">立即预约</el-button>
                   </div>
@@ -312,7 +329,7 @@ export default {
                   :key="idx2"
                 >
 <!--                  <span>{{ level3["name"] }}</span>-->
-                  <img style="width: 100%;" :src="level3.main_photo" />
+                  <img style="width: 100%;" :src="resolveCatalogImage(level3.main_photo)" @error="onCatalogImgError" alt="" />
                   <div class="mask">
                     <el-button type="primary" @click="viewTestDetail(level3['id'])">立即预约</el-button>
                   </div>
@@ -344,7 +361,7 @@ export default {
                   :key="idx2"
                 >
 <!--                  <span>{{ level3["name"] }}</span>-->
-                  <img style="width: 100%;" :src="level3.main_photo" />
+                  <img style="width: 100%;" :src="resolveCatalogImage(level3.main_photo)" @error="onCatalogImgError" alt="" />
                   <div class="mask">
                     <el-button type="primary" @click="viewTestDetail(level3['id'])">立即预约</el-button>
                   </div>
@@ -376,7 +393,7 @@ export default {
                   :key="idx2"
                 >
 <!--                  <span>{{ level3["name"] }}</span>-->
-                  <img style="width: 100%;" :src="level3.main_photo" />
+                  <img style="width: 100%;" :src="resolveCatalogImage(level3.main_photo)" @error="onCatalogImgError" alt="" />
                   <div class="mask">
                     <el-button type="primary" @click="viewTestDetail(level3['id'])">立即预约</el-button>
                   </div>
