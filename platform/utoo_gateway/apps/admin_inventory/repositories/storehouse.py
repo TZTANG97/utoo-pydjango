@@ -20,7 +20,7 @@ def list_storehouses(
         where += " AND t.store_name LIKE %(store_name)s"
         params["store_name"] = f"%{store_name}%"
     if true_name:
-        where += " AND u.user_name LIKE %(true_name)s"
+        where += " AND (u.user_name LIKE %(true_name)s OR u.true_name LIKE %(true_name)s)"
         params["true_name"] = f"%{true_name}%"
     if mobile:
         where += " AND t.moblie LIKE %(mobile)s"
